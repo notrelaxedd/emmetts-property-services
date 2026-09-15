@@ -1,0 +1,46 @@
+import { House, Leaf, Snowflake, Sprout, Wind, type LucideIcon } from "lucide-react";
+import type { ServiceIcon } from "@/lib/services";
+import { cn } from "@/lib/utils";
+
+const iconMap: Record<ServiceIcon, LucideIcon> = {
+  leaf: Leaf,
+  sprout: Sprout,
+  wind: Wind,
+  house: House,
+  snowflake: Snowflake,
+};
+
+export function ServiceGlyph({ icon, className }: { icon: ServiceIcon; className?: string }) {
+  const Icon = iconMap[icon];
+  return <Icon aria-hidden="true" className={className} strokeWidth={2.25} />;
+}
+
+/** Small solid-green circle holding an ink icon. Same badge the pills use. */
+export function IconBadge({
+  icon: Icon,
+  size = "md",
+  className,
+}: {
+  icon: LucideIcon;
+  size?: "sm" | "md" | "lg";
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center rounded-full bg-brand-green text-ink",
+        size === "sm" && "size-8 [&_svg]:size-4",
+        size === "md" && "size-11 [&_svg]:size-5",
+        size === "lg" && "size-14 [&_svg]:size-6",
+        className,
+      )}
+    >
+      <Icon strokeWidth={2.5} />
+    </span>
+  );
+}
+
+export function ServiceBadge({ icon, size = "md", className }: { icon: ServiceIcon; size?: "sm" | "md" | "lg"; className?: string }) {
+  return <IconBadge icon={iconMap[icon]} size={size} className={className} />;
+}

@@ -1,0 +1,203 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* shadcn/ui semantic tokens, expressed in the brand palette (HSL channels). */
+    --background: 60 8% 97%; /* paper */
+    --foreground: 0 0% 4%; /* ink */
+    --primary: 0 0% 4%; /* ink */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 91%; /* gray-light */
+    --secondary-foreground: 0 0% 4%;
+    --muted: 0 0% 91%;
+    --muted-foreground: 165 2% 34%; /* ink-muted */
+    --accent: 0 0% 91%;
+    --accent-foreground: 0 0% 4%;
+    --destructive: 4 76% 40%; /* #B42318, 6.5:1 on white */
+    --destructive-foreground: 0 0% 100%;
+    --border: 150 2% 75%; /* gray-mid */
+    --input: 165 2% 34%; /* input borders need 3:1 against paper */
+    --ring: 114 72% 28%; /* brand-green-dark */
+    --radius: 1rem;
+
+    --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --header-h: 4.5rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-padding-top: calc(var(--header-h) + 1rem);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
+
+  body {
+    @apply bg-paper font-sans text-ink-body antialiased;
+    font-size: 1.0625rem;
+    line-height: 1.65;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Visible, high-contrast focus ring everywhere. Green-dark on light, bright green on dark. */
+  :focus-visible {
+    outline: 3px solid theme("colors.brand-green-dark");
+    outline-offset: 3px;
+  }
+  .on-dark :focus-visible {
+    outline-color: theme("colors.brand-green");
+  }
+
+  ::selection {
+    background: theme("colors.brand-green");
+    color: theme("colors.ink");
+  }
+}
+
+@layer components {
+  /* Heavy condensed headline voice. The drama lives here and nowhere else. */
+  .display {
+    @apply font-display uppercase text-ink;
+    font-weight: 400; /* Anton ships a single heavy weight */
+    line-height: 0.85;
+    letter-spacing: -0.01em;
+  }
+
+  /* Tall-ellipse photo frame. */
+  .oval {
+    @apply relative aspect-[3/4] overflow-hidden bg-gray-mid;
+    border-radius: 50%;
+    /* Safari clips children of a rounded parent more reliably with an isolated stacking context. */
+    isolation: isolate;
+  }
+
+  /* Diagonal panels: clip-path polygons supplied per breakpoint via custom properties. */
+  .diag {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    clip-path: var(--clip-sm);
+  }
+  @media (min-width: 768px) {
+    .diag {
+      clip-path: var(--clip-md, var(--clip-sm));
+    }
+  }
+}
+
+@layer utilities {
+  .pb-callbar {
+    padding-bottom: calc(4.25rem + env(safe-area-inset-bottom));
+  }
+  @media (min-width: 768px) {
+    .pb-callbar {
+      padding-bottom: 0;
+    }
+  }
+}
+
+/* ---------- Motion ----------
+   Everything is visible by default. Motion only layers on top when the user hasn't asked to reduce it. */
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Scroll reveal: <Reveal> marks an element "pending" only after hydration and only if it's
+     still below the fold, so server-rendered content never ships hidden. */
+  [data-reveal] {
+    transition:
+      opacity 0.7s var(--ease-out-quart),
+      transform 0.9s var(--ease-out-expo);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+  [data-reveal="pending"] {
+    opacity: 0;
+    transform: translate3d(0, 1.5rem, 0);
+  }
+  [data-reveal="pending"][data-reveal-from="left"] {
+    transform: translate3d(-3rem, 0, 0);
+  }
+  [data-reveal="pending"][data-reveal-from="scale"] {
+    transform: scale(0.94);
+  }
+
+  /* Hero page-load choreography: headline lines rise out of a mask, panel sweeps in. */
+  .hero-line {
+    display: block;
+    overflow: hidden;
+    padding-block: 0.04em; /* keeps Anton's cap tops from clipping inside the mask */
+  }
+  .hero-line > span {
+    display: block;
+    animation: line-rise 1s var(--ease-out-expo) both;
+    animation-delay: calc(120ms + var(--i, 0) * 110ms);
+  }
+  .hero-fade {
+    animation: fade-up 0.9s var(--ease-out-quart) both;
+    animation-delay: var(--d, 450ms);
+  }
+  .panel-sweep {
+    animation: panel-sweep 1.2s var(--ease-out-expo) both;
+    animation-delay: var(--d, 0ms);
+  }
+  .oval-in {
+    animation: oval-in 1.2s var(--ease-out-expo) both;
+    animation-delay: var(--d, 250ms);
+  }
+}
+
+@keyframes line-rise {
+  from {
+    transform: translate3d(0, 105%, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 0.75rem, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes panel-sweep {
+  from {
+    opacity: 0;
+    transform: translate3d(14%, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes oval-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 2rem, 0) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
