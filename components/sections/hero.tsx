@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import Image from "next/image";
 import { Check, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BookLink } from "@/components/site/book-link";
@@ -76,14 +77,28 @@ export function Hero() {
         </div>
 
         <div className="md:col-span-5 lg:col-span-5">
-          <OvalPhoto
-            src={hero.image.src}
-            alt={hero.image.alt}
-            priority
-            position="42% 50%"
-            sizes="(min-width: 1280px) 440px, (min-width: 768px) 38vw, 72vw"
-            className="oval-in mx-auto w-[72%] max-w-[27rem] md:w-full"
-          />
+          <div className="relative mx-auto w-[72%] max-w-[27rem] md:w-full">
+            <OvalPhoto
+              src={hero.image.src}
+              alt={hero.image.alt}
+              priority
+              position="42% 50%"
+              sizes="(min-width: 1280px) 440px, (min-width: 768px) 38vw, 72vw"
+              className="oval-in w-full"
+            />
+            {/* The badge, slapped on like a sticker. Rotation lives on the wrapper so the fade-in's transform can't reset it. */}
+            <div className="absolute -bottom-4 -right-[6%] w-[50%] rotate-[8deg] md:right-0 md:w-[44%] xl:-right-[6%]">
+              <Image
+                src="/logo.png"
+                alt={`${siteConfig.name} badge: a mower, leaf blower, and snowblower for every season`}
+                width={440}
+                height={384}
+                sizes="(min-width: 768px) 210px, 150px"
+                className="hero-fade h-auto w-full drop-shadow-[0_16px_20px_rgb(11_11_11/0.35)]"
+                style={delay(760)}
+              />
+            </div>
+          </div>
         </div>
       </div>
     </section>

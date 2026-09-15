@@ -13,7 +13,7 @@ export function LogoLockup({ className }: { className?: string }) {
       <Image
         src="/logo.png"
         alt={`${siteConfig.name} logo`}
-        width={96}
+        width={110}
         height={96}
         priority
         className="h-10 w-auto transition-transform duration-300 ease-out-quart group-hover:-rotate-6 md:h-12"

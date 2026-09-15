@@ -15,8 +15,8 @@ const config: Config = {
     extend: {
       colors: {
         // Brand tokens (from the flyer + logo)
-        "brand-green": "#3FBE2F", // primary accent, CTAs — use on ink or as a fill with ink text
-        "brand-green-dark": "#1F7A14", // hover states, green text on light backgrounds (5.4:1 on white)
+        "brand-green": "#65C435", // sampled from the logo ring; CTAs — use on ink (8.9:1) or as a fill with ink text
+        "brand-green-dark": "#327213", // same hue, darker: hover states, green text on light (5.9:1 on white, 4.8:1 on gray-light)
         ink: "#0B0B0B", // headlines, buttons, pills
         "ink-body": "#353837", // body copy — dark gray, not pure black
         "ink-muted": "#565A59", // secondary copy (≥5.6:1 on paper and gray-light)

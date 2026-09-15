@@ -31,7 +31,6 @@ The hero headline is the current seasonal offer (`content.hero.headline`). Swap 
 
 ### Before launch checklist
 
-- [ ] Replace `public/logo.png` with the real badge
 - [ ] Replace the photos in `public/images/` (same filenames)
 - [ ] Fill in the `TODO`s in `lib/site-config.ts`: email, hours, pricing, and the suburbs you serve
 - [ ] Set up Supabase (below) and add the env vars in Vercel

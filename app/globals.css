@@ -19,7 +19,7 @@
     --destructive-foreground: 0 0% 100%;
     --border: 150 2% 75%; /* gray-mid */
     --input: 165 2% 34%; /* input borders need 3:1 against paper */
-    --ring: 114 72% 28%; /* brand-green-dark */
+    --ring: 100 71% 26%; /* brand-green-dark */
     --radius: 1rem;
 
     --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);

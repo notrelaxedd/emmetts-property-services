@@ -22,9 +22,9 @@ export function SiteFooter() {
           <Image
             src="/logo.png"
             alt={`${siteConfig.name} logo`}
-            width={320}
-            height={320}
-            className="h-36 w-auto md:h-44"
+            width={440}
+            height={384}
+            className="h-40 w-auto md:h-52"
           />
           <p className="mt-6 max-w-sm">{content.footer.blurb}</p>
         </div>

@@ -17,7 +17,7 @@ function toBase64(buffer: ArrayBuffer) {
   return btoa(binary);
 }
 
-/** Social share card. Picks up the real logo once it's dropped into /public/logo.png (after a redeploy). */
+/** Social share card: seasonal headline, phone, and the badge from /public/logo.png. */
 export default async function OpenGraphImage() {
   const [anton, logo] = await Promise.all([
     fetch(new URL("../assets/fonts/Anton-Regular.ttf", import.meta.url)).then((r) => r.arrayBuffer()),
@@ -35,7 +35,7 @@ export default async function OpenGraphImage() {
 
         <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 72px", width: 720 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 28, color: "#0B0B0B", fontWeight: 600 }}>
-            <div style={{ width: 40, height: 5, borderRadius: 4, background: "#3FBE2F" }} />
+            <div style={{ width: 40, height: 5, borderRadius: 4, background: "#65C435" }} />
             {siteConfig.altName} · Rocky River, OH
           </div>
           <div style={{ display: "flex", flexDirection: "column", marginTop: 20, fontFamily: "Anton", fontSize: 132, lineHeight: 0.88, color: "#0B0B0B", textTransform: "uppercase" }}>
@@ -62,9 +62,9 @@ export default async function OpenGraphImage() {
           </div>
         </div>
 
-        <div style={{ position: "absolute", right: 80, top: 115, display: "flex" }}>
+        <div style={{ position: "absolute", right: 48, top: 105, display: "flex" }}>
           {/* eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text */}
-          <img src={logoSrc} width={400} height={400} style={{ objectFit: "contain" }} />
+          <img src={logoSrc} width={480} height={419} style={{ objectFit: "contain" }} />
         </div>
       </div>
     ),

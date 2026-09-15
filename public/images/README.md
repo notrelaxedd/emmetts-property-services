@@ -19,9 +19,15 @@ A real crew photo builds more trust than anything else on the page.
 
 ## Logo
 
-Drop the badge logo at **`/public/logo.png`** (overwrite the grey "LOGO placeholder" file).
-It's used in the header, footer, browser tab icon, and social share image.
-A square PNG with a transparent background works best, at least 512 × 512 px.
+The real badge is in place. The original file (on a black square) is kept at `assets/logo-source.jpg`.
+From it we cut a transparent, sticker-style version with a thin black keyline so it sits cleanly on
+light and dark backgrounds:
+
+- `public/logo.png`: header, footer, hero sticker, social share image, and search-engine data
+- `app/icon.png`: browser tab icon
+- `app/apple-icon.png`: iPhone home-screen icon (on black, since iOS doesn't allow transparency)
+
+If the logo ever changes, replace those three files (or ask for them to be regenerated from a new source).
 
 ## Where the stand-ins came from
 

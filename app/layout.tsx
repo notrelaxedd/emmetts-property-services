@@ -31,7 +31,6 @@ export const metadata: Metadata = {
   description: content.seo.description,
   applicationName: siteConfig.name,
   alternates: { canonical: "/" },
-  icons: { icon: "/logo.png", apple: "/logo.png" },
   openGraph: {
     type: "website",
     locale: "en_US",
