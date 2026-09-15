@@ -23,7 +23,6 @@ Without Supabase keys the whole site still works; submitting the form shows a fr
 | Phone, email, hours, pricing, service area (TODOs live here) | `lib/site-config.ts` |
 | All the words on the site | `lib/content.ts` |
 | The list of services (cards, dropdown, validation, SEO) | `lib/services.ts` |
-| Reviews (placeholders until you add real ones) | `lib/content.ts` → `reviews.items` |
 | Photos and logo | `public/images/` and `public/logo.png`; see `public/images/README.md` |
 | Colors, fonts, sizes | `tailwind.config.ts`, `app/globals.css` |
 
@@ -34,7 +33,6 @@ The hero headline is the current seasonal offer (`content.hero.headline`). Swap 
 
 - [ ] Replace `public/logo.png` with the real badge
 - [ ] Replace the photos in `public/images/` (same filenames)
-- [ ] Add real reviews in `lib/content.ts` (placeholder cards have a dashed outline)
 - [ ] Fill in the `TODO`s in `lib/site-config.ts`: email, hours, pricing, and the suburbs you serve
 - [ ] Set up Supabase (below) and add the env vars in Vercel
 - [ ] Set `NEXT_PUBLIC_SITE_URL` once you have a domain
@@ -68,7 +66,8 @@ pointed at an email/SMS service. Not wired in yet.
 ## What's in here
 
 - **Sections** (`components/sections/`): hero, services grid, benefits pills, why us, seasons band,
-  reviews, booking. `/book` reuses the booking section with an `<h1>`.
+  booking. `/book` reuses the booking section with an `<h1>`. (A customer reviews section was
+  removed; it's in the first commit's history if you want it back once you have real reviews.)
 - **Brand shapes** (`components/site/`): `Diagonal` (clip-path panels), `OvalPhoto` (3:4 ellipse
   frame), `PillList` (the flyer's black pills), `Headline` (condensed caps).
 - **Phones:** a sticky bottom bar keeps *Call now* and *Book* one tap away at any scroll position.

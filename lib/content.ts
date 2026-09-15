@@ -9,7 +9,6 @@ export const content = {
   nav: [
     { label: "Services", href: "/#services" },
     { label: "Why Us", href: "/#why-us" },
-    { label: "Reviews", href: "/#reviews" },
     { label: "Contact", href: "/#contact" },
   ],
 
@@ -90,29 +89,6 @@ export const content = {
         body: "Driveways and walkways cleared with a snowblower.",
         icon: "snowflake",
         serviceSlug: "snow-removal",
-      },
-    ],
-  },
-
-  reviews: {
-    headline: ["What the", "neighbors say"],
-    // TODO: replace these placeholders with real reviews (with the customer's permission).
-    // Don't make up names or quotes — use exactly what customers said.
-    items: [
-      {
-        quote: "PLACEHOLDER — paste a real customer review here. Two or three sentences reads best.",
-        name: "PLACEHOLDER — Customer first name",
-        detail: "PLACEHOLDER — Street or neighborhood",
-      },
-      {
-        quote: "PLACEHOLDER — a second real review, ideally about a different service (mowing, gutters, snow).",
-        name: "PLACEHOLDER — Customer first name",
-        detail: "PLACEHOLDER — Street or neighborhood",
-      },
-      {
-        quote: "PLACEHOLDER — a third real review. Mentioning the crew by name makes it feel personal.",
-        name: "PLACEHOLDER — Customer first name",
-        detail: "PLACEHOLDER — Street or neighborhood",
       },
     ],
   },
