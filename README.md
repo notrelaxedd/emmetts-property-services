@@ -40,6 +40,11 @@ The hero headline is the current seasonal offer (`content.hero.headline`). Swap 
 The repo is connected to Vercel, so pushing to `main` deploys automatically. `NEXT_PUBLIC_SITE_URL`
 is the only environment variable, and it's optional.
 
+**If you change the logo**, also refresh `assets/og/logo-og.png` (a ~420px-wide copy) and, if you ever
+swap the headline font, `assets/og/Anton-Subset.ttf`. The share-image function inlines whatever it
+loads, and Vercel rejects an edge function over 1 MB — using the full-size logo there breaks the
+deploy with "Edge Function size is 1.48 MB". The site's own pages always use the full `public/logo.png`.
+
 ## What's in here
 
 - **Sections** (`components/sections/`): hero, services grid, benefits pills, why us, seasons band,

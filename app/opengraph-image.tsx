@@ -19,9 +19,11 @@ function toBase64(buffer: ArrayBuffer) {
 
 /** Social share card: seasonal headline, phone, and the badge from /public/logo.png. */
 export default async function OpenGraphImage() {
+  // Trimmed-down copies: everything here is inlined into the edge bundle, which has a 1 MB limit.
+  // (assets/og/* are generated from assets/fonts/Anton-Regular.ttf and public/logo.png — see README.)
   const [anton, logo] = await Promise.all([
-    fetch(new URL("../assets/fonts/Anton-Regular.ttf", import.meta.url)).then((r) => r.arrayBuffer()),
-    fetch(new URL("../public/logo.png", import.meta.url)).then((r) => r.arrayBuffer()),
+    fetch(new URL("../assets/og/Anton-Subset.ttf", import.meta.url)).then((r) => r.arrayBuffer()),
+    fetch(new URL("../assets/og/logo-og.png", import.meta.url)).then((r) => r.arrayBuffer()),
   ]);
   const logoSrc = `data:image/png;base64,${toBase64(logo)}`;
 
