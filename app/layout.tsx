@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Anton, Work_Sans } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
 import { LocalBusinessJsonLd } from "@/components/site/json-ld";
@@ -76,6 +78,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <SiteFooter />
         <MobileCallBar />
         <LocalBusinessJsonLd />
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
