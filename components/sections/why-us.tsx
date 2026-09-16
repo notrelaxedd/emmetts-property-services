@@ -1,6 +1,6 @@
 import { Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { BookLink } from "@/components/site/book-link";
+import { ContactLink } from "@/components/site/contact-link";
 import { Diagonal } from "@/components/site/diagonal";
 import { Headline } from "@/components/site/headline";
 import { OvalPhoto } from "@/components/site/oval-photo";
@@ -72,13 +72,13 @@ export function WhyUs() {
 
           <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <Button asChild variant="cta" size="cta">
-              <BookLink>{content.cta.book}</BookLink>
-            </Button>
-            <Button asChild variant="cta-outline" size="cta">
               <a href={siteConfig.phone.href}>
                 <Phone aria-hidden="true" />
                 {content.cta.call}
               </a>
+            </Button>
+            <Button asChild variant="cta-outline" size="cta">
+              <ContactLink>{content.cta.contact}</ContactLink>
             </Button>
           </div>
         </div>

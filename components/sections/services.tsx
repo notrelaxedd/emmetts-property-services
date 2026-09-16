@@ -1,6 +1,6 @@
-import { ArrowRight, Leaf } from "lucide-react";
+import { ArrowRight, Leaf, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { BookLink } from "@/components/site/book-link";
+import { ContactLink } from "@/components/site/contact-link";
 import { Diagonal } from "@/components/site/diagonal";
 import { Headline } from "@/components/site/headline";
 import { ServiceBadge } from "@/components/site/icons";
@@ -40,10 +40,10 @@ function FeaturedService({ service }: { service: Service }) {
 
       <div className="mt-auto pt-10">
         <Button asChild variant="cta-green" size="cta" className="w-full sm:w-auto">
-          <BookLink service={service.slug}>
-            Book {service.title.toLowerCase()}
-            <ArrowRight aria-hidden="true" />
-          </BookLink>
+          <a href={siteConfig.phone.href}>
+            <Phone aria-hidden="true" />
+            {content.cta.call}
+          </a>
         </Button>
       </div>
     </article>
@@ -60,14 +60,11 @@ function ServiceCard({ service }: { service: Service }) {
       </div>
       <p className="mt-4 text-ink-body">{service.blurb}</p>
       {price && <p className="mt-3 font-semibold text-ink">From {price}</p>}
-      <BookLink
-        service={service.slug}
-        className="mt-auto inline-flex w-fit items-center gap-2 pt-6 font-semibold text-brand-green-dark outline-none after:absolute after:inset-0 after:rounded-[2rem] after:content-['']"
-      >
+      <ContactLink className="mt-auto inline-flex w-fit items-center gap-2 pt-6 font-semibold text-brand-green-dark outline-none after:absolute after:inset-0 after:rounded-[2rem] after:content-['']">
         {content.services.linkLabel}
         <span className="sr-only">: {service.title}</span>
         <ArrowRight className="size-4 transition-transform duration-300 ease-out-quart group-hover:translate-x-1" aria-hidden="true" />
-      </BookLink>
+      </ContactLink>
     </article>
   );
 }

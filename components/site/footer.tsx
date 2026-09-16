@@ -10,7 +10,7 @@ export function SiteFooter() {
   const cities = siteConfig.serviceArea.cities;
 
   return (
-    <footer id="contact" className="on-dark relative isolate overflow-hidden bg-ink text-white/80">
+    <footer className="on-dark relative isolate overflow-hidden bg-ink text-white/80">
       <Diagonal
         className="bg-white/[0.05]"
         sm="polygon(55% 0, 100% 0, 100% 100%, 20% 100%)"
@@ -42,8 +42,8 @@ export function SiteFooter() {
                 </li>
               ))}
             <li>
-              <Link href="/book" className="transition-colors hover:text-brand-green">
-                Book a service
+              <Link href="/contact" className="transition-colors hover:text-brand-green">
+                Contact us
               </Link>
             </li>
           </ul>

@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 import Image from "next/image";
 import { Check, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { BookLink } from "@/components/site/book-link";
+import { ContactLink } from "@/components/site/contact-link";
 import { Diagonal } from "@/components/site/diagonal";
 import { Headline } from "@/components/site/headline";
 import { OvalPhoto } from "@/components/site/oval-photo";
@@ -52,13 +52,13 @@ export function Hero() {
 
           <div className="hero-fade mt-9 flex flex-col gap-3 sm:flex-row sm:flex-wrap" style={delay(520)}>
             <Button asChild variant="cta" size="cta">
-              <BookLink service={content.services.featuredSlug}>{content.cta.book}</BookLink>
-            </Button>
-            <Button asChild variant="cta-outline" size="cta" className="bg-paper/70">
               <a href={siteConfig.phone.href}>
                 <Phone aria-hidden="true" />
                 {content.cta.call}
               </a>
+            </Button>
+            <Button asChild variant="cta-outline" size="cta" className="bg-paper/70">
+              <ContactLink>{content.cta.contact}</ContactLink>
             </Button>
           </div>
 

@@ -7,7 +7,7 @@ import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from "@/com
 import { Button } from "@/components/ui/button";
 import { content } from "@/lib/content";
 import { siteConfig } from "@/lib/site-config";
-import { BookLink } from "./book-link";
+import { ContactLink } from "./contact-link";
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
@@ -49,17 +49,17 @@ export function MobileNav() {
         </nav>
 
         <div className="mt-auto flex flex-col gap-3">
-          <SheetClose asChild>
-            <Button asChild variant="cta" size="cta" className="w-full">
-              <BookLink>{content.cta.book}</BookLink>
-            </Button>
-          </SheetClose>
-          <Button asChild variant="cta-outline" size="cta" className="w-full">
+          <Button asChild variant="cta" size="cta" className="w-full">
             <a href={siteConfig.phone.href}>
               <Phone aria-hidden="true" />
               {siteConfig.phone.display}
             </a>
           </Button>
+          <SheetClose asChild>
+            <Button asChild variant="cta-outline" size="cta" className="w-full">
+              <ContactLink>{content.cta.contact}</ContactLink>
+            </Button>
+          </SheetClose>
         </div>
       </SheetContent>
     </Sheet>

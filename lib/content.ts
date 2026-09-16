@@ -13,9 +13,9 @@ export const content = {
   ],
 
   cta: {
-    book: "Book Now",
     call: `Call ${siteConfig.phone.display}`,
-    callShort: "Call",
+    callShort: "Call now",
+    contact: "Contact us",
   },
 
   hero: {
@@ -36,7 +36,7 @@ export const content = {
       "Pick what you need and we'll take care of it. Every job is done by the same three of us, start to finish.",
     featuredSlug: "fall-cleanup",
     featuredLabel: "In season now",
-    linkLabel: "Book this",
+    linkLabel: "Ask about this",
   },
 
   benefits: {
@@ -93,53 +93,23 @@ export const content = {
     ],
   },
 
-  booking: {
-    headline: ["Book your", "service"],
-    body: "Tell us what you need and when works for you. We'll call you back to confirm the details and give you a price.",
-    steps: [
-      { title: "Send the form", body: "Takes about a minute." },
-      { title: "We call you back", body: "To confirm the job, the day, and the price." },
-      { title: "We do the work", body: "And leave the yard cleaner than we found it." },
-    ],
-    callPrompt: "Rather just talk?",
-    callLine: "Call us",
-    form: {
-      name: { label: "Your name", placeholder: "First and last name" },
-      email: { label: "Email", placeholder: "you@example.com" },
-      phone: { label: "Phone", placeholder: "(440) 555-0123" },
-      address: { label: "Street address", placeholder: "Street, city" },
-      service: { label: "Service", placeholder: "Choose a service" },
-      date: { label: "Preferred date" },
-      notes: {
-        label: "Anything we should know?",
-        optional: "Optional",
-        placeholder: "Gate code, dog in the yard, corner lot, anything that helps",
-      },
-      submit: "Request my booking",
-      submitting: "Sending…",
-      fallback: "Or just call us at",
-    },
-    success: {
-      title: "Got it. Thanks!",
-      body: (name: string, phone: string, service: string) =>
-        `Thanks, ${name}. We'll call you at ${phone} to confirm your ${service.toLowerCase()} and set a time.`,
-      sooner: "Need us sooner? Call",
-      again: "Book another service",
-    },
-    errors: {
-      generic: `Something went wrong sending your request. Please try again, or just call us at ${siteConfig.phone.display}.`,
-      notConfigured: `Online booking isn't switched on yet. Please call us at ${siteConfig.phone.display} and we'll get you scheduled.`,
-    },
+  contact: {
+    headline: ["Let's talk", "about your yard"],
+    body: "Give us a call. We'll come take a look, tell you what it costs, and pick a day that works for you.",
+    callPrompt: "Call the crew",
+    handyHeading: "Handy to have when you call",
+    handy: ["Your address", "Which service you need", "A day or two that works for you"],
+    areaHeading: "Where we work",
   },
 
-  bookPage: {
-    headline: ["Book a", "service"],
-    body: "A minute on this form and one of us will call you back to lock in a day and a price.",
+  contactPage: {
+    headline: ["Contact", "us"],
+    body: "One call is all it takes. Tell us what your yard needs and we'll give you a price.",
   },
 
   mobileBar: {
     call: "Call now",
-    book: "Book",
+    contact: "Contact",
   },
 
   footer: {

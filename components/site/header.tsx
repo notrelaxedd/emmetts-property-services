@@ -3,7 +3,7 @@ import { Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { content } from "@/lib/content";
 import { siteConfig } from "@/lib/site-config";
-import { BookLink } from "./book-link";
+import { ContactLink } from "./contact-link";
 import { IconBadge } from "./icons";
 import { LogoLockup } from "./logo";
 import { MobileNav } from "./mobile-nav";
@@ -38,10 +38,10 @@ export function SiteHeader() {
             {siteConfig.phone.display}
           </a>
           <Button asChild variant="cta-green" size="cta-sm" className="hidden md:inline-flex">
-            <BookLink>{content.cta.book}</BookLink>
+            <ContactLink>{content.cta.contact}</ContactLink>
           </Button>
 
-          {/* Phones: one-tap call + menu. The sticky bottom bar also keeps call/book in thumb reach. */}
+          {/* Phones: one-tap call + menu. The sticky bottom bar keeps calling in thumb reach too. */}
           <a
             href={siteConfig.phone.href}
             aria-label={`Call ${siteConfig.phone.display}`}

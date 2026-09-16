@@ -1,5 +1,5 @@
 import { Benefits } from "@/components/sections/benefits";
-import { BookingSection } from "@/components/sections/booking";
+import { ContactSection } from "@/components/sections/contact";
 import { Hero } from "@/components/sections/hero";
 import { Seasons } from "@/components/sections/seasons";
 import { Services } from "@/components/sections/services";
@@ -13,7 +13,7 @@ export default function HomePage() {
       <Benefits />
       <WhyUs />
       <Seasons />
-      <BookingSection />
+      <ContactSection />
     </>
   );
 }
