@@ -128,12 +128,11 @@ async function onCheckoutExpired(db: Db, session: Stripe.Checkout.Session): Prom
   const quoteId = session.metadata?.quote_id;
   if (!quoteId) return;
   const quote = await getQuote(db, quoteId);
-  // Only the quote's *current* session counts (we expire superseded sessions ourselves).
+  // Only the quote's *current* session counts (we expire superseded sessions ourselves). A Checkout session
+  // expiring (24 h) does NOT expire the quote: the emailed /quote/pay/<id> link mints a new session until
+  // `quotes.expires_at`, which the host worker enforces. Just drop the stale URL.
   if (!quote || quote.status !== "sent" || quote.stripe_checkout_id !== session.id) return;
-  check(
-    await db.from("quotes").update({ status: "expired", expires_at: new Date().toISOString() }).eq("id", quoteId),
-    "stripe(expire quote)",
-  );
+  check(await db.from("quotes").update({ stripe_checkout_url: null }).eq("id", quoteId), "stripe(clear stale checkout url)");
 }
 
 async function onChargeRefunded(db: Db, charge: Stripe.Charge): Promise<void> {

@@ -15,6 +15,7 @@ import { quoteHandler } from "./quote";
 
 const ctx = { siteUrl: "https://example.test", actor: "owner" };
 const URL = "https://checkout.stripe.test/cs_1";
+const PAY_URL = "https://example.test/quote/pay/q1";
 const T0 = "2026-01-01T00:00:00.000Z";
 
 const world = () =>
@@ -44,7 +45,7 @@ beforeEach(() => {
 
 describe("quoteHandler", () => {
   it("creates the checkout link, emails the AI draft, and marks the quote sent", async () => {
-    m.draftMessage.mockResolvedValue({ subject: "Your quote", body: `Hi Jo, pay here: ${URL}` });
+    m.draftMessage.mockResolvedValue({ subject: "Your quote", body: `Hi Jo, pay here: ${PAY_URL}` });
     const db = world();
     await quoteHandler(db, approval(), ctx);
 
@@ -52,7 +53,7 @@ describe("quoteHandler", () => {
     expect(m.draftMessage.mock.calls[0][1]).toMatchObject({
       kind: "quote",
       customer: { name: "Jo Smith" },
-      extra: { checkout_url: URL, price_total: "$80.00", items: "Mowing: $50.00; Edging: $30.00" },
+      extra: { checkout_url: PAY_URL, price_total: "$80.00", items: "Mowing: $50.00; Edging: $30.00" },
     });
     expect(db.tables.messages).toHaveLength(1);
     expect(db.tables.messages[0]).toMatchObject({
@@ -70,7 +71,7 @@ describe("quoteHandler", () => {
     m.draftMessage.mockResolvedValue({ subject: "Quote", body: "Hi Jo, here is your quote." });
     const db = world();
     await quoteHandler(db, approval(), ctx);
-    expect(String(db.tables.messages[0].body)).toContain(URL);
+    expect(String(db.tables.messages[0].body)).toContain(PAY_URL);
   });
 
   it("falls back to a plain-text template when the AI fails or is capped", async () => {
@@ -79,7 +80,7 @@ describe("quoteHandler", () => {
     await quoteHandler(db, approval(), ctx);
     const msg = db.tables.messages[0];
     expect(msg.subject).toBe("Your quote from Emmett's Property Services");
-    for (const s of ["Hi Jo,", "- Mowing: $50.00", "- Edging: $30.00", "Total: $80.00", URL, "10 days"]) {
+    for (const s of ["Hi Jo,", "- Mowing: $50.00", "- Edging: $30.00", "Total: $80.00", PAY_URL, "10 days"]) {
       expect(String(msg.body)).toContain(s);
     }
     expect(String(msg.body)).not.toContain("Tree removal");

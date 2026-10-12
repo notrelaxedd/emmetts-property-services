@@ -70,9 +70,12 @@ export const quoteHandler: ApprovalHandler = async (db, approval, ctx) => {
   );
   const settings = await getSettings(db);
 
-  const checkout = await createCheckoutForQuote(db, quoteId, { siteUrl: ctx.siteUrl });
+  // Create the first Checkout session now (validates Stripe config and shows the link in /admin), but email
+  // the durable /quote/pay/<id> link: Stripe sessions last 24 h, quotes last `quote_valid_days`.
+  await createCheckoutForQuote(db, quoteId, { siteUrl: ctx.siteUrl });
+  const payUrl = `${ctx.siteUrl.replace(/\/$/, "")}/quote/pay/${quoteId}`;
 
-  const draft = await draftQuoteEmail(db, quote, customer.name, items, checkout.url, settings.quote_valid_days);
+  const draft = await draftQuoteEmail(db, quote, customer.name, items, payUrl, settings.quote_valid_days);
 
   // Reuse an unsent quote message (a retry after a partial failure) instead of piling up duplicates.
   const pending = check(

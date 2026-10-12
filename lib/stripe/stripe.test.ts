@@ -233,13 +233,13 @@ describe("handleStripeEvent", () => {
     expect(db.tables.stripe_events).toHaveLength(1);
     err.mockRestore();
   });
-  it("checkout.session.expired expires a still-sent quote, but only for its current session", async () => {
-    const db = world({ stripe_checkout_id: "cs_2" });
+  it("checkout.session.expired clears the stale link but keeps the quote sent (the pay link mints a new session)", async () => {
+    const db = world({ stripe_checkout_id: "cs_2", stripe_checkout_url: "https://checkout.stripe.test/cs_2" });
     await handleStripeEvent(db, evt("evt_old", "checkout.session.expired", paidSession({ id: "cs_1", payment_status: "unpaid" })), { siteUrl: SITE });
-    expect(db.tables.quotes[0].status).toBe("sent");
+    expect(db.tables.quotes[0].stripe_checkout_url).toBe("https://checkout.stripe.test/cs_2");
     await handleStripeEvent(db, evt("evt_cur", "checkout.session.expired", paidSession({ id: "cs_2", payment_status: "unpaid" })), { siteUrl: SITE });
-    expect(db.tables.quotes[0].status).toBe("expired");
-    expect(Date.parse(String(db.tables.quotes[0].expires_at))).toBeLessThanOrEqual(Date.now());
+    expect(db.tables.quotes[0].status).toBe("sent");
+    expect(db.tables.quotes[0].stripe_checkout_url).toBeNull();
   });
   it("expired does not touch an accepted quote", async () => {
     const db = world({ status: "accepted", stripe_checkout_id: "cs_1" });
