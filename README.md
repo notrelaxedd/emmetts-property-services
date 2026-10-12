@@ -3,16 +3,33 @@
 Marketing site for Emmett's Property Services (Emmett's Lawn Care), Rocky River, OH.
 Every section pushes toward one action: **call (440) 823-5545**.
 
-Next.js 14 (App Router) · TypeScript · Tailwind CSS · shadcn/ui · Vercel
+Next.js 14 (App Router) · TypeScript · Tailwind CSS · shadcn/ui · Vercel · Supabase · Stripe · Anthropic
 
-There's no booking form and no database. The site is entirely static: every call to action is either
-a `tel:` link or a jump to the contact details.
+The marketing site is still static and phone-first. On top of it sits an **operations system**
+(see `docs/PLAN.md`, `docs/AUDIT.md`, `docs/ENV.md`):
+
+| Where | What |
+| --- | --- |
+| `/quote` | Public quote form: services, "something else?" + photos, preferred days, consent. Creates a customer + lead and queues a quote task. |
+| `/admin` | Owner console. **Approval inbox** (every outbound action: ads, quotes, custom requests, bookings, follow-ups, crew changes, drops, weather holds, AI cap), Ads, Leads, Quotes (live pricing + Send via Stripe), Schedule (drag to move), Availability, Employees + cash payouts, Customers, Money, Autopilot rules, Fleet status. |
+| `/crew` | Mobile crew app (installable PWA): today's jobs, offers (accept / can't), swap / drop, start / complete with hours + photos, weekly hours with multiple blocks per day, time off & extra days, pay. |
+| `/api/stripe/webhook` | Stripe Checkout (test mode) → paid quote becomes an unscheduled job and the scheduler runs. |
+| `lib/pricing.ts`, `lib/scheduler/` | Pure, unit-tested pricing and greedy scheduling. |
+| `lib/ai/claude.ts` | The only place that calls the Anthropic API: ad drafts, customer messages, custom-request summaries, tree-cover estimates. Every call is logged to `ai_usage` and capped monthly. |
+| `supabase/migrations/` | Schema, RLS (crew never see prices or customer contact details), task queue (`claim_task` with `SKIP LOCKED`), seed. |
+| `fleet/` | One Node 20 worker binary for the Debian boxes (`ads`, `quotes`, `scheduler`, `followup`, `host`) + systemd units. Workers talk only to Supabase. |
+
+Everything AI-written or customer-facing lands in the approval inbox first; autopilot rules are all off by default.
 
 ## Run it locally
 
 ```bash
 npm install
-npm run dev   # http://localhost:3000
+cp .env.example .env.local   # Supabase + Anthropic (+ Stripe test keys); the public site works with none of them
+npm run dev                  # http://localhost:3000
+npm test                     # unit tests
+npm run test:db              # migrations + RLS against a local Postgres (supabase/README.md)
+npm run test:e2e             # Playwright smoke tests (set PLAYWRIGHT_CHROMIUM_PATH to reuse a system Chromium)
 ```
 
 ## Where to edit things
@@ -37,8 +54,10 @@ The hero headline is the current seasonal offer (`content.hero.headline`). Swap 
 
 ## Deploy (Vercel)
 
-The repo is connected to Vercel, so pushing to `main` deploys automatically. `NEXT_PUBLIC_SITE_URL`
-is the only environment variable, and it's optional.
+The repo is connected to Vercel, so pushing to `main` deploys automatically and every branch gets a preview.
+The public site needs no env vars; the ops system needs the ones in `docs/ENV.md` (Supabase, Anthropic, Stripe
+test keys). Apply `supabase/migrations/` to the Supabase project first (`supabase/README.md`), then promote your
+own user to `owner`.
 
 **If you change the logo**, also refresh `assets/og/logo-og.png` (a ~420px-wide copy) and, if you ever
 swap the headline font, `assets/og/Anton-Subset.ttf`. The share-image function inlines whatever it
