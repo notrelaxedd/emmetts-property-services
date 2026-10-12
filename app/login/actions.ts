@@ -1,0 +1,118 @@
+"use server"
+
+import { headers } from "next/headers"
+import { redirect } from "next/navigation"
+import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { homeForCurrentUser, safeNext } from "./redirects"
+
+/**
+ * Sign-in is owner-invite only (`shouldCreateUser: false`). To avoid revealing whether an account
+ * exists, a "no such user" failure looks exactly like success; only rate limits and missing config
+ * (which say nothing about any particular account) are surfaced.
+ */
+
+function field(formData: FormData, name: string): string {
+  const v = formData.get(name)
+  return typeof v === "string" ? v.trim() : ""
+}
+
+function siteOrigin(): string {
+  const h = headers()
+  const origin = h.get("origin")
+  if (origin) return origin
+  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, "")
+  const host = h.get("x-forwarded-host") ?? h.get("host")
+  if (host) return `${h.get("x-forwarded-proto") ?? "https"}://${host}`
+  return "http://localhost:3000"
+}
+
+function isRateLimit(error: { status?: number; code?: string; message?: string }): boolean {
+  return (
+    error.status === 429 ||
+    error.code === "over_email_send_rate_limit" ||
+    error.code === "over_sms_send_rate_limit" ||
+    error.code === "over_request_rate_limit" ||
+    /rate limit|security purposes/i.test(error.message ?? "")
+  )
+}
+
+function loginUrl(params: Record<string, string | null | undefined>): string {
+  const q = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) if (v) q.set(k, v)
+  const s = q.toString()
+  return s ? `/login?${s}` : "/login"
+}
+
+/** "(440) 555-0100" -> "+14405550100". Returns null if it doesn't look like a phone number. */
+function normalizePhone(raw: string): string | null {
+  const digits = raw.replace(/[^\d]/g, "")
+  if (raw.trim().startsWith("+")) return digits.length >= 8 && digits.length <= 15 ? `+${digits}` : null
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`
+  return null
+}
+
+export async function sendMagicLink(formData: FormData) {
+  const email = field(formData, "email").toLowerCase()
+  const next = safeNext(field(formData, "next"))
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) redirect(loginUrl({ error: "email", next }))
+
+  const supabase = createSupabaseServerClient()
+  if (!supabase) redirect(loginUrl({ error: "config", next }))
+
+  const callback = new URL("/api/auth/callback", siteOrigin())
+  if (next) callback.searchParams.set("next", next)
+
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: callback.toString(), shouldCreateUser: false },
+  })
+  if (error && isRateLimit(error)) redirect(loginUrl({ error: "rate", next }))
+
+  redirect(`/login/check-email?${new URLSearchParams({ email, ...(next ? { next } : {}) }).toString()}`)
+}
+
+export async function sendPhoneOtp(formData: FormData) {
+  const phone = normalizePhone(field(formData, "phone"))
+  const next = safeNext(field(formData, "next"))
+  if (!phone) redirect(loginUrl({ tab: "phone", error: "phone", next }))
+
+  const supabase = createSupabaseServerClient()
+  if (!supabase) redirect(loginUrl({ tab: "phone", error: "config", next }))
+
+  const { error } = await supabase.auth.signInWithOtp({ phone, options: { shouldCreateUser: false } })
+  if (error && isRateLimit(error)) redirect(loginUrl({ tab: "phone", error: "rate", next }))
+
+  redirect(loginUrl({ tab: "phone", step: "code", phone, next }))
+}
+
+export async function verifyPhoneOtp(formData: FormData) {
+  const phone = normalizePhone(field(formData, "phone"))
+  const token = field(formData, "token").replace(/\s/g, "")
+  const next = safeNext(field(formData, "next"))
+  if (!phone) redirect(loginUrl({ tab: "phone", error: "phone", next }))
+  if (!/^\d{4,8}$/.test(token)) redirect(loginUrl({ tab: "phone", step: "code", phone, error: "code", next }))
+
+  const supabase = createSupabaseServerClient()
+  if (!supabase) redirect(loginUrl({ tab: "phone", error: "config", next }))
+
+  const { error } = await supabase.auth.verifyOtp({ phone, token, type: "sms" })
+  if (error) {
+    redirect(
+      loginUrl({ tab: "phone", step: "code", phone, error: isRateLimit(error) ? "rate" : "code", next })
+    )
+  }
+
+  const home = await homeForCurrentUser(supabase)
+  if (!home) {
+    await supabase.auth.signOut()
+    redirect(loginUrl({ error: "no-access" }))
+  }
+  redirect(next ?? home)
+}
+
+export async function signOut() {
+  const supabase = createSupabaseServerClient()
+  if (supabase) await supabase.auth.signOut()
+  redirect("/login")
+}
