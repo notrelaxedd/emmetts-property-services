@@ -105,9 +105,16 @@ async function enqueueReminder(db: Db, job: Job): Promise<void> {
  * Payload: `{ job_id }` (ref_table "jobs" / ref_id = job id also works). Idempotent on re-run.
  */
 export const bookingHandler: ApprovalHandler = async (db, approval, ctx) => {
+  // The scheduler also raises informational "booking" cards ("Can't schedule X", "No cover for X").
+  // Approving those just acknowledges them; the owner fixes it on the Schedule page.
+  if (approval.payload.unschedulable === true || approval.payload.needs_cover === true) return;
+
   const jobId = jobIdOf(approval);
   let job = check(await db.from("jobs").select("*").eq("id", jobId).maybeSingle(), "bookingHandler(job)");
   if (!job) throw new Error(`bookingHandler: job ${jobId} not found`);
+  if (job.status !== "booked" && job.status !== "crew_confirmed") {
+    throw new Error(`This job is ${job.status.replace("_", " ")}, so it can't be booked until every crew member accepts.`);
+  }
 
   if (job.status !== "booked") {
     job = await transitionJob(db, jobId, "booked", { actor: ctx.actor });
