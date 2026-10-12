@@ -199,7 +199,11 @@ export async function sendMessage(
         subject,
         text,
         html,
-        headers: { "List-Unsubscribe": `<${unsub}>` },
+        headers: {
+          // RFC 8058 one-click: mail clients show a native unsubscribe button and POST to the one-click route.
+          "List-Unsubscribe": `<${unsub.replace("/unsubscribe?", "/unsubscribe/one-click?")}>, <${unsub}>`,
+          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        },
       });
       await finish({ status: "sent", sent_at: new Date().toISOString(), provider_id: id, error: null });
       return { status: "sent", providerId: id };
