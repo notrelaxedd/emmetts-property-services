@@ -160,6 +160,7 @@ export function registerApprovalHandler(kind: ApprovalKind, fn: ApprovalHandler)
 /** Test helper: forget every registered handler. */
 export function clearApprovalHandlers(): void {
   handlers.clear();
+  rejectHandlers.clear();
 }
 
 /**
@@ -174,6 +175,22 @@ export async function applyApproval(db: Db, approval: Approval, ctx: ApprovalCon
     console.warn(`applyApproval: no handler registered for approval kind "${approval.kind}" (id ${approval.id})`);
     return false;
   }
+  await fn(db, approval, ctx);
+  return true;
+}
+
+const rejectHandlers = new Map<ApprovalKind, ApprovalHandler>();
+
+/** Registers the side effect that runs when an approval of this kind is rejected (e.g. undo a hold). */
+export function registerRejectHandler(kind: ApprovalKind, fn: ApprovalHandler): void {
+  rejectHandlers.set(kind, fn);
+}
+
+/** Runs the reject handler for `approval.kind` when the approval is `rejected`. No-op otherwise. */
+export async function applyRejection(db: Db, approval: Approval, ctx: ApprovalContext): Promise<boolean> {
+  if (approval.status !== "rejected") return false;
+  const fn = rejectHandlers.get(approval.kind);
+  if (!fn) return false;
   await fn(db, approval, ctx);
   return true;
 }

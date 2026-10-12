@@ -2,7 +2,8 @@
  * Registers one side-effect handler per approval kind. Import this module (for its side effects)
  * anywhere `applyApproval` is called: server actions in /admin, the fleet workers, and tests.
  */
-import { registerApprovalHandler } from "../approvals";
+import { registerApprovalHandler, registerRejectHandler } from "../approvals";
+import { rejectAd, rejectBooking, rejectCrewChange, rejectDrop, rejectFollowup, rejectQuote } from "./reject";
 import { adHandler } from "./ad";
 import { quoteHandler } from "./quote";
 import { custom_itemHandler } from "./custom_item";
@@ -23,6 +24,13 @@ export function registerAllApprovalHandlers() {
   registerApprovalHandler("drop", dropHandler);
   registerApprovalHandler("weather_hold", weather_holdHandler);
   registerApprovalHandler("ai_cap", ai_capHandler);
+
+  registerRejectHandler("drop", rejectDrop);
+  registerRejectHandler("crew_change", rejectCrewChange);
+  registerRejectHandler("quote", rejectQuote);
+  registerRejectHandler("booking", rejectBooking);
+  registerRejectHandler("followup", rejectFollowup);
+  registerRejectHandler("ad", rejectAd);
 }
 
 registerAllApprovalHandlers();
