@@ -10,7 +10,11 @@ import type { FleetTaskType } from "../../lib/db/types";
 const id = z.guid();
 
 export const quotePayload = z.looseObject({ lead_id: id });
-export const customSummaryPayload = z.looseObject({ lead_id: id });
+export const customSummaryPayload = z.looseObject({
+  lead_id: id,
+  /** How many times this summary has been deferred waiting for the quote (see custom_summary.ts). */
+  defer: z.number().int().min(0).max(1000).optional(),
+});
 export const schedulePayload = z.looseObject({
   reason: z.string().trim().min(1).max(200).default("sweep"),
   job_ids: z.array(id).max(200).optional(),

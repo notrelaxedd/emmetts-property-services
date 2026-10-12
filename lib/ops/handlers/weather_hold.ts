@@ -1,10 +1,10 @@
 import type { ApprovalHandler } from "../approvals";
-import { enqueueSchedule } from "../tasks";
-import { check } from "../types";
+import { holdForWeather } from "../jobs";
 
 /**
  * Side effect for an approved "weather_hold" approval (the followup worker's rain/snow watch):
- * put the listed jobs on hold and ask the scheduler to re-solve them.
+ * put the listed jobs on hold and mark them for re-planning (`resolve_reason = 'weather_hold'`);
+ * the scheduler takes each off its day, keeps that day closed for it, and proposes a new slot.
  * Payload: `{ job_ids: string[] }` (ref_table "jobs" / ref_id is used when job_ids is missing).
  */
 export const weather_holdHandler: ApprovalHandler = async (db, approval, _ctx) => {
@@ -16,6 +16,5 @@ export const weather_holdHandler: ApprovalHandler = async (db, approval, _ctx) =
     console.warn(`[approvals] weather_hold approval ${approval.id} has no job_ids; nothing to hold`);
     return;
   }
-  check(await db.from("jobs").update({ weather_hold: true }).in("id", jobIds), "weather_holdHandler(hold)");
-  await enqueueSchedule(db, "weather_hold", jobIds);
+  await holdForWeather(db, jobIds);
 };

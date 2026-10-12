@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCapacity, canTake, covers, crewAvailableForDay, intersect, merge, ownerOpenForDay, subtract } from "./capacity";
+import { ACTIVE_ASSIGNMENT_STATUSES, buildCapacity, canTake, covers, crewAvailableForDay, intersect, merge, ownerOpenForDay, subtract } from "./capacity";
 import { NOW, OWNER_MON_FRI, assignment, at, block, crew, crewException, input, ownerException, weekdays } from "./fixtures";
 import { zonedToUtc } from "./time";
 
@@ -136,6 +136,26 @@ describe("buildCapacity", () => {
     expect(canTake(cap.crew.k, t(D, "08:00"), t(D, "10:00"), 120)).toEqual({ ok: false, why: "hours" });
     // Next week is a fresh 10 hours.
     expect(canTake(cap.crew.k, t("2026-10-19", "08:00"), t("2026-10-19", "10:00"), 120)).toEqual({ ok: true });
+  });
+
+  it("a swap offer does not hold the candidate's time; the holder's accepted row and a drop request still do", () => {
+    const cap = buildCapacity(
+      input({
+        crew: [crew("k", "Kevin"), crew("h", "Holly")],
+        crewAvailability: [...weekdays("k"), ...weekdays("h")],
+        existingAssignments: [
+          // Kevin is only being asked to take job x over from Holly.
+          assignment("k", "x", at(D, "09:00"), at(D, "11:00"), { status: "swap_offered", swap_to_crew_id: "h" }),
+          assignment("h", "x", at(D, "09:00"), at(D, "11:00")),
+          assignment("h", "y", at(D, "13:00"), at(D, "14:00"), { status: "drop_requested" }),
+        ],
+      }),
+    );
+    expect(cap.crew.k.busy).toEqual([]);
+    expect(cap.crew.k.week_minutes).toEqual({});
+    expect(canTake(cap.crew.k, t(D, "09:00"), t(D, "11:00"), 120)).toEqual({ ok: true });
+    expect(cap.crew.h.busy).toEqual([iv(D, "09:00", "11:00"), iv(D, "13:00", "14:00")]);
+    expect(ACTIVE_ASSIGNMENT_STATUSES.has("swap_offered")).toBe(false);
   });
 
   it("ignores assignments on jobs being re-solved", () => {

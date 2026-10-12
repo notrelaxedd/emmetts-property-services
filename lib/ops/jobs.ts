@@ -1,4 +1,7 @@
-import type { Job, JobStatus } from "../db/types";
+import type { AssignmentStatus, CrewException, Job, JobAssignment, JobStatus } from "../db/types";
+import { HOLDING_ASSIGNMENT_STATUSES } from "../scheduler/capacity";
+import { addDays, formatDayLabel, formatTimeRange, zonedToUtc } from "../scheduler/time";
+import { applyApproval, decideApproval, requestApproval } from "./approvals";
 import { enqueueSchedule } from "./tasks";
 import { check, one } from "./types";
 import type { Db } from "./types";
@@ -35,37 +38,57 @@ export async function createJobFromQuote(db: Db, quoteId: string): Promise<Job> 
   const crew_size = Math.max(1, ...billed.map((i) => i.crew_size));
   const now = new Date().toISOString();
 
-  const job = one(
-    await db
-      .from("jobs")
-      .insert({
-        quote_id: quoteId,
-        customer_id: quote.customer_id,
-        status: "unscheduled",
-        start_at: null,
-        end_at: null,
-        est_minutes,
-        crew_size,
-        paid: true,
-        paid_at: now,
-        weather_hold: false,
-        deadline: null,
-        completion_photo_paths: [],
-      })
-      .select("*")
-      .single(),
-    "createJobFromQuote(insert)",
-  );
+  const inserted = await db
+    .from("jobs")
+    .insert({
+      quote_id: quoteId,
+      customer_id: quote.customer_id,
+      status: "unscheduled",
+      start_at: null,
+      end_at: null,
+      est_minutes,
+      crew_size,
+      paid: true,
+      paid_at: now,
+      weather_hold: false,
+      deadline: null,
+      completion_photo_paths: [],
+    })
+    .select("*")
+    .single();
+  if (inserted.error && (inserted.error as { code?: string }).code === "23505") {
+    // Lost a race with a concurrent call (unique index jobs_quote_id_key): use the winner's job.
+    const winner = one(
+      await db.from("jobs").select("*").eq("quote_id", quoteId).limit(1).maybeSingle(),
+      "createJobFromQuote(after conflict)",
+    );
+    return winner;
+  }
+  const job = one(inserted, "createJobFromQuote(insert)");
   await enqueueSchedule(db, "job_paid", [job.id]);
   return job;
 }
 
-/** Allowed job status moves. `done` and `cancelled` are terminal. */
+
+/**
+ * Allowed job status moves. `done` and `cancelled` are terminal. Every edge has a caller:
+ *  - unscheduled → proposed ........ scheduler places the job
+ *  - proposed → crew_confirmed ..... every crew member accepted (`maybeConfirmJob`)
+ *  - proposed / crew_confirmed → unscheduled ... owner rejects the proposed slot (`rejectBooking`),
+ *                                    or a weather hold resets it for re-planning (scheduler)
+ *  - crew_confirmed → booked ....... owner approves the booking (`bookingHandler`)
+ *  - crew_confirmed → proposed ..... a crew member left (drop / time off) or the owner moved it:
+ *                                    the new crew has to accept before it is re-confirmed
+ *  - booked → proposed ............. owner moved it on the schedule (crew are re-asked)
+ *  - booked → unscheduled .......... weather hold reset (scheduler)
+ *  - booked → in_progress → done ... crew start / complete
+ *  - any live state → cancelled .... owner cancels
+ */
 export const JOB_TRANSITIONS: Record<JobStatus, readonly JobStatus[]> = {
   unscheduled: ["proposed", "cancelled"],
-  proposed: ["crew_confirmed", "unscheduled", "cancelled"], // proposed -> unscheduled = re-solve
-  crew_confirmed: ["booked", "unscheduled", "cancelled"], // crew_confirmed -> unscheduled = re-solve
-  booked: ["in_progress", "cancelled"],
+  proposed: ["crew_confirmed", "unscheduled", "cancelled"],
+  crew_confirmed: ["booked", "proposed", "unscheduled", "cancelled"],
+  booked: ["in_progress", "proposed", "unscheduled", "cancelled"],
   in_progress: ["done", "cancelled"],
   done: [],
   cancelled: [],
@@ -75,10 +98,25 @@ export function canTransition(from: JobStatus, to: JobStatus): boolean {
   return JOB_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
-/** Moves a job to `to`, throwing on an illegal move or a concurrent change. Returns the updated row. */
-export async function transitionJob(db: Db, jobId: string, to: JobStatus, opts: { actor: string }): Promise<Job> {
+export type TransitionOptions = {
+  actor: string;
+  /** Only move when the job is currently in one of these statuses (else `tryTransitionJob` returns null). */
+  from?: JobStatus | readonly JobStatus[];
+  /** Extra columns written in the same guarded update (e.g. the new slot). Applied after the defaults. */
+  patch?: Partial<Job>;
+};
+
+/**
+ * Moves a job to `to` with a guarded update (`where status = <current>`). Throws on a missing job or
+ * an illegal move; returns null when the job is not in `opts.from` or changed concurrently.
+ */
+export async function tryTransitionJob(db: Db, jobId: string, to: JobStatus, opts: TransitionOptions): Promise<Job | null> {
   const job = check(await db.from("jobs").select("*").eq("id", jobId).maybeSingle(), "transitionJob(lookup)");
   if (!job) throw new Error(`transitionJob: job ${jobId} not found`);
+  if (opts.from !== undefined) {
+    const from: readonly JobStatus[] = typeof opts.from === "string" ? [opts.from] : opts.from;
+    if (!from.includes(job.status)) return null;
+  }
   if (!canTransition(job.status, to)) {
     throw new Error(`transitionJob: illegal move ${job.status} -> ${to} for job ${jobId} (by ${opts.actor})`);
   }
@@ -91,8 +129,299 @@ export async function transitionJob(db: Db, jobId: string, to: JobStatus, opts: 
     patch.end_at = null;
     patch.schedule_reason = null;
   }
-  return one(
-    await db.from("jobs").update(patch).eq("id", jobId).eq("status", job.status).select("*").single(),
+  Object.assign(patch, opts.patch ?? {}, { status: to });
+  const rows = check(
+    await db.from("jobs").update(patch).eq("id", jobId).eq("status", job.status).select("*"),
     "transitionJob(update)",
   );
+  return rows?.[0] ?? null;
+}
+
+/** Moves a job to `to`, throwing on an illegal move or a concurrent change. Returns the updated row. */
+export async function transitionJob(db: Db, jobId: string, to: JobStatus, opts: TransitionOptions): Promise<Job> {
+  const out = await tryTransitionJob(db, jobId, to, opts);
+  if (!out) throw new Error(`transitionJob: job ${jobId} changed while moving it to ${to} (by ${opts.actor}); try again`);
+  return out;
+}
+
+// ---------- Re-solve marks (durable; read by fleet/tasks/schedule.ts) ----------
+
+/**
+ * Why the scheduler should re-look at a job on its next run (`jobs.resolve_reason`):
+ *  - `drop` / `declined` / `crew_change`: a crew member left; keep the slot and find cover;
+ *  - `weather_hold`: the job is held (`weather_hold = true`): take it off its day and re-plan it.
+ */
+export type ResolveReason = "drop" | "declined" | "crew_change" | "weather_hold";
+
+/** Statuses a job can be re-solved from. */
+const OPEN_JOB_STATUSES: JobStatus[] = ["unscheduled", "proposed", "crew_confirmed", "booked"];
+
+const unique = (ids: string[]) => Array.from(new Set(ids.filter(Boolean)));
+
+/** Durable mark: the scheduler picks the job up on its next run (sweep or event) and clears it. */
+export async function markForResolve(db: Db, jobIds: string[], reason: ResolveReason): Promise<void> {
+  const ids = unique(jobIds);
+  if (!ids.length) return;
+  check(
+    await db.from("jobs").update({ resolve_reason: reason }).in("id", ids).in("status", OPEN_JOB_STATUSES),
+    "markForResolve",
+  );
+}
+
+/** `markForResolve` + ask the scheduler to run now (the mark survives a de-duped or failed enqueue). */
+export async function requestResolve(db: Db, jobIds: string[], reason: ResolveReason, taskReason: string = reason): Promise<void> {
+  await markForResolve(db, jobIds, reason);
+  await enqueueSchedule(db, taskReason, unique(jobIds));
+}
+
+// ---------- Owner decisions the scheduler must respect ----------
+
+/** Informational booking cards from the scheduler ("Can't schedule X", "No cover for X"). */
+export function isInfoBookingPayload(payload: Record<string, unknown> | null | undefined): boolean {
+  return payload?.unschedulable === true || payload?.needs_cover === true;
+}
+
+/**
+ * `owner_hold = true`: the scheduler leaves the job alone (no proposal, reset or cover) until the
+ * owner releases it. Releasing asks the scheduler to look at it again.
+ */
+export async function setOwnerHold(db: Db, jobId: string, hold: boolean): Promise<void> {
+  check(await db.from("jobs").update({ owner_hold: hold }).eq("id", jobId), "setOwnerHold");
+  if (!hold) await enqueueSchedule(db, "owner_released", [jobId]);
+}
+
+/**
+ * Withdraws pending "Book" cards for a job (its crew no longer stands). The scheduler's informational
+ * cards are left alone. A card decided concurrently is skipped.
+ */
+export async function withdrawBookingRequests(db: Db, jobId: string, actor: string, note: string): Promise<number> {
+  const pending =
+    check(
+      await db.from("approvals").select("*").eq("kind", "booking").eq("ref_table", "jobs").eq("ref_id", jobId).eq("status", "pending"),
+      "withdrawBookingRequests",
+    ) ?? [];
+  let n = 0;
+  for (const a of pending) {
+    if (isInfoBookingPayload(a.payload)) continue;
+    try {
+      await decideApproval(db, a.id, "rejected", { decidedBy: actor, note });
+      n++;
+    } catch (e) {
+      console.warn(`[jobs] could not withdraw booking approval ${a.id}:`, e instanceof Error ? e.message : e);
+    }
+  }
+  return n;
+}
+
+// ---------- Weather holds ----------
+
+/** Put jobs on weather hold and ask the scheduler to take them off their day and re-plan them. */
+export async function holdForWeather(db: Db, jobIds: string[]): Promise<string[]> {
+  const ids = unique(jobIds);
+  if (!ids.length) return [];
+  const held =
+    check(
+      await db.from("jobs").update({ weather_hold: true }).in("id", ids).in("status", OPEN_JOB_STATUSES).select("id"),
+      "holdForWeather",
+    ) ?? [];
+  const heldIds = held.map((r) => r.id);
+  await requestResolve(db, heldIds, "weather_hold");
+  return heldIds;
+}
+
+/** Clear a weather hold (and its closed day / pending re-plan). */
+export async function clearWeatherHold(db: Db, jobId: string): Promise<void> {
+  check(await db.from("jobs").update({ weather_hold: false, weather_hold_date: null }).eq("id", jobId), "clearWeatherHold");
+  check(
+    await db.from("jobs").update({ resolve_reason: null }).eq("id", jobId).eq("resolve_reason", "weather_hold"),
+    "clearWeatherHold(mark)",
+  );
+  await enqueueSchedule(db, "weather_hold_cleared");
+}
+
+// ---------- Crew leaving a job (drop, approved time off) ----------
+
+/**
+ * A crew member leaves a job that keeps its slot and its other crew: their holding rows become
+ * `dropped` and any swap they had out for it is withdrawn. A `crew_confirmed` job goes back to
+ * `proposed` (its pending "Book" card is withdrawn), so the replacement's acceptance re-confirms it
+ * and the owner books it again. A `booked` job stays `booked`: the customer was already confirmed,
+ * cover just fills the gap (no new booking approval). Returns true when a row was dropped.
+ */
+export async function releaseCrewFromJob(
+  db: Db,
+  jobId: string,
+  crewId: string,
+  opts: { actor: string; from?: readonly AssignmentStatus[]; now?: Date },
+): Promise<boolean> {
+  const at = (opts.now ?? new Date()).toISOString();
+  const dropped =
+    check(
+      await db
+        .from("job_assignments")
+        .update({ status: "dropped", responded_at: at })
+        .eq("job_id", jobId)
+        .eq("crew_id", crewId)
+        .in("status", opts.from ?? HOLDING_ASSIGNMENT_STATUSES)
+        .select("id"),
+      "releaseCrewFromJob(drop)",
+    ) ?? [];
+  // Swap offers they had out for this job (rows owned by the candidates).
+  check(
+    await db.from("job_assignments").delete().eq("job_id", jobId).eq("swap_to_crew_id", crewId).eq("status", "swap_offered"),
+    "releaseCrewFromJob(swaps)",
+  );
+  if (!dropped.length) return false;
+
+  const reconfirmed = await tryTransitionJob(db, jobId, "proposed", { actor: opts.actor, from: "crew_confirmed" });
+  if (reconfirmed) {
+    await withdrawBookingRequests(db, jobId, opts.actor, "Withdrawn: a crew member left the job, so it needs re-confirming.");
+  }
+  return true;
+}
+
+/**
+ * Crew drop (outside the notice window, or an approved drop request): keep the slot and the other
+ * crew, mark the job `resolve_reason = 'drop'` and let the scheduler's cover pass find a replacement.
+ */
+export async function dropAssignmentKeepSlot(
+  db: Db,
+  assignment: Pick<JobAssignment, "job_id" | "crew_id">,
+  opts: { actor: string; from?: readonly AssignmentStatus[]; taskReason?: string },
+): Promise<boolean> {
+  const changed = await releaseCrewFromJob(db, assignment.job_id, assignment.crew_id, opts);
+  await requestResolve(db, [assignment.job_id], "drop", opts.taskReason ?? "drop");
+  return changed;
+}
+
+type DateRange = Pick<CrewException, "date_from" | "date_to" | "start_time" | "end_time">;
+
+/** A time-off range as [start, end) epoch-ms intervals, one per local day (whole days without times). */
+export function exceptionIntervals(e: DateRange): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = [];
+  for (let d = e.date_from; d <= e.date_to; d = addDays(d, 1)) {
+    const start = zonedToUtc(d, e.start_time ?? "00:00").getTime();
+    const end = e.end_time ? zonedToUtc(d, e.end_time).getTime() : zonedToUtc(addDays(d, 1), "00:00").getTime();
+    out.push({ start, end });
+  }
+  return out;
+}
+
+/**
+ * Approved time off: the crew member comes off every proposed / confirmed / booked job that overlaps
+ * it (holding rows → `dropped`, swap offers to or from them withdrawn), and those jobs are marked
+ * `crew_change` so the scheduler's cover pass finds replacements for the same slot. Returns the ids.
+ */
+export async function dropCrewFromOverlappingJobs(
+  db: Db,
+  crewId: string,
+  dateFrom: string,
+  dateTo: string,
+  startTime?: string | null,
+  endTime?: string | null,
+  opts: { actor: string } = { actor: "time-off" },
+): Promise<string[]> {
+  const intervals = exceptionIntervals({ date_from: dateFrom, date_to: dateTo, start_time: startTime ?? null, end_time: endTime ?? null });
+  const rows =
+    check(
+      await db.from("job_assignments").select("*").eq("crew_id", crewId).in("status", [...HOLDING_ASSIGNMENT_STATUSES, "swap_offered"]),
+      "dropCrewFromOverlappingJobs(assignments)",
+    ) ?? [];
+  if (!rows.length) return [];
+  const jobs =
+    check(
+      await db
+        .from("jobs")
+        .select("*")
+        .in("id", unique(rows.map((r) => r.job_id)))
+        .in("status", ["proposed", "crew_confirmed", "booked"]),
+      "dropCrewFromOverlappingJobs(jobs)",
+    ) ?? [];
+  const hit = jobs.filter((j) => {
+    if (!j.start_at || !j.end_at) return false;
+    const s = Date.parse(j.start_at);
+    const e = Date.parse(j.end_at);
+    return intervals.some((iv) => s < iv.end && e > iv.start);
+  });
+
+  const released: string[] = [];
+  for (const j of hit) {
+    // As a swap candidate they simply can't take it any more.
+    check(
+      await db.from("job_assignments").delete().eq("job_id", j.id).eq("crew_id", crewId).eq("status", "swap_offered"),
+      "dropCrewFromOverlappingJobs(candidate swap)",
+    );
+    if (await releaseCrewFromJob(db, j.id, crewId, opts)) released.push(j.id);
+  }
+  await markForResolve(db, released, "crew_change");
+  return released;
+}
+
+/**
+ * Side effect of an approved crew exception. Time off frees the crew member from overlapping jobs
+ * (see `dropCrewFromOverlappingJobs`); either kind asks the scheduler to re-solve.
+ */
+export async function applyApprovedCrewException(
+  db: Db,
+  exception: DateRange & Pick<CrewException, "crew_id" | "kind">,
+  opts: { actor: string },
+): Promise<string[]> {
+  if (exception.kind !== "off") {
+    await enqueueSchedule(db, "crew_extra_availability");
+    return [];
+  }
+  const ids = await dropCrewFromOverlappingJobs(
+    db, exception.crew_id, exception.date_from, exception.date_to, exception.start_time, exception.end_time, opts,
+  );
+  await enqueueSchedule(db, "crew_change", ids);
+  return ids;
+}
+
+// ---------- Crew confirmation ----------
+
+/** Assignment statuses that count as "on the job" when confirming (a swap row is only a candidate). */
+const LIVE_FOR_CONFIRM: readonly AssignmentStatus[] = HOLDING_ASSIGNMENT_STATUSES;
+
+function slotText(job: Pick<Job, "start_at" | "end_at">): string {
+  if (!job.start_at) return "unscheduled";
+  const start = new Date(job.start_at);
+  if (!job.end_at) return formatDayLabel(start);
+  return `${formatDayLabel(start)} ${formatTimeRange(start, new Date(job.end_at))}`;
+}
+
+/**
+ * If every live assignment on a `proposed` job is accepted (and there are at least `crew_size`), move
+ * it to `crew_confirmed` and raise the `booking` approval `{ job_id }` (auto-approved + applied when
+ * booking autopilot is on; import `lib/ops/handlers` before calling). `swap_offered` rows are
+ * candidates, not crew, so they neither count nor block. Returns true when this call confirmed it.
+ */
+export async function maybeConfirmJob(
+  db: Db,
+  jobId: string,
+  opts: { siteUrl: string; actor: string },
+): Promise<boolean> {
+  const job = check(await db.from("jobs").select("*").eq("id", jobId).maybeSingle(), "maybeConfirmJob(job)");
+  if (!job || job.status !== "proposed") return false;
+
+  const rows = check(await db.from("job_assignments").select("*").eq("job_id", jobId), "maybeConfirmJob(assignments)") ?? [];
+  const live = rows.filter((a) => LIVE_FOR_CONFIRM.includes(a.status));
+  const accepted = live.filter((a) => a.status === "accepted").length;
+  if (live.length === 0 || accepted !== live.length || accepted < job.crew_size) return false;
+
+  // Someone else confirming at the same moment wins the guarded update and raises the approval.
+  const confirmed = await tryTransitionJob(db, jobId, "crew_confirmed", { actor: opts.actor, from: "proposed" });
+  if (!confirmed) return false;
+
+  const customer = check(await db.from("customers").select("*").eq("id", job.customer_id).maybeSingle(), "maybeConfirmJob(customer)");
+  const { approval, autoApproved } = await requestApproval(db, {
+    kind: "booking",
+    ref_table: "jobs",
+    ref_id: jobId,
+    payload: { job_id: jobId },
+    title: `Book ${customer?.name ?? "job"} — ${slotText(job)}`,
+    summary: job.schedule_reason,
+    created_by: opts.actor,
+  });
+  if (autoApproved) await applyApproval(db, approval, { siteUrl: opts.siteUrl, actor: "autopilot" });
+  return true;
 }

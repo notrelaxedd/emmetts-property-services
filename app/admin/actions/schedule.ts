@@ -5,15 +5,17 @@ import { z } from "zod"
 import { checkMove } from "@/app/admin/schedule/conflicts"
 import { requireOwner } from "@/lib/auth/session"
 import type { AssignmentStatus, JobStatus } from "@/lib/db/types"
-import { check, decideApproval, enqueueSchedule, transitionJob } from "@/lib/ops"
+import { check, clearWeatherHold, decideApproval, enqueueSchedule, holdForWeather, setOwnerHold, transitionJob, tryTransitionJob } from "@/lib/ops"
 import type { Db } from "@/lib/ops"
+import { HOLDING_ASSIGNMENT_STATUSES } from "@/lib/scheduler/capacity"
 import { localDate } from "@/lib/scheduler/time"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; reason: string }
 
 const idSchema = z.string().regex(/^[0-9a-f-]{36}$/i, "Bad id")
-const ACTIVE: AssignmentStatus[] = ["offered", "accepted", "swap_offered", "drop_requested"]
+/** Rows that hold a crew member on a job (a `swap_offered` row is only a candidate). */
+const ACTIVE: readonly AssignmentStatus[] = HOLDING_ASSIGNMENT_STATUSES
 const LOCKED: JobStatus[] = ["in_progress", "done", "cancelled"]
 
 function fail(e: unknown): ActionResult {
@@ -119,16 +121,18 @@ export async function moveJob(jobId: string, newStartISO: string): Promise<Actio
 
     const reconfirm = job.status === "booked" || job.status === "crew_confirmed"
     const accepted = assignments.filter((a) => a.status === "accepted")
-    const patch: { start_at: string; end_at: string; status?: JobStatus } = {
-      start_at: start.toISOString(),
-      end_at: end.toISOString(),
+    const slot = { start_at: start.toISOString(), end_at: end.toISOString() }
+    const actor = session.profile.name || "owner"
+    let updated: boolean
+    if (reconfirm) {
+      // booked / crew_confirmed → proposed: the crew have to accept the new time.
+      updated = !!(await tryTransitionJob(db, jobId, "proposed", { actor, from: job.status, patch: slot }))
+    } else {
+      // Same status (proposed): only the slot changes.
+      const rows = check(await db.from("jobs").update(slot).eq("id", jobId).eq("status", job.status).select("id"), "move job")
+      updated = !!rows?.length
     }
-    if (reconfirm) patch.status = "proposed"
-    const updated = check(
-      await db.from("jobs").update(patch).eq("id", jobId).eq("status", job.status).select("id"),
-      "move job",
-    )
-    if (!updated?.length) return { ok: false, reason: "The job changed while you were moving it. Refresh and try again." }
+    if (!updated) return { ok: false, reason: "The job changed while you were moving it. Refresh and try again." }
 
     if (accepted.length) {
       check(
@@ -139,7 +143,8 @@ export async function moveJob(jobId: string, newStartISO: string): Promise<Actio
         "re-offer crew",
       )
     }
-    const actor = session.profile.name || "owner"
+    // Swap offers were for the old time; the holder is being re-asked anyway.
+    check(await db.from("job_assignments").delete().eq("job_id", jobId).eq("status", "swap_offered"), "withdraw swaps")
     if (reconfirm) await retireBookingApprovals(db, jobId, actor, "Job moved on the schedule; crew re-asked.")
     await clearQueuedReminder(db, jobId)
 
@@ -153,17 +158,41 @@ export async function moveJob(jobId: string, newStartISO: string): Promise<Actio
   }
 }
 
-/** Toggle a weather hold. Setting it asks the scheduler to re-solve that job. */
+/**
+ * Toggle a weather hold. Setting it marks the job for re-planning (the scheduler takes it off its
+ * day and keeps that day closed for it); clearing it reopens the day.
+ */
 export async function setWeatherHold(jobId: string, hold: boolean): Promise<ActionResult> {
   await requireOwner()
   const parsed = z.object({ jobId: idSchema, hold: z.boolean() }).safeParse({ jobId, hold })
   if (!parsed.success) return { ok: false, reason: "Invalid request." }
   try {
     const db = requireSupabaseAdmin()
-    check(await db.from("jobs").update({ weather_hold: hold }).eq("id", jobId), "weather hold")
-    await enqueueSchedule(db, hold ? "weather_hold" : "weather_hold_cleared", [jobId])
+    if (hold) {
+      const held = await holdForWeather(db, [jobId])
+      if (!held.length) return { ok: false, reason: "Only a job that hasn't started can be put on hold." }
+    } else {
+      await clearWeatherHold(db, jobId)
+    }
     revalidate()
     return { ok: true, message: hold ? "Weather hold set. The scheduler will re-plan it." : "Weather hold cleared." }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+/**
+ * Release an owner hold (set when you rejected a proposed slot or marked a scheduler card handled):
+ * the scheduler may place / cover the job again.
+ */
+export async function releaseJob(jobId: string): Promise<ActionResult> {
+  await requireOwner()
+  if (!idSchema.safeParse(jobId).success) return { ok: false, reason: "Invalid job." }
+  try {
+    const db = requireSupabaseAdmin()
+    await setOwnerHold(db, jobId, false)
+    revalidate()
+    return { ok: true, message: "Released. The scheduler will look at it again." }
   } catch (e) {
     return fail(e)
   }

@@ -138,6 +138,43 @@ export async function createCheckoutForQuote(
 }
 
 /**
+ * Kills the quote's current Checkout link before the quote is revised, so the customer can't pay the
+ * old amount. Expires the stored session if it is still open and clears `stripe_checkout_url`.
+ * THROWS (and leaves the quote alone) if that session has already been paid: the payment is on its
+ * way through the webhook, so the owner must refund instead of revising.
+ */
+export async function expireOpenCheckout(db: Db, quoteId: string): Promise<{ expired: boolean }> {
+  const quote = check(
+    await db.from("quotes").select("id,stripe_checkout_id").eq("id", quoteId).maybeSingle(),
+    "expireOpenCheckout(quote)",
+  );
+  if (!quote) throw new Error(`expireOpenCheckout: quote ${quoteId} not found`);
+  let expired = false;
+  if (quote.stripe_checkout_id) {
+    const stripe = getStripe();
+    const session = await stripe.checkout.sessions.retrieve(quote.stripe_checkout_id);
+    if (session.status === "complete") {
+      throw new Error("The customer has already paid this quote's checkout link; refund it instead of revising.");
+    }
+    if (session.status === "open") {
+      try {
+        await stripe.checkout.sessions.expire(session.id);
+        expired = true;
+      } catch (e) {
+        // Lost a race with the customer paying (or Stripe expired it first): look again.
+        const again = await stripe.checkout.sessions.retrieve(session.id);
+        if (again.status === "complete") {
+          throw new Error("The customer paid this quote while it was being revised; refund it instead.");
+        }
+        if (again.status !== "expired") throw e;
+      }
+    }
+  }
+  check(await db.from("quotes").update({ stripe_checkout_url: null }).eq("id", quoteId), "expireOpenCheckout(clear url)");
+  return { expired };
+}
+
+/**
  * Owner-initiated full refund for a paid quote: refunds the stored payment intent, cancels the job
  * and marks the quote `declined`. Refuses (before touching Stripe) if the job is already done.
  */

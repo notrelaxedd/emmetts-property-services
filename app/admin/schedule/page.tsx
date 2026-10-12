@@ -98,6 +98,7 @@ async function loadWeek(monday: string) {
       id: j.id,
       status: j.status,
       weatherHold: j.weather_hold,
+      ownerHold: j.owner_hold,
       paid: j.paid,
       customerName: customer.get(j.customer_id)?.name ?? "Customer",
       address: customer.get(j.customer_id)?.address ?? null,

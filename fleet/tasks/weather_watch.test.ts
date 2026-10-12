@@ -97,6 +97,18 @@ describe("weather_watch task", () => {
     expect(db.tables.messages.map((m) => m.status)).toEqual(["sent", "sent"]); // via the followup handler's message_ids
   });
 
+  it("weather_hold autopilot applies the hold: the day's jobs are held and marked for re-planning", async () => {
+    const db = seed();
+    db.tables.settings[0].autopilot = { ...settingsRow().autopilot, weather_hold: { enabled: true } };
+    const res = await runWeatherWatch(makeCtx(db, { now: () => NOW, role: "followup" }), {});
+    expect(db.tables.approvals.find((a) => a.kind === "weather_hold")).toMatchObject({ status: "approved", decided_by: "autopilot" });
+    const jobs = Object.fromEntries(db.tables.jobs.map((j) => [j.id, j]));
+    for (const id of ["rainy1", "rainy2"]) expect(jobs[id]).toMatchObject({ weather_hold: true, resolve_reason: "weather_hold" });
+    expect(jobs.dry).toMatchObject({ weather_hold: false, resolve_reason: null });
+    expect(db.tables.fleet_tasks.find((t) => t.type === "schedule")?.payload).toEqual({ reason: "weather_hold", job_ids: ["rainy1", "rainy2"] });
+    expect(res.rain_result).toMatchObject({ holds: 1, auto_held: 2 });
+  });
+
   it("does nothing on a dry, warm forecast", async () => {
     vi.mocked(getForecast).mockResolvedValue([SNOWY_AND_RAINY[0], SNOWY_AND_RAINY[3]]);
     const db = seed();

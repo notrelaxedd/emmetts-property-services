@@ -10,11 +10,11 @@ import type { ActionResult } from "@/components/admin/inbox/types"
 import { requireOwner } from "@/lib/auth/session"
 import type { QuoteItem, QuoteItemStatus } from "@/lib/db/types"
 import { createApproval, decideApproval } from "@/lib/ops/approvals"
-import { quoteApprovalInput } from "@/lib/ops/handlers/custom_item"
+import { quoteApprovalInput, quoteEditLockReason } from "@/lib/ops/handlers/custom_item"
 import { getSettings } from "@/lib/ops/settings"
 import { check } from "@/lib/ops/types"
 import { fee, moneyRound, priceQuote } from "@/lib/pricing"
-import { refundQuote } from "@/lib/stripe/checkout"
+import { expireOpenCheckout, refundQuote } from "@/lib/stripe/checkout"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 const Id = z.string().uuid()
@@ -74,7 +74,8 @@ export async function saveQuote(quoteId: string, input: SaveQuoteInput): Promise
 
     const quote = check(await db.from("quotes").select("*").eq("id", id).maybeSingle(), "saveQuote(quote)")
     if (!quote) return { ok: false, error: "Quote not found." }
-    if (LOCKED.has(quote.status)) return { ok: false, error: `This quote is ${quote.status} and can't be edited.` }
+    const locked = quoteEditLockReason(quote.status)
+    if (locked) return { ok: false, error: locked }
 
     const existing = check(await db.from("quote_items").select("*").eq("quote_id", id), "saveQuote(items)") ?? []
     const byId = new Map(existing.map((i) => [i.id, i]))
@@ -190,6 +191,38 @@ export async function sendQuote(quoteId: string): Promise<ActionResult> {
     revalidateQuote(id)
     if (!res.ok) return { ok: false, error: `Approved, but sending failed: ${res.error}` }
     return { ok: true, message: `Payment link emailed to ${customer.email}` }
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) }
+  }
+}
+
+/**
+ * "Revise & re-send" for a quote that has been sent but not paid: expires its open Stripe Checkout
+ * session (refuses if the customer already paid it), and puts the quote back to `draft` so it can be
+ * edited and then sent again with the normal Send flow (which builds a new link). The emailed
+ * /quote/pay/<id> link stops minting sessions while the quote is a draft.
+ */
+export async function reviseQuote(quoteId: string): Promise<ActionResult> {
+  await requireOwner()
+  try {
+    const id = Id.parse(quoteId)
+    const db = requireSupabaseAdmin()
+    const quote = check(await db.from("quotes").select("id,status").eq("id", id).maybeSingle(), "reviseQuote(quote)")
+    if (!quote) return { ok: false, error: "Quote not found." }
+    if (quote.status !== "sent") {
+      return { ok: false, error: quote.status === "accepted" ? "This quote is paid; refund it instead." : `This quote is ${quote.status}; there's nothing to revise.` }
+    }
+    await expireOpenCheckout(db, id)
+    const { data: reopened, error } = await db
+      .from("quotes")
+      .update({ status: "draft", stripe_checkout_url: null })
+      .eq("id", id)
+      .eq("status", quote.status) // a payment landing in between wins
+      .select("id")
+    if (error) throw new Error(error.message)
+    if (!reopened?.length) return { ok: false, error: "The quote changed while revising (was it just paid?). Reload the page." }
+    revalidateQuote(id)
+    return { ok: true, message: "The old payment link is closed. Edit the quote, then send it again." }
   } catch (e) {
     return { ok: false, error: errorMessage(e) }
   }

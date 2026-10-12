@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { CloudLightning, Play } from "lucide-react"
-import { moveJob, runScheduler } from "@/app/admin/actions/schedule"
+import { moveJob, releaseJob, runScheduler } from "@/app/admin/actions/schedule"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -130,6 +130,12 @@ export function ScheduleBoard({
     }
     return map
   }, [days, jobs, moved])
+
+  const release = (job: ScheduleJob) =>
+    startTransition(async () => {
+      const r = await releaseJob(job.id)
+      toast(r.ok ? { title: r.message ?? "Released", variant: "success" } : { title: "Couldn't release the job", description: r.reason, variant: "destructive" })
+    })
 
   const outsideGrid = jobs.filter(
     (j) => j.startMin !== null && j.endMin !== null && (j.endMin <= DAY_START || j.startMin >= DAY_END),
@@ -349,21 +355,39 @@ export function ScheduleBoard({
               <p className="text-sm text-ink-muted">Nothing waiting.</p>
             ) : (
               unscheduled.map((j) => (
-                <button
-                  key={j.id}
-                  type="button"
-                  onClick={() => setSelectedId(j.id)}
-                  className={cn("block w-full rounded-md px-2.5 py-2 text-left text-sm", STATUS_STYLE.unscheduled)}
-                  style={j.weatherHold ? HATCH_STYLE : undefined}
-                >
-                  <span className="flex items-center gap-1 font-semibold text-ink">
-                    {j.weatherHold ? <span aria-label="Weather hold">⛈</span> : null}
-                    {j.customerName}
-                  </span>
-                  <span className="block truncate text-xs text-ink-muted">
-                    {j.services.join(", ") || "Services"} · {fmtDuration(j.estMinutes)} · {j.crewSize} crew
-                  </span>
-                </button>
+                <div key={j.id} className="space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(j.id)}
+                    className={cn("block w-full rounded-md px-2.5 py-2 text-left text-sm", STATUS_STYLE.unscheduled)}
+                    style={j.weatherHold ? HATCH_STYLE : undefined}
+                  >
+                    <span className="flex items-center gap-1 font-semibold text-ink">
+                      {j.weatherHold ? <span aria-label="Weather hold">⛈</span> : null}
+                      {j.customerName}
+                      {j.ownerHold ? (
+                        <Badge variant="outline" className="ml-auto">
+                          Held
+                        </Badge>
+                      ) : null}
+                    </span>
+                    <span className="block truncate text-xs text-ink-muted">
+                      {j.services.join(", ") || "Services"} · {fmtDuration(j.estMinutes)} · {j.crewSize} crew
+                    </span>
+                  </button>
+                  {j.ownerHold ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-full text-xs"
+                      disabled={pending}
+                      onClick={() => release(j)}
+                      aria-label={`Release ${j.customerName} to the scheduler`}
+                    >
+                      Release to scheduler
+                    </Button>
+                  ) : null}
+                </div>
               ))
             )}
             <Button
@@ -419,6 +443,7 @@ export function ScheduleBoard({
                           {STATUS_LABEL[j.status]}
                         </Badge>
                         {j.weatherHold ? <Badge variant="outline">⛈ Hold</Badge> : null}
+                        {j.ownerHold ? <Badge variant="outline">Held</Badge> : null}
                       </span>
                     </TableCell>
                     <TableCell className="text-right">

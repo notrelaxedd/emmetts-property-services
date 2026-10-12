@@ -10,6 +10,7 @@ import type { ActionResult } from "@/components/admin/inbox/types"
 import { requireOwner } from "@/lib/auth/session"
 import type { Approval, ApprovalKind } from "@/lib/db/types"
 import { applyRejection, decideApproval, type ApprovalDecision } from "@/lib/ops/approvals"
+import { isInfoBookingPayload, setOwnerHold } from "@/lib/ops/jobs"
 import { getSettings } from "@/lib/ops/settings"
 import { check } from "@/lib/ops/types"
 import type { Db } from "@/lib/ops/types"
@@ -107,10 +108,19 @@ export async function decide(
     let warning: string | undefined
     if (parsedDecision === "rejected") {
       // Undo provisional state (drop → crew stays on, quote → declined + lead lost, booking → back to
-      // unscheduled, followup → cancelled, ad → draft deleted, crew_change → declined). Skipped for the
-      // scheduler's "couldn't place this job" card: its "Mark handled" must not undo a hand-placed slot.
-      const skip = decided.kind === "booking" && decided.payload.unschedulable === true
-      if (!skip) {
+      // unscheduled + owner hold, followup → cancelled, ad → draft deleted, crew_change → declined).
+      // The scheduler's informational cards ("Can't schedule X" / "No cover for X") are different:
+      // "Mark handled" must not undo a hand-placed slot, it just tells the scheduler to leave the job
+      // alone (owner hold) so the next sweep doesn't raise the same card again.
+      const info = decided.kind === "booking" && isInfoBookingPayload(decided.payload)
+      if (info) {
+        const jobId = typeof decided.payload.job_id === "string" ? decided.payload.job_id : decided.ref_id
+        try {
+          await setOwnerHold(db, jobId, true)
+        } catch (e) {
+          warning = errorMessage(e)
+        }
+      } else {
         try {
           await applyRejection(db, decided, { siteUrl: siteUrl(), actor })
         } catch (e) {

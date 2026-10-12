@@ -1,4 +1,5 @@
 import type { ApprovalHandler } from "../approvals";
+import { isInfoBookingPayload, tryTransitionJob } from "../jobs";
 import { check } from "../types";
 
 /**
@@ -34,21 +35,38 @@ export const rejectQuote: ApprovalHandler = async (db, approval) => {
   check(await db.from("leads").update({ status: "lost" }).eq("id", quote.lead_id), "rejectQuote(lead)");
 };
 
-/** Proposed booking rejected: free the crew and put the job back in the unscheduled pile. */
-export const rejectBooking: ApprovalHandler = async (db, approval) => {
+/**
+ * Proposed booking rejected: free the crew, put the job back in the unscheduled pile and put it on
+ * `owner_hold`, so the next sweep doesn't propose the same slot again. The owner releases it from
+ * the Schedule page. The scheduler's informational cards ("Can't schedule X", "No cover for X")
+ * are a no-op here: "Mark handled" on those is handled by the inbox action (owner hold only).
+ */
+export const rejectBooking: ApprovalHandler = async (db, approval, ctx) => {
+  if (isInfoBookingPayload(approval.payload)) return;
   const jobId = String(approval.payload.job_id ?? approval.ref_id);
   const job = check(await db.from("jobs").select("id,status").eq("id", jobId).maybeSingle(), "rejectBooking(job)");
   if (!job || !["proposed", "crew_confirmed"].includes(job.status)) return;
+  const moved = await tryTransitionJob(db, jobId, "unscheduled", {
+    actor: ctx.actor,
+    from: ["proposed", "crew_confirmed"],
+    patch: {
+      owner_hold: true,
+      resolve_reason: null,
+      schedule_reason: "Owner rejected the proposed time. Release it on the Schedule page to re-plan.",
+    },
+  });
+  if (!moved) return;
   check(
-    await db.from("job_assignments").update({ status: "dropped" }).eq("job_id", jobId).in("status", ["offered", "accepted", "swap_offered"]),
+    await db
+      .from("job_assignments")
+      .update({ status: "dropped" })
+      .eq("job_id", jobId)
+      .in("status", ["offered", "accepted", "drop_requested"]),
     "rejectBooking(assignments)",
   );
   check(
-    await db
-      .from("jobs")
-      .update({ status: "unscheduled", start_at: null, end_at: null, schedule_reason: "Owner rejected the proposed time; move it on the schedule." })
-      .eq("id", jobId),
-    "rejectBooking(job)",
+    await db.from("job_assignments").delete().eq("job_id", jobId).eq("status", "swap_offered"),
+    "rejectBooking(swaps)",
   );
 };
 

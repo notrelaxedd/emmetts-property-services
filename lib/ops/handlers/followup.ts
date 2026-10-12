@@ -1,6 +1,26 @@
+import type { Message } from "../../db/types";
 import { sendMessage } from "../../email";
 import type { ApprovalHandler } from "../approvals";
 import { check } from "../types";
+import type { Db } from "../types";
+
+/** Message kinds that talk about a specific booked visit and go stale when the job moves or ends. */
+const JOB_BOUND_KINDS = new Set<Message["kind"]>(["reminder", "confirmation"]);
+
+/**
+ * Why a reminder / confirmation must not go out any more, or null when it's still good to send:
+ * the job is gone, no longer `booked` (cancelled, rescheduled back to proposed, already started /
+ * done), or its start time has passed.
+ */
+export async function staleJobMessageReason(db: Db, message: Pick<Message, "job_id" | "kind">, now: Date = new Date()): Promise<string | null> {
+  if (!message.job_id || !JOB_BOUND_KINDS.has(message.kind)) return null;
+  const job = check(await db.from("jobs").select("id,status,start_at").eq("id", message.job_id).maybeSingle(), "followupHandler(job)");
+  if (!job) return "not sent: the job no longer exists";
+  if (job.status !== "booked") return `not sent: the job is ${job.status}, not booked`;
+  if (!job.start_at) return "not sent: the job has no start time";
+  if (Date.parse(job.start_at) <= now.getTime()) return `not sent: the job's start time (${job.start_at}) has passed`;
+  return null;
+}
 
 /**
  * Side effect for an approved / edited "followup" approval: send the drafted message(s).
@@ -8,6 +28,8 @@ import { check } from "../types";
  * plus optional `subject` / `body` edits the owner made on the card, which are written to every
  * message row first. A message the email layer cancels (customer unsubscribed / not opted in) is not
  * an error; a delivery failure on any message is, after the others have been attempted.
+ * A reminder / confirmation whose job is no longer booked, or already started, is cancelled (with the
+ * reason in `error`) instead of being sent: the card may have sat in the inbox while the job changed.
  */
 export const followupHandler: ApprovalHandler = async (db, approval, ctx) => {
   const ids: string[] = Array.isArray(approval.payload.message_ids)
@@ -31,6 +53,13 @@ export const followupHandler: ApprovalHandler = async (db, approval, ctx) => {
       continue;
     }
     if (message.status === "sent") continue; // already delivered (retry)
+
+    const stale = await staleJobMessageReason(db, message);
+    if (stale) {
+      check(await db.from("messages").update({ status: "cancelled", error: stale }).eq("id", messageId), "followupHandler(stale)");
+      console.warn(`[approvals] followup message ${messageId} ${stale}`);
+      continue;
+    }
 
     check(await db.from("messages").update({ ...edits, status: "queued", error: null }).eq("id", messageId), "followupHandler(update)");
 

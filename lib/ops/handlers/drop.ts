@@ -1,14 +1,16 @@
 import type { ApprovalHandler } from "../approvals";
-import { enqueueSchedule } from "../tasks";
+import { dropAssignmentKeepSlot } from "../jobs";
 import { check } from "../types";
 
 /**
- * Side effect for an approved "drop" approval (a crew member dropping a booked job inside the
- * notice window): the assignment becomes `dropped`, a `booked` / `crew_confirmed` job goes back to
- * `proposed` (so it needs re-confirming once cover is found), and the scheduler is asked to find cover.
+ * Side effect for an approved "drop" approval (a crew member dropping a job inside the notice
+ * window): their assignment becomes `dropped` and the job KEEPS its slot and its other crew. It is
+ * marked `resolve_reason = 'drop'` so the scheduler's cover pass offers the gap to someone else.
+ * A `booked` job stays booked (the customer was confirmed); a `crew_confirmed` one goes back to
+ * `proposed` so the replacement's acceptance re-confirms it. See `releaseCrewFromJob`.
  * Payload: `{ assignment_id, job_id }`.
  */
-export const dropHandler: ApprovalHandler = async (db, approval, _ctx) => {
+export const dropHandler: ApprovalHandler = async (db, approval, ctx) => {
   const assignmentId =
     typeof approval.payload.assignment_id === "string"
       ? approval.payload.assignment_id
@@ -22,24 +24,11 @@ export const dropHandler: ApprovalHandler = async (db, approval, _ctx) => {
     "dropHandler(assignment)",
   );
   if (!assignment) throw new Error(`dropHandler: assignment ${assignmentId} not found`);
-  const jobId = typeof approval.payload.job_id === "string" ? approval.payload.job_id : assignment.job_id;
 
-  if (assignment.status !== "dropped") {
-    check(
-      await db
-        .from("job_assignments")
-        .update({ status: "dropped", responded_at: new Date().toISOString() })
-        .eq("id", assignmentId),
-      "dropHandler(drop)",
-    );
-  }
-
-  // booked/crew_confirmed -> proposed is a re-confirm, not a normal forward move, so it is written
-  // directly (JOB_TRANSITIONS only allows crew_confirmed -> unscheduled, which would lose the slot).
-  check(
-    await db.from("jobs").update({ status: "proposed" }).eq("id", jobId).in("status", ["booked", "crew_confirmed"]),
-    "dropHandler(job)",
-  );
-
-  await enqueueSchedule(db, "drop_approved", [jobId]);
+  // `drop_requested` normally; `accepted` too, so an owner OK still works if the row was reset.
+  await dropAssignmentKeepSlot(db, assignment, {
+    actor: ctx.actor,
+    from: ["drop_requested", "accepted"],
+    taskReason: "drop_approved",
+  });
 };

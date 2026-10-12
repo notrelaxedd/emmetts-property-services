@@ -5,11 +5,12 @@
  *    draft per snow-list customer with email opt-in → ONE `followup` approval with
  *    `{ message_ids, kind: "snow", subject, body }`. At most one batch per 72 h.
  *  - rain ≥ 50% in the next 3 days → booked jobs in those periods → one `weather_hold` approval per
- *    rainy day with `{ job_ids, day, forecast }`. At most one card per day's jobs per 24 h.
+ *    rainy day with `{ job_ids, day, forecast }`. At most one card per day's jobs per 24 h. With
+ *    weather_hold autopilot on, the hold is applied straight away (jobs marked for re-planning).
  */
 import type { Job } from "../../lib/db/types";
 import { opsConfig } from "../../lib/config";
-import { applyApproval, createApproval, requestApproval } from "../../lib/ops/approvals";
+import { applyApproval, requestApproval } from "../../lib/ops/approvals";
 import "../../lib/ops/handlers";
 import { getSettings } from "../../lib/ops/settings";
 import { check } from "../../lib/ops/types";
@@ -120,6 +121,7 @@ async function rainHolds(ctx: TaskContext, summary: ForecastSummary, now: Date):
 
   const since = new Date(now.getTime() - HOLD_CARD_WINDOW_HOURS * HOUR_MS).toISOString();
   let cards = 0;
+  let autoHeld = 0;
   for (const day of Object.keys(byDay).sort()) {
     const jobs = byDay[day].sort((a, b) => (a.start_at as string).localeCompare(b.start_at as string));
     const jobIds = jobs.map((j) => j.id);
@@ -128,7 +130,7 @@ async function rainHolds(ctx: TaskContext, summary: ForecastSummary, now: Date):
     ).filter((a) => a.created_at >= since);
     if (recent.length) continue; // asked about these jobs within the last day (pending, approved or rejected)
     const label = formatDayLabel(new Date(jobs[0].start_at as string));
-    await createApproval(db, {
+    const { approval, autoApproved } = await requestApproval(db, {
       kind: "weather_hold",
       ref_table: "jobs",
       ref_id: jobIds[0],
@@ -138,6 +140,18 @@ async function rainHolds(ctx: TaskContext, summary: ForecastSummary, now: Date):
       created_by: ctx.worker,
     });
     cards++;
+    if (autoApproved) {
+      try {
+        if (await applyApproval(db, approval, { siteUrl: ctx.siteUrl, actor: ctx.worker })) autoHeld += jobIds.length;
+      } catch (e) {
+        const note = `autopilot hold failed: ${errorMessage(e)}`.slice(0, 500);
+        ctx.log.warn("autopilot weather hold failed", { approval: approval.id, err: note });
+        check(
+          await db.from("approvals").update({ status: "pending", decided_at: null, decided_by: null, decision_note: note }).eq("id", approval.id),
+          "weather(revert autopilot hold)",
+        );
+      }
+    }
   }
-  return { holds: cards, jobs: ids.length };
+  return { holds: cards, jobs: ids.length, auto_held: autoHeld };
 }

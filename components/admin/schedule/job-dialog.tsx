@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { cancelJob, setWeatherHold } from "@/app/admin/actions/schedule"
+import { cancelJob, releaseJob, setWeatherHold } from "@/app/admin/actions/schedule"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -64,6 +64,12 @@ export function JobDialog({
       toast(r.ok ? { title: r.message ?? "Saved", variant: "success" } : { title: "Couldn't update the hold", description: r.reason, variant: "destructive" })
     })
 
+  const doRelease = () =>
+    startTransition(async () => {
+      const r = await releaseJob(job.id)
+      toast(r.ok ? { title: r.message ?? "Released", variant: "success" } : { title: "Couldn't release the job", description: r.reason, variant: "destructive" })
+    })
+
   const doCancel = () =>
     startTransition(async () => {
       const r = await cancelJob(job.id)
@@ -88,6 +94,7 @@ export function JobDialog({
               {STATUS_LABEL[job.status]}
             </Badge>
             {job.weatherHold ? <Badge variant="outline">⛈ Weather hold</Badge> : null}
+            {job.ownerHold ? <Badge variant="outline">Held</Badge> : null}
             <Badge variant={job.paid ? "secondary" : "outline"}>{job.paid ? "Paid" : "Unpaid"}</Badge>
           </div>
 
@@ -145,6 +152,20 @@ export function JobDialog({
                 Or drag the block on the grid. Crew who already accepted will be asked again.
               </p>
             </form>
+          ) : null}
+
+          {job.ownerHold && !terminal ? (
+            <div className="flex items-center justify-between gap-3 rounded-md border border-ink/10 p-3">
+              <div>
+                <p className="text-sm font-medium text-ink">Held by you</p>
+                <p className="text-xs text-ink-muted">
+                  The scheduler won&apos;t place, re-plan or find cover for this job until you release it.
+                </p>
+              </div>
+              <Button variant="outline" size="sm" disabled={pending} onClick={doRelease}>
+                Release
+              </Button>
+            </div>
           ) : null}
 
           {!terminal ? (

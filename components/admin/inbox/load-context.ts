@@ -239,7 +239,7 @@ async function crewChangeContext(db: Db, approval: Approval): Promise<InboxConte
           .from("job_assignments")
           .select("job_id,status")
           .eq("crew_id", exception.crew_id)
-          .in("status", ["offered", "accepted", "swap_offered", "drop_requested"]),
+          .in("status", ["offered", "accepted", "drop_requested"]), // a swap_offered row is only a candidate
         "inbox(crew assignments)",
       ) ?? []
     const from = zonedToUtc(exception.date_from, "00:00").toISOString()

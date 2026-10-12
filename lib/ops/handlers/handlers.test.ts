@@ -9,7 +9,9 @@ vi.mock("../../email", () => ({ sendMessage: m.sendMessage }));
 vi.mock("../../ai/claude", () => ({ draftMessage: m.draftMessage }));
 vi.mock("../../stripe/checkout", () => ({ createCheckoutForQuote: m.createCheckout }));
 
-import { approvalRow, customerRow, fakeDb, settingsRow } from "../test-utils";
+import { AUTOPILOT_KINDS } from "../../../components/admin/autopilot/kinds";
+import { approvalRow, customerRow, fakeDb, jobRow, settingsRow } from "../test-utils";
+import { custom_itemHandler, quoteEditLockReason, SENT_QUOTE_ERROR } from "./custom_item";
 import { followupHandler } from "./followup";
 import { quoteHandler } from "./quote";
 
@@ -143,5 +145,94 @@ describe("followupHandler", () => {
   });
   it("requires a message id", async () => {
     await expect(followupHandler(msgDb(), approvalRow({ kind: "followup", ref_table: "x", payload: {} }), ctx)).rejects.toThrow(/message_id/);
+  });
+});
+
+describe("followupHandler: stale reminder / confirmation cards", () => {
+  const FUTURE = new Date(Date.now() + 2 * 86_400_000).toISOString();
+  const PAST = new Date(Date.now() - 3_600_000).toISOString();
+  const db = (kind: string, job: Record<string, unknown> | null) =>
+    fakeDb({
+      messages: [{ id: "m1", customer_id: "c1", job_id: "j1", kind, channel: "email", subject: "S", body: "B", status: "draft" }] as never,
+      jobs: job ? [jobRow({ id: "j1", ...job }) as never] : [],
+    });
+  const fa = () => approvalRow({ kind: "followup", ref_table: "messages", ref_id: "m1", status: "approved", payload: { message_id: "m1" } });
+
+  it("sends a reminder for a booked job that hasn't started", async () => {
+    const d = db("reminder", { status: "booked", start_at: FUTURE });
+    await followupHandler(d, fa(), ctx);
+    expect(m.sendMessage).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    ["reminder", { status: "cancelled", start_at: FUTURE }, /cancelled, not booked/],
+    ["reminder", { status: "proposed", start_at: FUTURE }, /proposed, not booked/],
+    ["confirmation", { status: "unscheduled", start_at: null }, /unscheduled, not booked/],
+    ["reminder", { status: "booked", start_at: PAST }, /start time .* has passed/],
+    ["confirmation", null, /no longer exists/],
+  ])("skips a %s whose job is %j: message cancelled with the reason, nothing sent", async (kind, job, why) => {
+    const d = db(kind, job);
+    await expect(followupHandler(d, fa(), ctx)).resolves.toBeUndefined();
+    expect(m.sendMessage).not.toHaveBeenCalled();
+    expect(d.tables.messages[0].status).toBe("cancelled");
+    expect(String(d.tables.messages[0].error)).toMatch(why);
+  });
+  it("leaves other kinds (e.g. review) alone even when the job is done", async () => {
+    const d = db("review", { status: "done", start_at: PAST });
+    await followupHandler(d, fa(), ctx);
+    expect(m.sendMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("custom_itemHandler on a quote that has already gone out", () => {
+  const seed = (status: string) =>
+    fakeDb({
+      settings: [settingsRow({ min_job_price: null })],
+      customers: [customerRow({ id: "c1", name: "Jo Smith", email: "jo@example.com" })],
+      quotes: [{ id: "q1", lead_id: "l1", customer_id: "c1", status, wage: 15, margin: 0.5, price_total: 75, labor_total: 30, rationale: null }] as never,
+      quote_items: [
+        { id: "i1", quote_id: "q1", description: "Mowing", is_custom: false, crew_size: 1, est_hours: 1, price: 75, status: "priced", sort_order: 0 },
+        { id: "i2", quote_id: "q1", description: "Dead maple", is_custom: true, crew_size: 1, est_hours: 0, price: null, status: "needs_owner", sort_order: 1 },
+      ] as never,
+    });
+  const ca = (payload: Record<string, unknown>) =>
+    approvalRow({ kind: "custom_item", ref_table: "quote_items", ref_id: "i2", status: "approved", payload: { quote_item_id: "i2", quote_id: "q1", ...payload } });
+
+  it.each(["sent", "accepted", "expired"])("refuses to price an item on a %s quote and changes nothing", async (status) => {
+    const db = seed(status);
+    const before = JSON.stringify(db.tables);
+    await expect(custom_itemHandler(db, ca({ action: "price", price: 400 }), ctx)).rejects.toThrow(SENT_QUOTE_ERROR);
+    expect(JSON.stringify(db.tables)).toBe(before);
+  });
+  it("decline still updates the item and emails the customer, but leaves the sent quote's totals and status alone", async () => {
+    m.draftMessage.mockRejectedValue(new Error("no AI in tests"));
+    const db = seed("sent");
+    await custom_itemHandler(db, ca({ action: "decline" }), ctx);
+    expect(db.tables.quote_items.find((i) => i.id === "i2")!.status).toBe("declined");
+    expect(db.tables.messages[0]).toMatchObject({ kind: "decline", quote_id: "q1" });
+    expect(db.tables.quotes[0]).toMatchObject({ status: "sent", price_total: 75, labor_total: 30 });
+    expect(db.tables.approvals ?? []).toHaveLength(0);
+  });
+  it("still prices normally while the quote is needs_owner", async () => {
+    const db = seed("needs_owner");
+    await custom_itemHandler(db, ca({ action: "price", price: 400 }), ctx);
+    expect(db.tables.quotes[0].status).toBe("draft");
+    expect(db.tables.quotes[0].price_total).toBeGreaterThan(75);
+  });
+});
+
+describe("quoteEditLockReason (saveQuote's lock)", () => {
+  it("locks sent / accepted / declined quotes and points at the right way out", () => {
+    expect(quoteEditLockReason("sent")).toMatch(/Revise & re-send/);
+    expect(quoteEditLockReason("accepted")).toMatch(/Refund/);
+    expect(quoteEditLockReason("declined")).toMatch(/can't be edited/);
+    for (const s of ["draft", "needs_owner", "expired"] as const) expect(quoteEditLockReason(s)).toBeNull();
+  });
+});
+
+describe("autopilot switches", () => {
+  it("has no custom_item switch (custom requests are never autopiloted) but every other kind", () => {
+    const kinds = AUTOPILOT_KINDS.map((k) => k.kind as string);
+    expect(kinds).not.toContain("custom_item");
+    expect(kinds.sort()).toEqual(["ad", "booking", "crew_change", "drop", "followup", "quote", "weather_hold"]);
   });
 });

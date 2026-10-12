@@ -7,6 +7,8 @@ export type ScheduleJob = {
   id: string
   status: JobStatus
   weatherHold: boolean
+  /** Owner decision stands (rejected slot / card marked handled): the scheduler leaves it alone. */
+  ownerHold: boolean
   paid: boolean
   customerName: string
   address: string | null

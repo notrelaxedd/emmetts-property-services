@@ -3,18 +3,9 @@
 import "@/lib/ops/handlers"
 import { z } from "zod"
 import type { JobAssignment } from "@/lib/db/types"
-import { applyApproval, enqueueSchedule, getSettings, requestApproval, transitionJob, type Db } from "@/lib/ops"
+import { maybeConfirmJob, requestResolve } from "@/lib/ops"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
-import {
-  crewContext,
-  errorMessage,
-  fail,
-  revalidateCrew,
-  siteUrl,
-  slotLabel,
-  type ActionResult,
-  type CrewContext,
-} from "./shared"
+import { crewContext, errorMessage, fail, revalidateCrew, siteUrl, type ActionResult, type CrewContext } from "./shared"
 
 const respondSchema = z.object({
   assignmentId: z.string().uuid(),
@@ -24,14 +15,17 @@ const respondSchema = z.object({
 /**
  * Accept / decline a job offer or a swap offer.
  *
- * Normal offer (`offered`): updates my own row through RLS. Decline → re-solve the job.
+ * Normal offer (`offered`): updates my own row through RLS. Decline → the job is marked for cover
+ * (`resolve_reason = 'declined'`) and the scheduler offers the slot to someone else.
  * Accept → when every live assignment on a `proposed` job is accepted (and there are enough of
  * them), the job moves to `crew_confirmed` and a `booking` approval `{ job_id }` is raised
- * (auto-approved + applied when the owner turned booking autopilot on).
+ * (auto-approved + applied when the owner turned booking autopilot on). See `maybeConfirmJob`.
  *
- * Swap offer (`swap_offered`, row `crew_id = me`, `swap_to_crew_id = the crew member handing the
- * job over`): first to accept wins — the original holder's row becomes `dropped`, mine becomes
- * `accepted`, and the other swap rows for that hand-over are deleted. Declining deletes my row.
+ * Swap offer (`swap_offered`, row `crew_id = me` = the candidate, `swap_to_crew_id` = the crew
+ * member handing the job over): first to accept wins — the original holder's row becomes `dropped`,
+ * mine becomes `accepted`, and the other swap rows for that hand-over are deleted. Declining deletes
+ * my row. Swap rows are written with the service role (the guard trigger only lets crew make
+ * offered→accepted/declined and accepted→drop_requested through RLS) after checking the row is mine.
  */
 export async function respondToOffer(assignmentId: string, response: "accepted" | "declined"): Promise<ActionResult> {
   const parsed = respondSchema.safeParse({ assignmentId, response })
@@ -51,7 +45,7 @@ export async function respondToOffer(assignmentId: string, response: "accepted" 
     if (!assignment || assignment.crew_id !== ctx.me) return fail("That offer isn't yours or no longer exists.")
 
     if (assignment.status === "swap_offered") {
-      return parsed.data.response === "accepted" ? await acceptSwap(ctx, assignment) : await declineSwap(assignment)
+      return parsed.data.response === "accepted" ? await acceptSwap(ctx, assignment) : await declineSwap(ctx, assignment)
     }
     if (assignment.status !== "offered") return fail("You've already answered this offer.")
 
@@ -68,55 +62,17 @@ export async function respondToOffer(assignmentId: string, response: "accepted" 
 
     const db = requireSupabaseAdmin()
     if (parsed.data.response === "declined") {
-      await enqueueSchedule(db, "offer_declined", [assignment.job_id])
+      await requestResolve(db, [assignment.job_id], "declined", "offer_declined")
       revalidateCrew()
       return { ok: true, message: "Thanks — we'll find someone else." }
     }
 
-    const confirmed = await maybeConfirmJob(db, assignment.job_id)
+    const confirmed = await maybeConfirmJob(db, assignment.job_id, { siteUrl: siteUrl(), actor: "crew-app" })
     revalidateCrew()
     return { ok: true, message: confirmed ? "You're on it. The whole crew is confirmed." : "You're on it." }
   } catch (e) {
     return fail(errorMessage(e))
   }
-}
-
-/** If every live assignment is accepted, move a `proposed` job to `crew_confirmed` and ask the owner to book it. */
-async function maybeConfirmJob(db: Db, jobId: string): Promise<boolean> {
-  const { data: job, error: jobErr } = await db.from("jobs").select("*").eq("id", jobId).maybeSingle()
-  if (jobErr) throw new Error(jobErr.message)
-  if (!job || job.status !== "proposed") return false
-
-  const { data: rows, error } = await db.from("job_assignments").select("status").eq("job_id", jobId)
-  if (error) throw new Error(error.message)
-  const live = (rows ?? []).filter((a) => a.status !== "declined" && a.status !== "dropped")
-  const accepted = live.filter((a) => a.status === "accepted").length
-  if (live.length === 0 || accepted !== live.length || accepted < job.crew_size) return false
-
-  try {
-    await transitionJob(db, jobId, "crew_confirmed", { actor: "crew-app" })
-  } catch {
-    // Someone else confirmed it at the same moment; their request raised the approval.
-    return false
-  }
-
-  const { data: view } = await db.from("crew_jobs").select("customer_name, start_at, end_at").eq("id", jobId).maybeSingle()
-  const settings = await getSettings(db)
-  const { approval, autoApproved } = await requestApproval(
-    db,
-    {
-      kind: "booking",
-      ref_table: "jobs",
-      ref_id: jobId,
-      payload: { job_id: jobId },
-      title: `Book ${view?.customer_name ?? "job"} — ${slotLabel(view ?? job)}`,
-      summary: job.schedule_reason,
-      created_by: "crew-app",
-    },
-    settings,
-  )
-  if (autoApproved) await applyApproval(db, approval, { siteUrl: siteUrl(), actor: "autopilot" })
-  return true
 }
 
 async function acceptSwap(ctx: CrewContext, mine: JobAssignment): Promise<ActionResult> {
@@ -144,11 +100,13 @@ async function acceptSwap(ctx: CrewContext, mine: JobAssignment): Promise<Action
     return fail("Someone else already took this job.")
   }
 
-  const { error: mineErr } = await ctx.supabase
+  // Service role: swap_offered → accepted isn't a crew-client transition (guard trigger).
+  const { error: mineErr } = await db
     .from("job_assignments")
-    .update({ status: "accepted", responded_at: now })
+    .update({ status: "accepted", responded_at: now, swap_to_crew_id: null })
     .eq("id", mine.id)
     .eq("crew_id", ctx.me)
+    .eq("status", "swap_offered")
   if (mineErr) {
     // Put the job back with its original holder rather than leave it with nobody.
     await db.from("job_assignments").update({ status: "accepted" }).in("id", taken.map((t) => t.id))
@@ -165,14 +123,23 @@ async function acceptSwap(ctx: CrewContext, mine: JobAssignment): Promise<Action
     .neq("id", mine.id)
   if (delErr) throw new Error(delErr.message)
 
+  // On a proposed job the hand-over may complete the crew.
+  await maybeConfirmJob(db, mine.job_id, { siteUrl: siteUrl(), actor: "crew-app" })
   revalidateCrew()
   return { ok: true, message: "The job is yours." }
 }
 
-async function declineSwap(mine: JobAssignment): Promise<ActionResult> {
+async function declineSwap(ctx: CrewContext, mine: JobAssignment): Promise<ActionResult> {
   const db = requireSupabaseAdmin()
-  const { error } = await db.from("job_assignments").delete().eq("id", mine.id).eq("status", "swap_offered")
+  const { error } = await db
+    .from("job_assignments")
+    .delete()
+    .eq("id", mine.id)
+    .eq("crew_id", ctx.me)
+    .eq("status", "swap_offered")
   if (error) throw new Error(error.message)
+  // Swap rows never block confirmation, but re-check in case this was the last thing outstanding.
+  await maybeConfirmJob(db, mine.job_id, { siteUrl: siteUrl(), actor: "crew-app" })
   revalidateCrew()
   return { ok: true, message: "No problem — we'll leave it with the others." }
 }

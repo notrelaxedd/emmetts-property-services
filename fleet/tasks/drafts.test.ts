@@ -4,7 +4,8 @@ import { registerApprovalHandler } from "../../lib/ops/approvals";
 import { customerRow, jobRow, settingsRow } from "../../lib/ops/test-utils";
 import { fakeAi, fleetDb, makeCtx } from "../test-helpers";
 import { runAdDraft } from "./ad_draft";
-import { runCustomSummary } from "./custom_summary";
+import { PermanentTaskError } from "../errors";
+import { MAX_DEFERS, runCustomSummary } from "./custom_summary";
 import { runFollowupReminder } from "./followup_reminder";
 import { runFollowupReview } from "./followup_review";
 
@@ -54,10 +55,28 @@ describe("custom_summary", () => {
     expect(db.tables.quote_items[0].ai_summary ?? null).toBeNull();
   });
 
-  it("retries (throws) while the quote does not exist yet", async () => {
+  it("defers (without burning attempts) while the quote does not exist yet, then gives up permanently", async () => {
     const db = seed();
     db.tables.quotes.length = 0;
-    await expect(runCustomSummary(makeCtx(db), { lead_id: "l1" })).rejects.toThrow(/no quote yet/);
+    const ctx = makeCtx(db, { now: () => NOW });
+    const res = await runCustomSummary(ctx, { lead_id: "l1" });
+    expect(res).toMatchObject({ deferred: true, defer: 1 });
+    expect(db.tables.fleet_tasks).toHaveLength(1);
+    expect(db.tables.fleet_tasks[0]).toMatchObject({
+      type: "custom_summary", payload: { lead_id: "l1", defer: 1 }, dedupe_key: "custom_summary:l1:defer:1",
+      run_after: new Date(NOW.getTime() + 2 * 60_000).toISOString(),
+    });
+    // A re-run of the same task (e.g. after a crash) enqueues the same next hop, not a new one.
+    await runCustomSummary(ctx, { lead_id: "l1" });
+    expect(db.tables.fleet_tasks).toHaveLength(1);
+    // The next hop chains on with a new key.
+    await runCustomSummary(ctx, { lead_id: "l1", defer: 1 });
+    expect(db.tables.fleet_tasks.map((t) => t.dedupe_key)).toEqual(["custom_summary:l1:defer:1", "custom_summary:l1:defer:2"]);
+    expect(ctx.ai.summarizeCustomRequest).not.toHaveBeenCalled();
+    await expect(runCustomSummary(ctx, { lead_id: "l1", defer: MAX_DEFERS })).rejects.toBeInstanceOf(PermanentTaskError);
+    // Once the quote exists the deferred task does the work.
+    db.tables.quotes.push({ id: "q1", lead_id: "l1", customer_id: "c1", status: "needs_owner", created_at: T0 } as never);
+    expect(await runCustomSummary(ctx, { lead_id: "l1", defer: 2 })).toMatchObject({ summary: true });
   });
 });
 

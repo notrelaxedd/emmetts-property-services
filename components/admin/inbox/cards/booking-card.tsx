@@ -17,6 +17,9 @@ export function BookingCard({ approval, context }: { approval: Approval; context
   const d = useDecide(approval.id)
   const { job, customer, crew, services, scheduleReason } = context
   const unschedulable = approval.payload.unschedulable === true
+  const needsCover = approval.payload.needs_cover === true
+  // The scheduler's informational cards: nothing to book, nothing to undo.
+  const info = unschedulable || needsCover
   const reason =
     (typeof approval.payload.reason === "string" && approval.payload.reason) || scheduleReason || approval.summary || null
   const scheduleHref = job ? `/admin/schedule?job=${job.id}` : "/admin/schedule"
@@ -47,7 +50,7 @@ export function BookingCard({ approval, context }: { approval: Approval; context
     />
   )
 
-  if (unschedulable) {
+  if (info) {
     return (
       <ApprovalShell
         approval={approval}
@@ -66,7 +69,11 @@ export function BookingCard({ approval, context }: { approval: Approval; context
                 label="Mark handled"
                 variant="outline"
                 title="Mark this as handled?"
-                description="Use this once you've placed the job by hand (or decided not to). Nothing is sent."
+                description={
+                  needsCover
+                    ? "Use this once you've found someone or moved the job yourself. The scheduler will stop looking for cover until you release the job on the Schedule page. Nothing is sent."
+                    : "Use this once you've placed the job by hand (or decided not to). The scheduler will leave it alone until you release it on the Schedule page. Nothing is sent."
+                }
                 onReject={(note) => d.decide("rejected", { note: note || "Handled on the schedule" })}
               />
             </div>
@@ -74,7 +81,10 @@ export function BookingCard({ approval, context }: { approval: Approval; context
         }
       >
         <p className="rounded-md bg-amber-100 px-3 py-2 text-sm text-amber-950">
-          <span className="font-semibold">The scheduler couldn&apos;t place this job.</span> {reason ?? "No reason given."}
+          <span className="font-semibold">
+            {needsCover ? "Nobody else is free to cover this slot." : "The scheduler couldn\u2019t place this job."}
+          </span>{" "}
+          {needsCover ? (approval.summary ?? reason ?? "No reason given.") : (reason ?? "No reason given.")}
         </p>
         {details}
       </ApprovalShell>

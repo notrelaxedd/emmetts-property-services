@@ -1,8 +1,18 @@
 "use server"
 
+// Registers the per-kind side effects before anything calls `applyApproval`.
+import "@/lib/ops/handlers"
 import { z } from "zod"
 import type { JobStatus } from "@/lib/db/types"
-import { createApproval, enqueueSchedule, enqueueTask, getSettings, transitionJob } from "@/lib/ops"
+import {
+  applyApproval,
+  dropAssignmentKeepSlot,
+  enqueueTask,
+  getSettings,
+  maybeConfirmJob,
+  requestApproval,
+  transitionJob,
+} from "@/lib/ops"
 import { isInsideNoticeWindow, localDate } from "@/lib/scheduler"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 import {
@@ -12,6 +22,7 @@ import {
   fail,
   myAssignment,
   revalidateCrew,
+  siteUrl,
   slotLabel,
   type ActionResult,
 } from "./shared"
@@ -98,6 +109,8 @@ export async function cancelSwap(jobId: string): Promise<ActionResult> {
       .eq("swap_to_crew_id", ctx.me)
       .eq("status", "swap_offered")
     if (error) throw new Error(error.message)
+    // Swap rows never block confirmation, but re-check in case this was the last thing outstanding.
+    await maybeConfirmJob(db, id.data, { siteUrl: siteUrl(), actor: "crew-app" })
     revalidateCrew()
     return { ok: true, message: "Swap cancelled. The job is still yours." }
   } catch (e) {
@@ -107,9 +120,11 @@ export async function cancelSwap(jobId: string): Promise<ActionResult> {
 
 /**
  * Drop a job I accepted. Inside the notice window → my row becomes `drop_requested` and a `drop`
- * approval `{ assignment_id, job_id }` goes to the owner. Outside it → my row is `dropped`, the
- * job goes back to `proposed` (if it was crew_confirmed / booked; any pending booking approval is
- * withdrawn) and the scheduler looks for cover.
+ * approval `{ assignment_id, job_id }` goes to the owner (applied straight away when drop autopilot
+ * is on). Outside it → my row is `dropped` and the job KEEPS its slot and the rest of its crew: it is
+ * marked for cover (`resolve_reason = 'drop'`) and the scheduler offers the gap to someone else.
+ * A booked job stays booked; a crew_confirmed one goes back to proposed (its pending "Book" card is
+ * withdrawn) so the replacement's acceptance re-confirms it. See `releaseCrewFromJob`.
  */
 export async function dropJob(jobId: string): Promise<ActionResult> {
   const id = jobIdSchema.safeParse(jobId)
@@ -142,51 +157,35 @@ export async function dropJob(jobId: string): Promise<ActionResult> {
         .eq("crew_id", ctx.me)
         .eq("status", "accepted")
       if (error) throw new Error(error.message)
-      await createApproval(db, {
-        kind: "drop",
-        ref_table: "job_assignments",
-        ref_id: mine.id,
-        payload: { assignment_id: mine.id, job_id: id.data },
-        title: `${ctx.session.profile.name || "A crew member"} wants to drop ${job.customer_name} — ${slotLabel(job)}`,
-        summary: `Inside the ${settings.drop_notice_hours} h notice window`,
-        created_by: "crew-app",
-      })
+      const { approval, autoApproved } = await requestApproval(
+        db,
+        {
+          kind: "drop",
+          ref_table: "job_assignments",
+          ref_id: mine.id,
+          payload: { assignment_id: mine.id, job_id: id.data },
+          title: `${ctx.session.profile.name || "A crew member"} wants to drop ${job.customer_name} — ${slotLabel(job)}`,
+          summary: `Inside the ${settings.drop_notice_hours} h notice window`,
+          created_by: "crew-app",
+        },
+        settings,
+      )
+      if (autoApproved) {
+        await applyApproval(db, approval, { siteUrl: siteUrl(), actor: "autopilot" })
+        revalidateCrew()
+        return { ok: true, message: "Dropped. We'll find cover." }
+      }
       revalidateCrew()
       return { ok: true, message: "It's close to the start, so the owner has to OK it. You're still on it until then." }
     }
 
     // Crew can't set `dropped` themselves (guard trigger); ownership was checked above.
-    const { error } = await db
-      .from("job_assignments")
-      .update({ status: "dropped", responded_at: now.toISOString() })
-      .eq("id", mine.id)
-      .eq("crew_id", ctx.me)
-      .eq("status", "accepted")
-    if (error) throw new Error(error.message)
-
-    if (job.status === "booked" || job.status === "crew_confirmed") {
-      // Keep the agreed slot; the scheduler finds cover for it. (JOB_TRANSITIONS has no edge back
-      // to `proposed`, so this is a guarded direct update.)
-      const { error: jobErr } = await db
-        .from("jobs")
-        .update({ status: "proposed" })
-        .eq("id", id.data)
-        .eq("status", job.status)
-      if (jobErr) throw new Error(jobErr.message)
-      await db
-        .from("approvals")
-        .update({
-          status: "rejected",
-          decided_by: "crew-app",
-          decided_at: now.toISOString(),
-          decision_note: "Withdrawn: a crew member dropped the job.",
-        })
-        .eq("kind", "booking")
-        .eq("ref_table", "jobs")
-        .eq("ref_id", id.data)
-        .eq("status", "pending")
-    }
-    await enqueueSchedule(db, "drop", [id.data])
+    const changed = await dropAssignmentKeepSlot(
+      db,
+      { job_id: id.data, crew_id: ctx.me },
+      { actor: `crew:${ctx.me}`, from: ["accepted"], taskReason: "drop" },
+    )
+    if (!changed) return fail("You've already left this job.")
     revalidateCrew()
     return { ok: true, message: "Dropped. We'll find cover." }
   } catch (e) {

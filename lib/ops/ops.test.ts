@@ -5,6 +5,8 @@ import {
   applyApproval, clearApprovalHandlers, createApproval, createJobFromQuote, decideApproval, enqueueSchedule,
   enqueueTask, formatPhone, getSettings, isAutopiloted, normalizePhone, pendingCounts, registerApprovalHandler,
   requestApproval, taskRoleFor, transitionJob, updateSettings, upsertCustomer, JOB_TRANSITIONS,
+  scheduleTaskKey, tryTransitionJob, releaseCrewFromJob, dropAssignmentKeepSlot, dropCrewFromOverlappingJobs,
+  maybeConfirmJob, markForResolve, holdForWeather, clearWeatherHold, setOwnerHold,
 } from "./index";
 import { approvalRow, customerRow, fakeDb, jobRow, settingsRow } from "./test-utils";
 
@@ -77,15 +79,28 @@ describe("tasks", () => {
     });
     expect(db.tables.fleet_tasks[0].id).toBe(id);
   });
-  it("enqueueSchedule de-dupes within a 15-minute bucket", async () => {
+  it("enqueueSchedule: sweeps de-dupe per 15-minute bucket; event enqueues with job ids never collapse into them", async () => {
     const db = fakeDb();
-    const a = await enqueueSchedule(db, "x", ["j1"], new Date("2026-03-01T10:01:00Z"));
-    const b = await enqueueSchedule(db, "y", ["j2"], new Date("2026-03-01T10:14:00Z"));
-    const c = await enqueueSchedule(db, "z", undefined, new Date("2026-03-01T10:16:00Z"));
-    expect(b).toBe(a);
-    expect(c).not.toBe(a);
-    expect(db.tables.fleet_tasks).toHaveLength(2);
-    expect(db.tables.fleet_tasks[0].payload).toEqual({ reason: "x", job_ids: ["j1"] });
+    const t = (hhmm: string) => new Date(`2026-03-01T${hhmm}:00Z`);
+    const bucket = `schedule:${Math.floor(t("10:01").getTime() / 900_000)}`;
+    const sweep1 = await enqueueSchedule(db, "sweep", undefined, t("10:01"));
+    const sweep2 = await enqueueSchedule(db, "sweep", [], t("10:14"));
+    expect(sweep2).toBe(sweep1); // same bucket, no ids
+    // Same bucket, with ids: a distinct task (its ids used to be swallowed by the sweep's).
+    const drop = await enqueueSchedule(db, "drop", ["j2", "j1"], t("10:05"));
+    expect(drop).not.toBe(sweep1);
+    // The same event again (any id order) is de-duped; another reason or id set is not.
+    expect(await enqueueSchedule(db, "drop", ["j1", "j2"], t("10:09"))).toBe(drop);
+    expect(await enqueueSchedule(db, "offer_declined", ["j1", "j2"], t("10:09"))).not.toBe(drop);
+    expect(await enqueueSchedule(db, "drop", ["j3"], t("10:09"))).not.toBe(drop);
+    // Next bucket: a fresh sweep.
+    expect(await enqueueSchedule(db, "sweep", undefined, t("10:16"))).not.toBe(sweep1);
+    expect(db.tables.fleet_tasks).toHaveLength(5);
+    const keys = db.tables.fleet_tasks.map((r) => r.dedupe_key as string);
+    expect(keys[0]).toBe(bucket);
+    expect(keys[1]).toMatch(new RegExp(`^${bucket}:drop:[0-9a-f]{8}$`));
+    expect(scheduleTaskKey("drop", ["j1", "j2"], t("10:01"))).toBe(scheduleTaskKey("drop", ["j2", "j1", "j1"], t("10:14")));
+    expect(db.tables.fleet_tasks[1].payload).toEqual({ reason: "drop", job_ids: ["j2", "j1"] });
   });
 });
 
@@ -328,5 +343,149 @@ describe("upsertCustomer", () => {
     expect(c).toMatchObject({ name: "Old", address: "1 Main St" });
     c = await upsertCustomer(db, { name: "New", email: "a@x.com", address: "2 Elm St", explicit: true });
     expect(c).toMatchObject({ name: "New", address: "2 Elm St" });
+  });
+});
+
+// ---------- Scheduler integration helpers (lib/ops/jobs.ts) ----------
+
+const T = "2026-01-01T00:00:00.000Z";
+const asg = (id: string, job_id: string, crew_id: string, status: string, swap_to_crew_id: string | null = null) =>
+  ({ id, created_at: T, updated_at: T, job_id, crew_id, status, responded_at: null, swap_to_crew_id }) as never;
+const statuses = (db: ReturnType<typeof fakeDb>, jobId: string) =>
+  db.tables.job_assignments.filter((a) => a.job_id === jobId).map((a) => [a.crew_id, a.status]);
+
+describe("transition edges used by the scheduler fixes", () => {
+  it("has the edges the code uses and nothing else new", () => {
+    expect(JOB_TRANSITIONS.crew_confirmed).toEqual(["booked", "proposed", "unscheduled", "cancelled"]);
+    expect(JOB_TRANSITIONS.booked).toEqual(["in_progress", "proposed", "unscheduled", "cancelled"]);
+    expect(JOB_TRANSITIONS.proposed).toEqual(["crew_confirmed", "unscheduled", "cancelled"]);
+  });
+  it("tryTransitionJob applies a patch, and returns null when the job is not in `from`", async () => {
+    const job = jobRow({ status: "booked", start_at: "2026-02-01T10:00:00Z", end_at: "2026-02-01T11:00:00Z" });
+    const db = fakeDb({ jobs: [job] });
+    expect(await tryTransitionJob(db, job.id, "proposed", { actor: "t", from: "crew_confirmed" })).toBeNull();
+    expect(db.tables.jobs[0].status).toBe("booked");
+    const out = await tryTransitionJob(db, job.id, "unscheduled", { actor: "t", from: ["booked"], patch: { weather_hold_date: "2026-02-01" } });
+    expect(out).toMatchObject({ status: "unscheduled", start_at: null, weather_hold_date: "2026-02-01" });
+  });
+});
+
+describe("drops keep the slot (dropAssignmentKeepSlot / releaseCrewFromJob)", () => {
+  const slot = { start_at: "2026-10-20T13:00:00.000Z", end_at: "2026-10-20T15:00:00.000Z" };
+  it("booked: only my row is dropped, the job stays booked in its slot, my swaps are withdrawn, and it is marked for cover", async () => {
+    const job = jobRow({ id: "j1", status: "booked", crew_size: 2, ...slot });
+    const db = fakeDb({
+      jobs: [job],
+      job_assignments: [asg("a1", "j1", "A", "accepted"), asg("a2", "j1", "B", "accepted"), asg("s1", "j1", "C", "swap_offered", "A")],
+    });
+    const changed = await dropAssignmentKeepSlot(db, { job_id: "j1", crew_id: "A" }, { actor: "crew:A", from: ["accepted"] });
+    expect(changed).toBe(true);
+    expect(db.tables.jobs[0]).toMatchObject({ status: "booked", ...slot, resolve_reason: "drop" });
+    expect(statuses(db, "j1")).toEqual([["A", "dropped"], ["B", "accepted"]]);
+    expect(db.tables.fleet_tasks).toHaveLength(1);
+    expect(db.tables.fleet_tasks[0]).toMatchObject({ type: "schedule", payload: { reason: "drop", job_ids: ["j1"] } });
+    expect(String(db.tables.fleet_tasks[0].dedupe_key)).toMatch(/^schedule:\d+:drop:[0-9a-f]{8}$/);
+  });
+  it("crew_confirmed: goes back to proposed (same slot) and only the pending Book card is withdrawn", async () => {
+    const job = jobRow({ id: "j1", status: "crew_confirmed", crew_size: 2, ...slot });
+    const db = fakeDb({
+      jobs: [job],
+      job_assignments: [asg("a1", "j1", "A", "accepted"), asg("a2", "j1", "B", "accepted")],
+      approvals: [
+        approvalRow({ id: "book", kind: "booking", ref_table: "jobs", ref_id: "j1", payload: { job_id: "j1" } }),
+        approvalRow({ id: "info", kind: "booking", ref_table: "jobs", ref_id: "j1", payload: { job_id: "j1", needs_cover: true } }),
+      ],
+    });
+    await releaseCrewFromJob(db, "j1", "B", { actor: "owner" });
+    expect(db.tables.jobs[0]).toMatchObject({ status: "proposed", ...slot });
+    expect(db.tables.approvals.find((a) => a.id === "book")).toMatchObject({ status: "rejected", decided_by: "owner" });
+    expect(db.tables.approvals.find((a) => a.id === "info")).toMatchObject({ status: "pending" });
+  });
+  it("nothing to drop: no status change", async () => {
+    const job = jobRow({ id: "j1", status: "crew_confirmed", ...slot });
+    const db = fakeDb({ jobs: [job], job_assignments: [asg("a1", "j1", "A", "declined")] });
+    expect(await releaseCrewFromJob(db, "j1", "A", { actor: "t" })).toBe(false);
+    expect(db.tables.jobs[0].status).toBe("crew_confirmed");
+  });
+});
+
+describe("dropCrewFromOverlappingJobs (approved time off)", () => {
+  it("frees the crew member from overlapping proposed / confirmed / booked jobs only, and marks them crew_change", async () => {
+    // 2026-10-20 is a Tuesday; 13:00Z = 9am EDT.
+    const db = fakeDb({
+      jobs: [
+        jobRow({ id: "am", status: "booked", crew_size: 2, start_at: "2026-10-20T13:00:00.000Z", end_at: "2026-10-20T15:00:00.000Z" }),
+        jobRow({ id: "pm", status: "proposed", start_at: "2026-10-20T19:00:00.000Z", end_at: "2026-10-20T20:00:00.000Z" }),
+        jobRow({ id: "next", status: "booked", start_at: "2026-10-21T13:00:00.000Z", end_at: "2026-10-21T14:00:00.000Z" }),
+        jobRow({ id: "cand", status: "booked", start_at: "2026-10-20T14:00:00.000Z", end_at: "2026-10-20T15:00:00.000Z" }),
+        jobRow({ id: "on", status: "in_progress", start_at: "2026-10-20T13:00:00.000Z", end_at: "2026-10-20T14:00:00.000Z" }),
+      ],
+      job_assignments: [
+        asg("1", "am", "A", "accepted"), asg("2", "am", "B", "accepted"),
+        asg("3", "pm", "A", "offered"),
+        asg("4", "next", "A", "accepted"),
+        asg("5", "cand", "Z", "accepted"), asg("6", "cand", "A", "swap_offered", "Z"),
+        asg("7", "on", "A", "accepted"),
+      ],
+    });
+    // Off 8am–noon local on Tue only.
+    const ids = await dropCrewFromOverlappingJobs(db, "A", "2026-10-20", "2026-10-20", "08:00", "12:00");
+    expect(ids).toEqual(["am"]);
+    expect(statuses(db, "am")).toEqual([["A", "dropped"], ["B", "accepted"]]);
+    expect(db.tables.jobs.find((j) => j.id === "am")).toMatchObject({ status: "booked", start_at: "2026-10-20T13:00:00.000Z", resolve_reason: "crew_change" });
+    expect(statuses(db, "pm")).toEqual([["A", "offered"]]); // afternoon: outside the partial day
+    expect(statuses(db, "next")).toEqual([["A", "accepted"]]); // another day
+    expect(statuses(db, "cand")).toEqual([["Z", "accepted"]]); // A's candidate swap row withdrawn
+    expect(statuses(db, "on")).toEqual([["A", "accepted"]]); // in progress: untouched
+    expect(db.tables.jobs.find((j) => j.id === "cand")?.resolve_reason).toBeNull();
+  });
+});
+
+describe("maybeConfirmJob", () => {
+  it("ignores swap_offered rows when counting live crew, and raises the booking approval", async () => {
+    const db = fakeDb({
+      settings: [settingsRow()],
+      customers: [customerRow({ id: "c1", name: "Pat Smith" })],
+      jobs: [jobRow({ id: "j1", customer_id: "c1", status: "proposed", crew_size: 2, start_at: "2026-10-20T13:00:00.000Z", end_at: "2026-10-20T14:00:00.000Z", schedule_reason: "why" })],
+      job_assignments: [asg("1", "j1", "A", "accepted"), asg("2", "j1", "B", "accepted"), asg("3", "j1", "C", "swap_offered", "B"), asg("4", "j1", "D", "declined")],
+    });
+    expect(await maybeConfirmJob(db, "j1", { siteUrl: "https://x.test", actor: "crew-app" })).toBe(true);
+    expect(db.tables.jobs[0].status).toBe("crew_confirmed");
+    expect(db.tables.approvals).toHaveLength(1);
+    expect(db.tables.approvals[0]).toMatchObject({ kind: "booking", ref_id: "j1", payload: { job_id: "j1" }, summary: "why", status: "pending" });
+    expect(String(db.tables.approvals[0].title)).toMatch(/^Book Pat Smith — /);
+    // A second call is a no-op (already confirmed).
+    expect(await maybeConfirmJob(db, "j1", { siteUrl: "https://x.test", actor: "crew-app" })).toBe(false);
+  });
+  it("waits for every holding crew member and for enough of them", async () => {
+    const mk = (rows: never[], crew_size = 2) =>
+      fakeDb({ settings: [settingsRow()], jobs: [jobRow({ id: "j1", status: "proposed", crew_size })], job_assignments: rows });
+    expect(await maybeConfirmJob(mk([asg("1", "j1", "A", "accepted"), asg("2", "j1", "B", "offered")]), "j1", { siteUrl: "", actor: "t" })).toBe(false);
+    expect(await maybeConfirmJob(mk([asg("1", "j1", "A", "accepted"), asg("2", "j1", "B", "dropped")]), "j1", { siteUrl: "", actor: "t" })).toBe(false);
+    expect(await maybeConfirmJob(mk([asg("1", "j1", "A", "accepted"), asg("2", "j1", "B", "drop_requested")]), "j1", { siteUrl: "", actor: "t" })).toBe(false);
+  });
+});
+
+describe("re-solve marks, weather holds, owner holds", () => {
+  it("markForResolve only marks open jobs", async () => {
+    const db = fakeDb({ jobs: [jobRow({ id: "a", status: "booked" }), jobRow({ id: "b", status: "done" })] });
+    await markForResolve(db, ["a", "b", "a"], "declined");
+    expect(db.tables.jobs.map((j) => [j.id, j.resolve_reason])).toEqual([["a", "declined"], ["b", null]]);
+  });
+  it("holdForWeather marks held jobs weather_hold; clearWeatherHold reopens the day and drops only a weather mark", async () => {
+    const db = fakeDb({ jobs: [jobRow({ id: "a", status: "booked" }), jobRow({ id: "b", status: "in_progress" })] });
+    expect(await holdForWeather(db, ["a", "b"])).toEqual(["a"]);
+    expect(db.tables.jobs[0]).toMatchObject({ weather_hold: true, resolve_reason: "weather_hold" });
+    expect(db.tables.jobs[1]).toMatchObject({ weather_hold: false, resolve_reason: null });
+    expect(db.tables.fleet_tasks[0].payload).toEqual({ reason: "weather_hold", job_ids: ["a"] });
+    db.tables.jobs[0].weather_hold_date = "2026-10-20";
+    await clearWeatherHold(db, "a");
+    expect(db.tables.jobs[0]).toMatchObject({ weather_hold: false, weather_hold_date: null, resolve_reason: null });
+  });
+  it("setOwnerHold(false) asks the scheduler to look again", async () => {
+    const db = fakeDb({ jobs: [jobRow({ id: "a", owner_hold: true })] });
+    await setOwnerHold(db, "a", false);
+    expect(db.tables.jobs[0].owner_hold).toBe(false);
+    expect(db.tables.fleet_tasks[0].payload).toEqual({ reason: "owner_released", job_ids: ["a"] });
   });
 });

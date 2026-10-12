@@ -244,7 +244,8 @@ export function jobRow(over: Partial<Job> = {}): Job {
   return {
     id: randomUUID(), created_at: T0, updated_at: T0, quote_id: null, customer_id: randomUUID(),
     status: "unscheduled", start_at: null, end_at: null, est_minutes: 60, crew_size: 1, paid: true,
-    weather_hold: false, paid_at: T0, deadline: null, schedule_reason: null, actual_minutes: null,
+    weather_hold: false, paid_at: T0, deadline: null, schedule_reason: null, resolve_reason: null, owner_hold: false,
+    weather_hold_date: null, actual_minutes: null,
     started_at: null, completed_at: null, completion_photo_paths: [], notes: null, ...over,
   };
 }

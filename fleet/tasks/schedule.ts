@@ -2,30 +2,44 @@
  * `schedule` (role scheduler): gather a `SchedulerInput` from the database, run the pure
  * `lib/scheduler.solve`, and write its proposals (job → `proposed`, crew → `offered`).
  *
- * - `job_ids` are re-solved: jobs that are `proposed` / `crew_confirmed` (or `booked` with a weather
- *   hold) are reset to `unscheduled` and their live assignments `dropped`. Booked jobs without a
- *   weather hold, and anything in progress / done / cancelled, are never touched.
- * - A weather-held job's current day is closed for this run (`closedDates`).
- * - Every other `unscheduled` job is swept in too (so the 15-minute sweep catches stragglers).
- * - Jobs with a declined / dropped crew member and too few active crew get a cover offer
- *   (`findCover`); if nobody fits, the owner gets a `booking` approval.
+ * What a run looks at is durable state on the job rows, never the task payload (a de-duped task
+ * would lose its ids):
+ * - Jobs marked `resolve_reason` (see `markForResolve` in lib/ops/jobs.ts). A marked job that is on
+ *   weather hold and still proposed / confirmed / booked is taken off its day (→ `unscheduled`, live
+ *   assignments `dropped`, `weather_hold_date` remembered) and re-planned. Other marks (drop, decline,
+ *   time off) keep the slot: the cover pass below fills the gap. Marks are cleared after the run.
+ * - Every `unscheduled` job is solved (so the 15-minute sweep catches stragglers). A job still on
+ *   weather hold keeps its held day closed (`closedDates`) until it is re-proposed, which also
+ *   clears the hold.
+ * - Jobs with a declined / dropped crew member and too few holding crew get a cover offer for the
+ *   SAME slot (`findCover`); if nobody fits, the owner gets a `needs_cover` booking card.
+ * - Jobs on `owner_hold` (owner rejected the slot or marked a card handled) are left alone.
+ * - Informational cards are only raised again when their text changes (no fresh card every sweep
+ *   for something the owner already saw).
  */
 import type { AssignmentStatus, Customer, Job, JobAssignment } from "../../lib/db/types";
 import { createApproval } from "../../lib/ops/approvals";
+import type { CreateApprovalInput } from "../../lib/ops/approvals";
+import { tryTransitionJob, withdrawBookingRequests } from "../../lib/ops/jobs";
 import { getSettings } from "../../lib/ops/settings";
 import { check } from "../../lib/ops/types";
 import type { Db } from "../../lib/ops/types";
-import { findCover, localDate, solve } from "../../lib/scheduler";
+import { findCover, HOLDING_ASSIGNMENT_STATUSES, localDate, solve } from "../../lib/scheduler";
 import type { CustomerInfo, ExistingAssignment, SchedulerInput } from "../../lib/scheduler";
 import type { TaskContext } from "../context";
 import type { SchedulePayload } from "./schemas";
 
-const ACTIVE: AssignmentStatus[] = ["offered", "accepted", "swap_offered", "drop_requested"];
+/** Rows that hold a crew member on a job. `swap_offered` rows are candidates and hold nobody. */
+const HOLDING: readonly AssignmentStatus[] = HOLDING_ASSIGNMENT_STATUSES;
 const GONE: AssignmentStatus[] = ["declined", "dropped"];
 const SCHEDULED: Job["status"][] = ["proposed", "crew_confirmed", "booked", "in_progress"];
+const RESETTABLE: Job["status"][] = ["proposed", "crew_confirmed", "booked"];
+const OPEN: Job["status"][] = ["unscheduled", ...SCHEDULED];
 
 export type ScheduleResult = {
   reason: string;
+  /** Marked jobs picked up this run (owner-held ones excluded). */
+  resolved: number;
   reset: number;
   considered: number;
   proposed: number;
@@ -34,33 +48,35 @@ export type ScheduleResult = {
   no_cover: number;
 };
 
-/** Reset the re-solve set. Returns the ids that were reset and the weather-hold days to close. */
-export async function resetJobs(db: Db, jobIds: string[]): Promise<{ reset: string[]; closedDates: string[] }> {
+/** Jobs carrying a `resolve_reason` mark that the scheduler may act on. */
+export async function loadMarkedJobs(db: Db): Promise<Job[]> {
+  const open = check(await db.from("jobs").select("*").in("status", OPEN), "schedule(marked)") ?? [];
+  return open.filter((j) => j.resolve_reason !== null && j.resolve_reason !== undefined && !j.owner_hold);
+}
+
+/**
+ * Take weather-held marked jobs off their day. Returns the ids that were reset and the days they
+ * were on (closed for this run; later runs read `weather_hold_date`).
+ */
+export async function resetWeatherHeld(db: Db, marked: Job[], actor: string): Promise<{ reset: string[]; closedDates: string[] }> {
   const reset: string[] = [];
   const closed: string[] = [];
-  if (!jobIds.length) return { reset, closedDates: closed };
-  const jobs = check(await db.from("jobs").select("*").in("id", jobIds), "schedule(job_ids)") ?? [];
-  for (const j of jobs) {
-    const resettable = j.status === "proposed" || j.status === "crew_confirmed" || (j.status === "booked" && j.weather_hold);
-    if (!resettable) continue;
-    if (j.weather_hold && j.start_at) {
-      const day = localDate(new Date(j.start_at));
-      if (!closed.includes(day)) closed.push(day);
-    }
-    const moved = check(
-      await db
-        .from("jobs")
-        .update({ status: "unscheduled", start_at: null, end_at: null, schedule_reason: null })
-        .eq("id", j.id)
-        .eq("status", j.status)
-        .select("id"),
-      "schedule(reset job)",
-    );
-    if (!moved?.length) continue; // changed under us
+  for (const j of marked) {
+    if (!j.weather_hold || !RESETTABLE.includes(j.status)) continue;
+    const day = j.start_at ? localDate(new Date(j.start_at)) : j.weather_hold_date;
+    const moved = await tryTransitionJob(db, j.id, "unscheduled", {
+      actor,
+      from: j.status,
+      patch: { weather_hold_date: day ?? null, resolve_reason: null },
+    });
+    if (!moved) continue; // changed under us
+    if (day && !closed.includes(day)) closed.push(day);
     check(
-      await db.from("job_assignments").update({ status: "dropped" }).eq("job_id", j.id).in("status", ACTIVE),
+      await db.from("job_assignments").update({ status: "dropped" }).eq("job_id", j.id).in("status", HOLDING),
       "schedule(drop assignments)",
     );
+    check(await db.from("job_assignments").delete().eq("job_id", j.id).eq("status", "swap_offered"), "schedule(drop swaps)");
+    await withdrawBookingRequests(db, j.id, actor, "Withdrawn: the job was taken off its day for weather.");
     reset.push(j.id);
   }
   return { reset, closedDates: closed };
@@ -95,13 +111,16 @@ function withTimes(assignments: JobAssignment[], jobs: Job[]): ExistingAssignmen
   const out: ExistingAssignment[] = [];
   for (const a of assignments) {
     const j = byId[a.job_id];
-    if (!j || !j.start_at || !j.end_at || !ACTIVE.includes(a.status)) continue;
+    if (!j || !j.start_at || !j.end_at || !HOLDING.includes(a.status)) continue;
     out.push({ ...a, start_at: j.start_at, end_at: j.end_at, est_minutes: j.est_minutes, customer_id: j.customer_id });
   }
   return out;
 }
 
-/** Read everything `solve` needs. `closedDates` come from the reset step. */
+/**
+ * Read everything `solve` needs. `closedDates` come from the reset step; days of jobs still on
+ * weather hold (`weather_hold_date`, today or later) are added. Owner-held jobs are not solved.
+ */
 export async function gatherSchedulerInput(db: Db, now: Date, closedDates: string[] = []): Promise<Gathered> {
   const unscheduled = check(await db.from("jobs").select("*").eq("status", "unscheduled"), "schedule(unscheduled)") ?? [];
   const scheduledJobs = check(await db.from("jobs").select("*").in("status", SCHEDULED), "schedule(scheduled)") ?? [];
@@ -121,6 +140,13 @@ export async function gatherSchedulerInput(db: Db, now: Date, closedDates: strin
     check(await db.from("crew_exceptions").select("*").eq("status", "approved"), "schedule(crew exceptions)") ?? []
   ).filter((e) => e.date_to >= today);
 
+  const toSolve = unscheduled.filter((j) => !j.owner_hold);
+  const closed = [...closedDates];
+  for (const j of toSolve) {
+    const day = j.weather_hold ? j.weather_hold_date?.slice(0, 10) : null;
+    if (day && day >= today && !closed.includes(day)) closed.push(day);
+  }
+
   const customerIds: string[] = [];
   for (const j of unscheduled.concat(scheduledJobs)) if (!customerIds.includes(j.customer_id)) customerIds.push(j.customer_id);
   const { rows, info } = await loadCustomers(db, customerIds);
@@ -128,7 +154,7 @@ export async function gatherSchedulerInput(db: Db, now: Date, closedDates: strin
 
   return {
     input: {
-      jobs: unscheduled,
+      jobs: toSolve,
       crew,
       ownerWindows,
       ownerExceptions,
@@ -138,7 +164,7 @@ export async function gatherSchedulerInput(db: Db, now: Date, closedDates: strin
       customers: info,
       settings: { drop_notice_hours: settings.drop_notice_hours },
       now,
-      ...(closedDates.length ? { closedDates } : {}),
+      ...(closed.length ? { closedDates: closed.sort() } : {}),
     },
     scheduledJobs,
     assignments,
@@ -157,39 +183,77 @@ export async function offerAssignment(db: Db, jobId: string, crewId: string): Pr
   else check(await db.from("job_assignments").insert({ job_id: jobId, crew_id: crewId, ...fields }), "schedule(offer)");
 }
 
+/**
+ * Raise (or refresh) one of the scheduler's informational booking cards (`unschedulable` /
+ * `needs_cover`) unless the owner already saw the same thing: the latest card of that flag for
+ * the job has the same summary (pending → left as is; decided → not raised again).
+ * Returns true when a card was written.
+ */
+export async function raiseInfoCard(
+  db: Db,
+  flag: "unschedulable" | "needs_cover",
+  input: Omit<CreateApprovalInput, "kind" | "ref_table">,
+): Promise<boolean> {
+  const prior =
+    check(
+      await db
+        .from("approvals")
+        .select("*")
+        .eq("kind", "booking")
+        .eq("ref_table", "jobs")
+        .eq("ref_id", input.ref_id)
+        .order("created_at", { ascending: false }),
+      "schedule(prior cards)",
+    ) ?? [];
+  const last = prior.find((a) => a.payload?.[flag] === true);
+  if (last && (last.summary ?? null) === (input.summary ?? null)) return false;
+  await createApproval(db, { ...input, kind: "booking", ref_table: "jobs" });
+  return true;
+}
+
 const nameOf = (customers: Record<string, Customer>, id: string) => customers[id]?.name ?? "a customer";
 
 export async function runSchedule(ctx: TaskContext, payload: SchedulePayload): Promise<ScheduleResult> {
   const { db } = ctx;
   const now = ctx.now();
-  const { reset, closedDates } = await resetJobs(db, payload.job_ids ?? []);
+  // `payload.job_ids` is only a hint now: the marks on the job rows are the source of truth.
+  const marked = await loadMarkedJobs(db);
+  const { reset, closedDates } = await resetWeatherHeld(db, marked, ctx.worker);
   const g = await gatherSchedulerInput(db, now, closedDates);
   const out: ScheduleResult = {
-    reason: payload.reason, reset: reset.length, considered: g.input.jobs.length, proposed: 0, unschedulable: 0, covers: 0, no_cover: 0,
+    reason: payload.reason,
+    resolved: marked.length,
+    reset: reset.length,
+    considered: g.input.jobs.length,
+    proposed: 0,
+    unschedulable: 0,
+    covers: 0,
+    no_cover: 0,
   };
 
   if (g.input.jobs.length) {
     const result = solve(g.input);
     for (const p of result.proposals) {
-      const moved = check(
-        await db
-          .from("jobs")
-          .update({ status: "proposed", start_at: p.start_at, end_at: p.end_at, schedule_reason: p.reason, weather_hold: false })
-          .eq("id", p.job_id)
-          .eq("status", "unscheduled")
-          .select("id"),
-        "schedule(propose)",
-      );
-      if (!moved?.length) continue;
+      const moved = await tryTransitionJob(db, p.job_id, "proposed", {
+        actor: ctx.worker,
+        from: "unscheduled",
+        patch: {
+          start_at: p.start_at,
+          end_at: p.end_at,
+          schedule_reason: p.reason,
+          weather_hold: false,
+          weather_hold_date: null,
+          resolve_reason: null,
+        },
+      });
+      if (!moved) continue;
       for (const crewId of p.crew_ids) await offerAssignment(db, p.job_id, crewId);
       out.proposed++;
     }
     for (const u of result.unschedulable) {
       const job = g.input.jobs.find((j) => j.id === u.job_id);
       const name = job ? nameOf(g.customers, job.customer_id) : "a job";
-      await createApproval(db, {
-        kind: "booking",
-        ref_table: "jobs",
+      await raiseInfoCard(db, "unschedulable", {
         ref_id: u.job_id,
         payload: { job_id: u.job_id, unschedulable: true, reason: u.reason },
         title: `Can't schedule ${name}`,
@@ -201,15 +265,31 @@ export async function runSchedule(ctx: TaskContext, payload: SchedulePayload): P
   }
 
   await coverPass(ctx, g, now, out);
+  await clearMarks(db, marked, reset);
   return out;
 }
 
-/** Find replacements for declined / dropped crew on jobs that are short-handed. */
+/** Clear the marks this run acted on (guarded on the value read, so a newer mark survives). */
+async function clearMarks(db: Db, marked: Job[], alreadyCleared: string[]): Promise<void> {
+  const byReason = new Map<string, string[]>();
+  for (const j of marked) {
+    if (alreadyCleared.includes(j.id) || !j.resolve_reason) continue;
+    byReason.set(j.resolve_reason, [...(byReason.get(j.resolve_reason) ?? []), j.id]);
+  }
+  for (const [reason, ids] of Array.from(byReason)) {
+    check(
+      await db.from("jobs").update({ resolve_reason: null }).in("id", ids).eq("resolve_reason", reason),
+      "schedule(clear marks)",
+    );
+  }
+}
+
+/** Find replacements (same slot) for declined / dropped crew on jobs that are short-handed. */
 async function coverPass(ctx: TaskContext, g: Gathered, now: Date, out: ScheduleResult): Promise<void> {
   const { db } = ctx;
   // Re-read: proposals from this run are now scheduled jobs with offers.
-  const jobs = (check(await db.from("jobs").select("*").in("status", ["proposed", "crew_confirmed", "booked"]), "cover(jobs)") ?? []).filter(
-    (j) => j.start_at && j.end_at && Date.parse(j.start_at) > now.getTime(),
+  const jobs = (check(await db.from("jobs").select("*").in("status", RESETTABLE), "cover(jobs)") ?? []).filter(
+    (j) => j.start_at && j.end_at && Date.parse(j.start_at) > now.getTime() && !j.owner_hold,
   );
   if (!jobs.length) return;
   const scheduledAll = check(await db.from("jobs").select("*").in("status", SCHEDULED), "cover(all scheduled)") ?? [];
@@ -221,11 +301,12 @@ async function coverPass(ctx: TaskContext, g: Gathered, now: Date, out: Schedule
   for (const job of jobs) {
     const mine = allAssignments.filter((a) => a.job_id === job.id);
     const gone = mine.filter((a) => GONE.includes(a.status));
-    const active = mine.filter((a) => ACTIVE.includes(a.status));
-    const missing = job.crew_size - active.length;
+    const holding = mine.filter((a) => HOLDING.includes(a.status));
+    const missing = job.crew_size - holding.length;
     if (!gone.length || missing <= 0) continue;
 
-    const exclude = gone.map((a) => a.crew_id);
+    // Skip people who left / declined, and swap candidates (their row is unique per job).
+    const exclude = [...gone, ...mine.filter((a) => a.status === "swap_offered")].map((a) => a.crew_id);
     let short = 0;
     for (let k = 0; k < missing; k++) {
       const cover = findCover({
@@ -256,9 +337,7 @@ async function coverPass(ctx: TaskContext, g: Gathered, now: Date, out: Schedule
     }
     if (short > 0) {
       const name = g.customers[job.customer_id]?.name ?? (await customerName(db, job.customer_id));
-      await createApproval(db, {
-        kind: "booking",
-        ref_table: "jobs",
+      await raiseInfoCard(db, "needs_cover", {
         ref_id: job.id,
         payload: { job_id: job.id, needs_cover: true, missing: short, declined_crew_ids: gone.map((a) => a.crew_id) },
         title: `No cover for ${name}`,

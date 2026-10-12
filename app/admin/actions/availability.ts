@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { requireOwner } from "@/lib/auth/session"
-import { check, decideApproval, enqueueSchedule } from "@/lib/ops"
+import { applyApprovedCrewException, check, decideApproval, enqueueSchedule } from "@/lib/ops"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; reason: string }
@@ -113,7 +113,9 @@ export async function deleteOwnerException(id: string): Promise<ActionResult> {
 
 /**
  * Approve / decline a pending crew time-off or extra-day request. Any pending `crew_change`
- * approval for the same request is resolved to match, so the inbox doesn't ask twice.
+ * approval for the same request is resolved to match, so the inbox doesn't ask twice. Approved time
+ * off goes through the same path as the inbox's crew_change handler (`applyApprovedCrewException`):
+ * the crew member comes off overlapping jobs, which keep their slots and get cover.
  */
 export async function decideCrewException(id: string, decision: "approved" | "declined"): Promise<ActionResult> {
   const session = await requireOwner()
@@ -122,7 +124,7 @@ export async function decideCrewException(id: string, decision: "approved" | "de
   try {
     const db = requireSupabaseAdmin()
     const updated = check(
-      await db.from("crew_exceptions").update({ status: decision }).eq("id", id).eq("status", "pending").select("id"),
+      await db.from("crew_exceptions").update({ status: decision }).eq("id", id).eq("status", "pending").select("*"),
       "update request",
     )
     if (!updated?.length) return { ok: false, reason: "That request was already handled." }
@@ -141,7 +143,7 @@ export async function decideCrewException(id: string, decision: "approved" | "de
       }
     }
 
-    if (decision === "approved") await enqueueSchedule(db, "crew_exception_approved")
+    if (decision === "approved") await applyApprovedCrewException(db, updated[0], { actor })
     revalidate()
     return { ok: true, message: decision === "approved" ? "Request approved. The scheduler will re-plan." : "Request declined." }
   } catch (e) {

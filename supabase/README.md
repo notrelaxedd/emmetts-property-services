@@ -23,7 +23,7 @@ one that has already been applied to the real project).
 | Every table | read + write | — | nothing | bypasses RLS |
 | `profiles` | all | own row; may change only `name`, `phone`, `max_hours_week`, `paused` | — | all |
 | `crew_availability`, `crew_exceptions` | all | own rows (read/insert/update/delete); time-off `status` is always forced to `pending` | — | all |
-| `job_assignments` | all | own rows; may change only `status` (to accepted/declined/swap_offered/drop_requested) and `responded_at` | — | all |
+| `job_assignments` | all | own rows; may change only `status` + `responded_at`, and only `offered→accepted`, `offered→declined`, `accepted→drop_requested` (swaps and drops go through server actions using the service role) | — | all |
 | `payouts` | all | own rows, read only | — | all |
 | `services` | all | read | — | all |
 | `crew_jobs` view | every job | jobs they are assigned to | — | every job |
@@ -55,17 +55,30 @@ only adds `supabase/config.toml` and leaves `migrations/` alone.
 After applying:
 
 1. **Turn off public sign-ups.** Go to Authentication → Sign In / Providers and
-   switch off "Allow new users to sign up". Every new auth user automatically gets a
-   `crew` profile, so the app is meant to be invite-only: the owner invites crew
-   from `/admin/employees` (service-role `auth.admin.inviteUserByEmail`).
-2. **Make yourself the owner.** Sign in once (or invite yourself from
-   Authentication → Users) so your auth user and its `crew` profile exist, then
-   run this in the SQL editor:
+   switch off "Allow new users to sign up". The app is invite-only: the owner
+   invites crew from `/admin/employees`. The `auth.users` hook
+   (`handle_new_user`, see `20261012000800_guards.sql`) creates a `crew` profile
+   **only for invited users**:
+   - email invites (`auth.admin.inviteUserByEmail`, or Dashboard →
+     Authentication → Users → **Invite user**): Supabase sets `invited_at`;
+   - phone crew added from `/admin/employees` (`auth.admin.createUser` with
+     `phone_confirm: true` and `user_metadata: { name }`): phone already
+     confirmed when the user is created, and `name` in the metadata.
+
+   Any other new auth user (a public sign-up left on by mistake, Dashboard
+   **Add user → Create new user**) gets **no profile**, so it can't see anything.
+2. **Make yourself the owner.** Easiest: Dashboard → Authentication → Users →
+   **Invite user** with your own email, accept the invite once (this creates
+   your auth user and its `crew` profile), then run this in the SQL editor. It
+   also works if your auth user has no profile yet (e.g. you created it with
+   **Add user**), because it inserts the row when it's missing:
 
    ```sql
-   update public.profiles
-      set role = 'owner'
-    where user_id = (select id from auth.users where email = 'you@example.com');
+   insert into public.profiles (user_id, role, name, email)
+   select id, 'owner', coalesce(raw_user_meta_data ->> 'name', split_part(email, '@', 1)), email
+     from auth.users
+    where email = 'you@example.com'
+   on conflict (user_id) do update set role = 'owner';
    ```
 
    The role is never taken from user metadata, and crew can't change their own

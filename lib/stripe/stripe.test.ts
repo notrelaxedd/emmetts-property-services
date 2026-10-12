@@ -24,7 +24,7 @@ vi.mock("stripe", () => {
 
 import type Stripe from "stripe";
 import { customerRow, fakeDb, jobRow, settingsRow } from "../ops/test-utils";
-import { buildCheckoutLines, checkoutExpiresAt, createCheckoutForQuote, refundQuote } from "./checkout";
+import { buildCheckoutLines, checkoutExpiresAt, createCheckoutForQuote, expireOpenCheckout, refundQuote } from "./checkout";
 import { getStripe, resetStripeClient } from "./client";
 import { handleStripeEvent } from "./webhook";
 
@@ -255,5 +255,99 @@ describe("handleStripeEvent", () => {
     expect(note).toContain("ch_1");
     expect(note).toContain("$80.00");
     expect(note.match(/ch_1/g)).toHaveLength(1);
+  });
+});
+
+describe("handleStripeEvent: paid amount and double payment checks", () => {
+  const alerts = (db: ReturnType<typeof world>) => (db.tables.approvals ?? []).filter((a) => a.kind === "quote");
+
+  it("a payment matching the quote total raises no alert", async () => {
+    const db = world({ price_total: 80 });
+    await handleStripeEvent(db, evt("evt_1", "checkout.session.completed", paidSession({ amount_total: 8000 })), { siteUrl: SITE });
+    expect(db.tables.quotes[0]).toMatchObject({ status: "accepted", rationale: null });
+    expect(alerts(db)).toHaveLength(0);
+  });
+
+  it("a different paid amount still accepts the quote and books the job, but notes it loudly and raises a quote approval", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const db = world({ price_total: 80, rationale: "priced from the catalogue" });
+    const e = evt("evt_1", "checkout.session.completed", paidSession({ amount_total: 6000 }));
+    const res = await handleStripeEvent(db, e, { siteUrl: SITE });
+    expect(res).toEqual({ duplicate: false, processed: true });
+    const q = db.tables.quotes[0];
+    expect(q).toMatchObject({ status: "accepted", stripe_payment_intent_id: "pi_1" });
+    expect(String(q.rationale)).toMatch(/^priced from the catalogue\n/);
+    expect(String(q.rationale)).toMatch(/Paid amount differs from quote.*\$60\.00.*\$80\.00/);
+    expect(db.tables.jobs).toHaveLength(1);
+    expect(db.tables.leads[0].status).toBe("won");
+    const [alert] = alerts(db);
+    expect(alert).toMatchObject({
+      kind: "quote", status: "pending", title: "Paid amount differs from quote", ref_table: "stripe_events",
+      ref_id: db.tables.stripe_events[0].id, created_by: "stripe-webhook",
+    });
+    expect(alert.payload).toMatchObject({ quote_id: "q1", alert: "amount_mismatch", amount_paid: 6000, amount_expected: 8000 });
+    err.mockRestore();
+  });
+
+  it("a second payment for an already-paid quote keeps the first payment, notes 'refund manually' and raises an approval", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const db = world({ price_total: 80 });
+    await handleStripeEvent(db, evt("evt_1", "checkout.session.completed", paidSession({ amount_total: 8000 })), { siteUrl: SITE });
+    const acceptedAt = db.tables.quotes[0].accepted_at;
+    const second = evt("evt_2", "checkout.session.completed", paidSession({ id: "cs_2", payment_intent: "pi_2", amount_total: 8000 }));
+    expect(await handleStripeEvent(db, second, { siteUrl: SITE })).toEqual({ duplicate: false, processed: true });
+    const q = db.tables.quotes[0];
+    expect(q).toMatchObject({ status: "accepted", stripe_payment_intent_id: "pi_1", accepted_at: acceptedAt });
+    expect(String(q.rationale)).toContain("second payment pi_2");
+    expect(String(q.rationale)).toContain("refund manually");
+    expect(db.tables.jobs).toHaveLength(1);
+    expect(db.tables.fleet_tasks).toHaveLength(1);
+    const [alert] = alerts(db);
+    expect(alert).toMatchObject({ kind: "quote", status: "pending", ref_table: "stripe_events" });
+    expect(alert.payload).toMatchObject({ quote_id: "q1", alert: "double_payment", payment_intent: "pi_2", first_payment_intent: "pi_1" });
+    // Redelivery of the same events changes nothing more.
+    await handleStripeEvent(db, second, { siteUrl: SITE });
+    expect(String(db.tables.quotes[0].rationale).match(/pi_2/g)).toHaveLength(1);
+    expect(alerts(db)).toHaveLength(1);
+    err.mockRestore();
+  });
+
+  it("a redelivered event that failed half-way is retried, not treated as a duplicate", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const db = world();
+    db.tables.stripe_events = [{ id: "row-1", stripe_event_id: "evt_1", type: "checkout.session.completed", processed_at: null, payload: {} }];
+    const res = await handleStripeEvent(db, evt("evt_1", "checkout.session.completed", paidSession()), { siteUrl: SITE });
+    expect(res).toEqual({ duplicate: false, processed: true });
+    expect(db.tables.stripe_events).toHaveLength(1);
+    expect(db.tables.quotes[0].status).toBe("accepted");
+    err.mockRestore();
+  });
+});
+
+describe("expireOpenCheckout", () => {
+  it("expires the quote's open session and clears the stored link", async () => {
+    const db = world({ stripe_checkout_id: "cs_1", stripe_checkout_url: "https://checkout.stripe.test/cs_1" });
+    m.retrieve.mockResolvedValue({ id: "cs_1", status: "open" });
+    m.expire.mockResolvedValue({ id: "cs_1", status: "expired" });
+    expect(await expireOpenCheckout(db, "q1")).toEqual({ expired: true });
+    expect(m.expire).toHaveBeenCalledWith("cs_1");
+    expect(db.tables.quotes[0].stripe_checkout_url).toBeNull();
+  });
+  it("is a no-op on Stripe without a session or with an already expired one", async () => {
+    expect(await expireOpenCheckout(world(), "q1")).toEqual({ expired: false });
+    m.retrieve.mockResolvedValue({ id: "cs_1", status: "expired" });
+    expect(await expireOpenCheckout(world({ stripe_checkout_id: "cs_1" }), "q1")).toEqual({ expired: false });
+    expect(m.expire).not.toHaveBeenCalled();
+  });
+  it("refuses when the customer already paid the session (and when they pay mid-expire)", async () => {
+    const db = world({ stripe_checkout_id: "cs_1", stripe_checkout_url: "u" });
+    m.retrieve.mockResolvedValueOnce({ id: "cs_1", status: "complete" });
+    await expect(expireOpenCheckout(db, "q1")).rejects.toThrow(/already paid/);
+    expect(db.tables.quotes[0].stripe_checkout_url).toBe("u");
+
+    m.retrieve.mockResolvedValueOnce({ id: "cs_1", status: "open" }).mockResolvedValueOnce({ id: "cs_1", status: "complete" });
+    m.expire.mockRejectedValueOnce(new Error("session is complete"));
+    await expect(expireOpenCheckout(db, "q1")).rejects.toThrow(/paid this quote while/);
+    expect(db.tables.quotes[0].stripe_checkout_url).toBe("u");
   });
 });

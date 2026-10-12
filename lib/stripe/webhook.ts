@@ -8,6 +8,7 @@
  */
 import type Stripe from "stripe";
 import type { Quote } from "../db/types";
+import { createApproval } from "../ops/approvals";
 import { createJobFromQuote } from "../ops/jobs";
 import { check, one } from "../ops/types";
 import type { Db } from "../ops/types";
@@ -22,6 +23,8 @@ export type StripeEventResult = {
 };
 
 type Ctx = { siteUrl: string };
+/** Ctx plus the `stripe_events` row being processed (alerts point at it). */
+type DispatchCtx = Ctx & { eventRowId: string };
 
 function idOf(v: string | { id: string } | null | undefined): string | null {
   if (!v) return null;
@@ -56,7 +59,7 @@ export async function handleStripeEvent(db: Db, event: Stripe.Event, ctx: Ctx): 
     ).id;
 
   try {
-    await dispatch(db, event, ctx);
+    await dispatch(db, event, { ...ctx, eventRowId: rowId });
     check(
       await db.from("stripe_events").update({ processed_at: new Date().toISOString() }).eq("id", rowId),
       "stripe_events(mark processed)",
@@ -80,11 +83,11 @@ export async function reprocessPendingStripeEvents(db: Db, ctx: Ctx): Promise<St
   return out;
 }
 
-async function dispatch(db: Db, event: Stripe.Event, _ctx: Ctx): Promise<void> {
+async function dispatch(db: Db, event: Stripe.Event, ctx: DispatchCtx): Promise<void> {
   switch (event.type) {
     case "checkout.session.completed":
     case "checkout.session.async_payment_succeeded":
-      return onCheckoutPaid(db, event.data.object);
+      return onCheckoutPaid(db, event.data.object, ctx);
     case "checkout.session.expired":
       return onCheckoutExpired(db, event.data.object);
     case "charge.refunded":
@@ -98,7 +101,30 @@ async function getQuote(db: Db, id: string): Promise<Quote | null> {
   return check(await db.from("quotes").select("*").eq("id", id).maybeSingle(), "stripe(quote lookup)");
 }
 
-async function onCheckoutPaid(db: Db, session: Stripe.Checkout.Session): Promise<void> {
+const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+
+/**
+ * Payment problems the owner must look at: a `quote` approval (no autopilot), keyed to the Stripe
+ * event row so a redelivery refreshes the same card. Approving / rejecting it is a no-op on an
+ * accepted quote (see quoteHandler / rejectQuote); it is there to be seen.
+ */
+async function raisePaymentAlert(
+  db: Db,
+  ctx: DispatchCtx,
+  input: { quoteId: string; title: string; summary: string; payload: Record<string, unknown> },
+): Promise<void> {
+  await createApproval(db, {
+    kind: "quote",
+    ref_table: "stripe_events",
+    ref_id: ctx.eventRowId,
+    payload: { quote_id: input.quoteId, ...input.payload },
+    title: input.title,
+    summary: input.summary,
+    created_by: "stripe-webhook",
+  });
+}
+
+async function onCheckoutPaid(db: Db, session: Stripe.Checkout.Session, ctx: DispatchCtx): Promise<void> {
   if (session.payment_status !== "paid") return; // e.g. async payment still pending
   const quoteId = session.metadata?.quote_id;
   if (!quoteId) {
@@ -108,6 +134,37 @@ async function onCheckoutPaid(db: Db, session: Stripe.Checkout.Session): Promise
   const quote = await getQuote(db, quoteId);
   if (!quote) throw new Error(`checkout session ${session.id}: quote ${quoteId} not found`);
 
+  const pi = idOf(session.payment_intent);
+  const paid = typeof session.amount_total === "number" ? session.amount_total : null;
+
+  // A second, different payment for a quote that is already paid: keep the first payment on the quote
+  // (refunds and the job hang off it) and make the owner refund this one by hand.
+  if (quote.status === "accepted" && quote.stripe_payment_intent_id && pi && quote.stripe_payment_intent_id !== pi) {
+    const note = `WARNING: second payment ${pi}${paid !== null ? ` (${usd(paid)})` : ""} received for this already-paid quote (checkout ${session.id}) — refund manually in Stripe.`;
+    if (!quote.rationale?.includes(pi)) {
+      check(
+        await db.from("quotes").update({ rationale: appendNote(quote.rationale, note) }).eq("id", quoteId),
+        "stripe(second payment note)",
+      );
+    }
+    console.error(`[stripe] quote ${quoteId}: ${note}`);
+    await raisePaymentAlert(db, ctx, {
+      quoteId,
+      title: "Second payment received — refund manually",
+      summary: note,
+      payload: { alert: "double_payment", payment_intent: pi, first_payment_intent: quote.stripe_payment_intent_id, checkout_session: session.id, amount_paid: paid },
+    });
+    return;
+  }
+
+  // The money arrived, so the quote is accepted either way; a different amount (the quote was edited
+  // after the link went out, or an old link was paid) is flagged loudly for the owner.
+  const expected = Math.round(quote.price_total * 100);
+  const mismatch = paid !== null && paid !== expected;
+  const mismatchNote = mismatch
+    ? `WARNING: Paid amount differs from quote — customer paid ${usd(paid)} but the quote total is ${usd(expected)} (checkout ${session.id}). Refund or collect the difference.`
+    : null;
+
   const now = new Date().toISOString();
   check(
     await db
@@ -115,11 +172,21 @@ async function onCheckoutPaid(db: Db, session: Stripe.Checkout.Session): Promise
       .update({
         status: "accepted",
         accepted_at: quote.accepted_at ?? now,
-        stripe_payment_intent_id: idOf(session.payment_intent) ?? quote.stripe_payment_intent_id,
+        stripe_payment_intent_id: pi ?? quote.stripe_payment_intent_id,
+        ...(mismatchNote && !quote.rationale?.includes(session.id) ? { rationale: appendNote(quote.rationale, mismatchNote) } : {}),
       })
       .eq("id", quoteId),
     "stripe(accept quote)",
   );
+  if (mismatchNote) {
+    console.error(`[stripe] quote ${quoteId}: ${mismatchNote}`);
+    await raisePaymentAlert(db, ctx, {
+      quoteId,
+      title: "Paid amount differs from quote",
+      summary: mismatchNote,
+      payload: { alert: "amount_mismatch", payment_intent: pi, checkout_session: session.id, amount_paid: paid, amount_expected: expected },
+    });
+  }
   check(await db.from("leads").update({ status: "won" }).eq("id", quote.lead_id), "stripe(lead won)");
   await createJobFromQuote(db, quoteId); // idempotent; enqueues the `schedule` task
 }

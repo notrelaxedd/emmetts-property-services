@@ -99,6 +99,29 @@ export async function recomputeQuoteTotals(
   return { quote: updated, items, needsOwner: items.some((i) => i.status === "needs_owner") };
 }
 
+/** Quote statuses whose totals may still change (nothing has gone to the customer yet). */
+const OPEN_QUOTE_STATUSES = new Set<Quote["status"]>(["draft", "needs_owner"]);
+export const SENT_QUOTE_ERROR = "Quote already sent; decline/refund and re-quote";
+
+/**
+ * Why the owner's quote editor (`saveQuote`) must refuse a quote in this status, or null when it may
+ * be edited. Once the link has gone out (`sent`) or been paid (`accepted`) an edit would silently
+ * change what the customer pays: a sent quote goes through "Revise & re-send" (expires the Stripe
+ * session, back to `draft`), a paid one through Refund.
+ */
+export function quoteEditLockReason(status: Quote["status"]): string | null {
+  switch (status) {
+    case "sent":
+      return "This quote has been sent. Use “Revise & re-send” to change it (the old payment link stops working).";
+    case "accepted":
+      return "This quote is paid. Refund it and create a new quote instead of editing it.";
+    case "declined":
+      return "This quote is declined and can't be edited.";
+    default:
+      return null;
+  }
+}
+
 // ---------- Customer emails for refer / decline ----------
 
 type Action = "price" | "refer" | "decline";
@@ -210,6 +233,9 @@ async function emailCustomer(
  * Then the quote is re-totalled. When no item is left `needs_owner`, the quote goes back to `draft` and its
  * `quote` approval is created / refreshed so the owner can send it; if nothing billable is left the quote
  * is marked `declined`.
+ * Only while the quote is `draft` / `needs_owner`: once it has been sent, `price` is refused (throws
+ * SENT_QUOTE_ERROR before touching anything) and refer / decline update the item + email the customer
+ * but leave the quote's totals and status alone.
  */
 export const custom_itemHandler: ApprovalHandler = async (db, approval, ctx) => {
   const p = approval.payload;
@@ -231,6 +257,14 @@ export const custom_itemHandler: ApprovalHandler = async (db, approval, ctx) => 
   const customer = check(await db.from("customers").select("*").eq("id", quote.customer_id).maybeSingle(), "custom_itemHandler(customer)");
   if (!customer) throw new Error(`custom_itemHandler: customer ${quote.customer_id} not found`);
   const note = typeof p.partner_note === "string" && p.partner_note.trim() ? p.partner_note.trim() : item.partner_note;
+
+  // Once the quote has gone out (sent / accepted / expired / declined) the customer's price is fixed:
+  // re-totalling it would silently change what the Stripe link charges (or no longer match what was
+  // paid). Pricing a new item there needs a new quote; refer / decline only email the customer.
+  const open = OPEN_QUOTE_STATUSES.has(quote.status);
+  if (action === "price" && !open) {
+    throw new Error(`${SENT_QUOTE_ERROR} (quote is ${quote.status}).`);
+  }
 
   if (action === "price") {
     if (price === null || price < 0) throw new Error(`custom_itemHandler: approval ${approval.id} needs a price >= 0`);
@@ -263,9 +297,10 @@ export const custom_itemHandler: ApprovalHandler = async (db, approval, ctx) => 
     });
   }
 
+  if (!open) return; // already sent / settled: leave the quote's totals exactly as the customer saw them
+
   const fresh = await recomputeQuoteTotals(db, quoteId, settings);
   if (fresh.needsOwner) return; // other custom items still waiting on the owner
-  if (fresh.quote.status !== "needs_owner" && fresh.quote.status !== "draft") return; // already sent / settled
 
   if (billableItems(fresh.items).length === 0) {
     check(await db.from("quotes").update({ status: "declined" }).eq("id", quoteId), "custom_itemHandler(quote declined)");

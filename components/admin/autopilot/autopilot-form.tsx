@@ -10,27 +10,9 @@ import { NumberStepper } from "@/components/ui/number-stepper"
 import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
+import { AUTOPILOT_KINDS as KINDS, HIDDEN_AUTOPILOT_NOTE, type AutopilotKind } from "./kinds"
 
-type Kind = keyof AutopilotInput
-
-const KINDS: { kind: Kind; title: string; skips: string }[] = [
-  { kind: "ad", title: "Ads", skips: "New ad drafts are approved without your review, ready to post." },
-  { kind: "quote", title: "Quotes", skips: "Standard quotes go straight to the customer with a Stripe pay link." },
-  {
-    kind: "custom_item",
-    title: "Custom requests",
-    skips: "Refer-to-partner and decline emails go out without your OK. Custom work is still never priced automatically.",
-  },
-  { kind: "booking", title: "Appointments", skips: "Once every crew member accepts, the job is booked and the customer is confirmed." },
-  { kind: "followup", title: "Follow-ups", skips: "Review requests, day-before reminders and snow-plan emails send on their own." },
-  {
-    kind: "crew_change",
-    title: "Crew time off",
-    skips: "Time off that hits a booked job or falls inside the notice window is approved automatically.",
-  },
-  { kind: "drop", title: "Crew drops", skips: "Crew can drop a job inside the notice window; the scheduler looks for cover." },
-  { kind: "weather_hold", title: "Weather holds", skips: "Rain and snow holds from the weather watch are applied without asking." },
-]
+type Kind = AutopilotKind
 
 export function AutopilotForm({ initial }: { initial: AutopilotInput }) {
   const { toast } = useToast()
@@ -95,6 +77,7 @@ export function AutopilotForm({ initial }: { initial: AutopilotInput }) {
           )
         })}
       </div>
+      <p className="text-sm text-ink-muted">{HIDDEN_AUTOPILOT_NOTE}</p>
       <div className="flex items-center gap-3">
         <Button onClick={save} disabled={pending || !dirty}>
           {pending ? "Saving…" : "Save autopilot rules"}

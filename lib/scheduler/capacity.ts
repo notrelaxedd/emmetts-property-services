@@ -85,13 +85,13 @@ function nonNull<T>(x: T | null | undefined): x is T {
   return x != null;
 }
 
-/** Assignment statuses that hold a crew member's time and count toward weekly hours. */
-export const ACTIVE_ASSIGNMENT_STATUSES: ReadonlySet<AssignmentStatus> = new Set<AssignmentStatus>([
-  "offered",
-  "accepted",
-  "swap_offered",
-  "drop_requested",
-]);
+/**
+ * Assignment statuses that hold a crew member's time and count toward weekly hours.
+ * `swap_offered` is NOT one of them: that row belongs to a *candidate* who has only been asked to
+ * take the job over (`swap_to_crew_id` is the holder, whose own `accepted` row still counts).
+ */
+export const HOLDING_ASSIGNMENT_STATUSES: readonly AssignmentStatus[] = ["offered", "accepted", "drop_requested"];
+export const ACTIVE_ASSIGNMENT_STATUSES: ReadonlySet<AssignmentStatus> = new Set<AssignmentStatus>(HOLDING_ASSIGNMENT_STATUSES);
 
 // ---------- Owner ----------
 

@@ -48,8 +48,10 @@ export async function POST(req: Request) {
   try {
     const result = await handleStripeEvent(requireSupabaseAdmin(), event, { siteUrl: siteUrl() });
     if (!result.processed) {
-      // Persisted but the handler failed: logged and left with processed_at = null for reprocessing.
+      // Persisted but the handler failed: left with processed_at = null. Answer 500 so Stripe redelivers
+      // it (handleStripeEvent re-runs a stored-but-unprocessed event instead of calling it a duplicate).
       console.error(`[stripe] event ${event.id} stored but not processed: ${result.error}`);
+      return NextResponse.json({ error: "event not processed; retry" }, { status: 500 });
     }
   } catch (e) {
     // Could not persist the event: ask Stripe to retry.

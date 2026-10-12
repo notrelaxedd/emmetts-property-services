@@ -55,6 +55,28 @@ async function findOrCreateCustomItem(db: Db, quoteId: string, description: stri
   );
 }
 
+export const DEFER_MINUTES = 2;
+/** ~1 hour of waiting for the quote before giving up (the quote task has long since failed by then). */
+export const MAX_DEFERS = 30;
+
+/**
+ * No quote yet: complete this task with `{ deferred: true }` after enqueuing a fresh one
+ * `DEFER_MINUTES` later. The key carries the deferral count, so each hop is a new task (the dedupe
+ * key is unique across every status) and a re-run of this same task enqueues the same next hop.
+ */
+async function deferUntilQuote(ctx: TaskContext, leadId: string, defer: number): Promise<Record<string, unknown>> {
+  if (defer >= MAX_DEFERS) throw new PermanentTaskError(`no quote for lead ${leadId} after ${defer} retries`);
+  const next = defer + 1;
+  const runAfter = new Date(ctx.now().getTime() + DEFER_MINUTES * 60_000).toISOString();
+  const taskId = await enqueueTask(ctx.db, {
+    type: "custom_summary",
+    payload: { lead_id: leadId, defer: next },
+    runAfter,
+    dedupeKey: `custom_summary:${leadId}:defer:${next}`,
+  });
+  return { deferred: true, next_task: taskId, defer: next, run_after: runAfter };
+}
+
 export async function runCustomSummary(ctx: TaskContext, payload: CustomSummaryPayload): Promise<Record<string, unknown>> {
   const { db } = ctx;
   const lead = await getById(db, "leads", payload.lead_id);
@@ -69,8 +91,9 @@ export async function runCustomSummary(ctx: TaskContext, payload: CustomSummaryP
     await db.from("quotes").select("*").eq("lead_id", lead.id).order("created_at", { ascending: true }).limit(1).maybeSingle(),
     "custom_summary(quote)",
   );
-  // The quote task enqueues us after writing the quote; if it is not there yet, retry later.
-  if (!quote) throw new Error(`no quote yet for lead ${lead.id}`);
+  // The quote task writes the quote; the form enqueues us at the same time, so we can run first.
+  // Waiting must not burn this task's retry attempts: re-enqueue a fresh task a little later.
+  if (!quote) return deferUntilQuote(ctx, lead.id, payload.defer ?? 0);
 
   const settings = await getSettings(db);
   const urls = await signedPhotoUrls(ctx, paths);

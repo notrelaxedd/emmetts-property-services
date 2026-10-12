@@ -233,6 +233,15 @@ export type Job = Base & {
   deadline: string | null;
   /** From the scheduler: why this slot. Shown on the booking approval card. */
   schedule_reason: string | null;
+  /**
+   * Durable "re-look at this job" mark (`ResolveReason` in lib/ops/jobs.ts: drop / declined /
+   * crew_change / weather_hold). The scheduler picks up every marked job on its next run and clears it.
+   */
+  resolve_reason: string | null;
+  /** Owner decision stands (rejected slot, card marked handled): the scheduler leaves the job alone. */
+  owner_hold: boolean;
+  /** Local "YYYY-MM-DD" a weather-held job was taken off; kept closed until the job is re-proposed. */
+  weather_hold_date: string | null;
   actual_minutes: number | null;
   started_at: string | null;
   completed_at: string | null;
@@ -245,7 +254,11 @@ export type JobAssignment = Base & {
   crew_id: string;
   status: AssignmentStatus;
   responded_at: string | null;
-  /** For swap_offered: who is being offered the swap. */
+  /**
+   * Swap rows: `{ crew_id: <candidate being offered the job>, status: "swap_offered",
+   * swap_to_crew_id: <holder handing it over> }`. A swap row does not hold the candidate's time;
+   * the holder keeps their own `accepted` row until a candidate accepts.
+   */
   swap_to_crew_id: string | null;
 };
 

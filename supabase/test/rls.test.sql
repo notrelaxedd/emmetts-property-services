@@ -68,10 +68,17 @@ grant execute on all functions in schema tests to anon, authenticated, service_r
 -- Fixtures (as postgres, i.e. a trusted caller)
 -- ---------------------------------------------------------------------------
 \echo '# fixtures'
-insert into auth.users (id, email, raw_user_meta_data) values
-  ('00000000-0000-0000-0000-0000000000a0', 'owner@example.com', '{"name":"Emmett"}'),
-  ('00000000-0000-0000-0000-0000000000a1', 'crewa@example.com', '{"name":"Crew A"}'),
-  ('00000000-0000-0000-0000-0000000000b1', 'crewb@example.com', '{}');
+-- Real Supabase auth.users columns the auth hook keys off (0800_guards); the
+-- local shim doesn't have them.
+alter table auth.users
+  add column if not exists invited_at         timestamptz,
+  add column if not exists phone_confirmed_at timestamptz;
+
+-- Owner-invited users (invited_at set), so the auth hook creates their profiles.
+insert into auth.users (id, email, raw_user_meta_data, invited_at) values
+  ('00000000-0000-0000-0000-0000000000a0', 'owner@example.com', '{"name":"Emmett"}', now()),
+  ('00000000-0000-0000-0000-0000000000a1', 'crewa@example.com', '{"name":"Crew A"}', now()),
+  ('00000000-0000-0000-0000-0000000000b1', 'crewb@example.com', '{}', now());
 
 -- First owner is promoted by hand (README).
 update public.profiles set role = 'owner' where user_id = '00000000-0000-0000-0000-0000000000a0';
@@ -180,7 +187,7 @@ select tests.check(
   (select count(*) from public.profiles where role = 'crew') = 2
   and (select name from public.profiles where user_id = tests.id('crew_a_uid')) = 'Crew A'
   and (select name from public.profiles where user_id = tests.id('crew_b_uid')) = 'crewb',
-  'auth.users insert creates a crew profile (name from metadata or email)');
+  'invited auth.users insert creates a crew profile (name from metadata or email)');
 select tests.check(
   (select bool_and(hourly_rate = 15) from public.profiles),
   'profiles.hourly_rate defaults from settings.default_wage');
@@ -583,11 +590,91 @@ select tests.check(
   (select count(*) from public.customers where unsubscribe_token ~ '^[0-9a-f]{32}$') = 1,
   'customers get a random unsubscribe_token');
 -- auth user deletion cascades to the profile
-insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000c1', 'temp@example.com');
+insert into auth.users (id, email, invited_at) values ('00000000-0000-0000-0000-0000000000c1', 'temp@example.com', now());
+select tests.check(
+  (select count(*) from public.profiles where user_id = '00000000-0000-0000-0000-0000000000c1') = 1,
+  'invited temp user has a profile before deletion');
 delete from auth.users where id = '00000000-0000-0000-0000-0000000000c1';
 select tests.check(
   (select count(*) from public.profiles where user_id = '00000000-0000-0000-0000-0000000000c1') = 0,
   'deleting an auth user deletes the profile');
+
+-- ---------------------------------------------------------------------------
+\echo '# 0800 guards: assignment status edges, invite-only auth hook'
+-- ---------------------------------------------------------------------------
+reset role;
+select tests.claims(null, 'service_role');
+-- Three more jobs for crew A, one assignment each in a different state.
+with j as (
+  insert into public.jobs (customer_id, status, est_minutes, crew_size, notes)
+  select tests.id('customer'), 'proposed', 60, 1, 'guard test ' || g from generate_series(1, 3) g
+  returning id, notes
+) insert into tests.fx select 'gjob' || right(notes, 1), id from j;
+with a as (
+  insert into public.job_assignments (job_id, crew_id, status, swap_to_crew_id)
+  values (tests.id('gjob1'), tests.id('crew_a'), 'swap_offered', tests.id('crew_b'))
+  returning id
+) insert into tests.fx select 'g_swap', id from a;
+with a as (
+  insert into public.job_assignments (job_id, crew_id, status)
+  values (tests.id('gjob2'), tests.id('crew_a'), 'dropped')
+  returning id
+) insert into tests.fx select 'g_dropped', id from a;
+with a as (
+  insert into public.job_assignments (job_id, crew_id, status)
+  values (tests.id('gjob3'), tests.id('crew_a'), 'offered')
+  returning id
+) insert into tests.fx select 'g_offered', id from a;
+
+select tests.claims(tests.id('crew_a_uid'));
+set role authenticated;
+select tests.check(
+  tests.run(format($$update public.job_assignments set status = 'accepted', responded_at = now() where id = %L$$, tests.id('g_swap'))) like 'err:42501:%',
+  'crew cannot flip a swap_offered assignment to accepted directly (swap accept is a server action)');
+select tests.check(
+  tests.run(format($$update public.job_assignments set status = 'accepted', responded_at = now() where id = %L$$, tests.id('g_dropped'))) like 'err:42501:%',
+  'crew cannot flip a dropped assignment back to accepted');
+select tests.check(
+  tests.run(format($$update public.job_assignments set status = 'accepted', responded_at = now() where id = %L$$, tests.id('g_offered'))) = 'ok:1',
+  'crew can still accept an offered assignment');
+select tests.check(
+  tests.run(format($$update public.job_assignments set status = 'swap_offered' where id = %L$$, tests.id('g_offered'))) like 'err:42501:%',
+  'crew cannot set their own accepted assignment to swap_offered');
+select tests.check(
+  tests.run(format($$update public.job_assignments set status = 'drop_requested', responded_at = now() where id = %L$$, tests.id('g_offered'))) = 'ok:1',
+  'crew can ask to drop an accepted assignment (accepted -> drop_requested)');
+select tests.check(
+  tests.run(format($$update public.job_assignments set status = 'accepted' where id = %L$$, tests.id('g_offered'))) like 'err:42501:%',
+  'crew cannot take back a drop request themselves (drop_requested -> accepted)');
+reset role;
+select tests.claims(null, 'service_role');
+set role service_role;
+select tests.check(
+  tests.run(format($$update public.job_assignments set status = 'accepted' where id = %L$$, tests.id('g_swap'))) = 'ok:1',
+  'service role can still accept a swap (swap_offered -> accepted)');
+reset role;
+
+-- Auth hook: only owner-invited users get a profile.
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('00000000-0000-0000-0000-0000000000d1', 'stranger@example.com', '{"name":"Self Signup"}');
+insert into auth.users (id, phone, raw_user_meta_data) values
+  ('00000000-0000-0000-0000-0000000000d2', '+14405550111', '{"name":"Phone Self Signup"}');
+insert into auth.users (id, phone, phone_confirmed_at, raw_user_meta_data) values
+  ('00000000-0000-0000-0000-0000000000d3', '+14405550112', now(), '{"name":"Phone Crew"}'),
+  ('00000000-0000-0000-0000-0000000000d4', '+14405550113', now(), '{}');
+select tests.check(
+  (select count(*) from public.profiles where user_id = '00000000-0000-0000-0000-0000000000d1') = 0,
+  'an auth.users insert without invite markers creates no profile (self sign-up is not crew)');
+select tests.check(
+  (select count(*) from public.profiles where user_id = '00000000-0000-0000-0000-0000000000d2') = 0,
+  'an unconfirmed phone sign-up with a name in metadata creates no profile');
+select tests.check(
+  (select role = 'crew' and name = 'Phone Crew' and phone = '+14405550112'
+     from public.profiles where user_id = '00000000-0000-0000-0000-0000000000d3'),
+  'an admin-created phone user (phone confirmed + name metadata) gets a crew profile');
+select tests.check(
+  (select count(*) from public.profiles where user_id = '00000000-0000-0000-0000-0000000000d4') = 0,
+  'a confirmed phone user without name metadata creates no profile');
 
 -- ---------------------------------------------------------------------------
 \echo '# summary'

@@ -8,7 +8,7 @@ import { formatDuration, jobDay } from "@/components/crew/format"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { requireCrew } from "@/lib/auth/session"
-import type { CrewJob, JobAssignment } from "@/lib/db/types"
+import type { AssignmentStatus, CrewJob, JobAssignment } from "@/lib/db/types"
 import { getSettings } from "@/lib/ops"
 import { isInsideNoticeWindow, localDate } from "@/lib/scheduler"
 import { getSupabaseAdmin } from "@/lib/supabase/admin"
@@ -17,6 +17,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server"
 export const dynamic = "force-dynamic"
 export const metadata = { title: "Job" }
 
+const STILL_ON: readonly AssignmentStatus[] = ["offered", "accepted", "swap_offered", "drop_requested"]
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export default async function CrewJobPage({ params }: { params: { id: string } }) {
@@ -31,7 +32,8 @@ export default async function CrewJobPage({ params }: { params: { id: string } }
   ])
   const job = jobRow as CrewJob | null
   const mine = mineRow as JobAssignment | null
-  if (!job || !mine) notFound()
+  // Only jobs I'm still on (the view filters too; this also hides a stale row from a race).
+  if (!job || !mine || !STILL_ON.includes(mine.status)) notFound()
 
   // Service-role reads, scoped to this job I'm on: notice window, my open swap, who could take it.
   let insideNotice = false

@@ -2,8 +2,8 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Calculator, MapPin, Plus, Save, Send, Trash2 } from "lucide-react"
-import { saveQuote, sendQuote, type SaveQuoteInput } from "@/app/admin/actions/quotes"
+import { Calculator, MapPin, Plus, RotateCcw, Save, Send, Trash2 } from "lucide-react"
+import { reviseQuote, saveQuote, sendQuote, type SaveQuoteInput } from "@/app/admin/actions/quotes"
 import { ConfirmDialog } from "@/components/admin/inbox/confirm-dialog"
 import { money } from "@/components/admin/inbox/format"
 import { ItemStatusBadge } from "@/components/admin/inbox/items-table"
@@ -90,7 +90,9 @@ export function QuoteEditor({
   pendingCustomItemIds: string[]
 }) {
   const { pending, run } = useActionRunner()
-  const locked = quote.status === "accepted" || quote.status === "declined"
+  // Sent quotes are locked too: the customer already has a price. "Revise & re-send" expires the old
+  // Checkout session and returns the quote to draft so edits can't silently change what they pay.
+  const locked = quote.status === "accepted" || quote.status === "declined" || quote.status === "sent"
 
   const [items, setItems] = React.useState<EditItem[]>(() => initialItems.map(toEdit))
   const [wage, setWage] = React.useState(quote.wage || settings.default_wage)
@@ -149,7 +151,8 @@ export function QuoteEditor({
       }),
     )
 
-  const sendBlocker = locked
+  // A sent quote can be re-sent unchanged (customer lost the email); only accepted/declined block sending.
+  const sendBlocker = locked && quote.status !== "sent"
     ? `Quote is ${quote.status}.`
     : dirty
       ? "Save your changes first."
@@ -454,6 +457,21 @@ export function QuoteEditor({
             confirmLabel="Send"
             onConfirm={() => run(() => sendQuote(quote.id))}
           />
+          {quote.status === "sent" ? (
+            <ConfirmDialog
+              triggerVariant="outline"
+              trigger={
+                <>
+                  <RotateCcw aria-hidden="true" /> Revise &amp; re-send
+                </>
+              }
+              disabled={pending}
+              title="Revise this quote?"
+              description="Expires the payment link the customer has, and unlocks the quote for editing. Send it again when you're done."
+              confirmLabel="Unlock"
+              onConfirm={() => run(() => reviseQuote(quote.id))}
+            />
+          ) : null}
           {sendBlocker && !locked ? <span className="text-sm text-ink-muted">{sendBlocker}</span> : null}
         </div>
       </div>

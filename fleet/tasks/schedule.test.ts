@@ -46,9 +46,9 @@ function seed() {
     ],
     jobs: [
       job("j1"),
-      job("j2", { status: "proposed", start_at: at("2026-10-12", "09:00"), end_at: at("2026-10-12", "10:00") }),
+      job("j2", { status: "proposed", resolve_reason: "drop", start_at: at("2026-10-12", "09:00"), end_at: at("2026-10-12", "10:00") }),
       job("j3", { status: "booked", start_at: at("2026-10-13", "09:00"), end_at: at("2026-10-13", "10:00") }),
-      job("j4", { status: "booked", weather_hold: true, start_at: at("2026-10-14", "13:00"), end_at: at("2026-10-14", "14:00") }),
+      job("j4", { status: "booked", weather_hold: true, resolve_reason: "weather_hold", start_at: at("2026-10-14", "13:00"), end_at: at("2026-10-14", "14:00") }),
       job("j9", { status: "booked", start_at: at("2026-10-15", "09:00"), end_at: at("2026-10-15", "11:00"), est_minutes: 120 }),
       job("j0", { status: "done" }),
     ],
@@ -64,21 +64,24 @@ function seed() {
 describe("schedule task", () => {
   beforeEach(() => solveMock.mockReset().mockReturnValue({ proposals: [], unschedulable: [] }));
 
-  it("resets the re-solve set, gathers the input, and writes proposals", async () => {
+  it("resets weather-held marked jobs (not payload ids), gathers the input, and writes proposals", async () => {
     const db = seed();
+    db.tables.approvals = [];
+    db.tables.job_assignments.push(assign("s4", "j4", "C", "swap_offered") as never);
     solveMock.mockReturnValue({
       proposals: [
         { job_id: "j1", start_at: at("2026-10-12", "09:00"), end_at: at("2026-10-12", "10:00"), crew_ids: ["A", "B"], reason: "Earliest slot." },
         { job_id: "j4", start_at: at("2026-10-15", "13:00"), end_at: at("2026-10-15", "14:00"), crew_ids: ["A"], reason: "Rain moved it." },
       ],
-      unschedulable: [{ job_id: "j2", reason: "Nobody is free for 3 weeks." }],
+      unschedulable: [],
     });
+    // Payload ids are only a hint now: j2 / j3 / j0 are NOT reset because of them.
     const res = await runSchedule(makeCtx(db, { now: () => NOW, role: "scheduler" }), { reason: "weather_hold", job_ids: ["j2", "j3", "j4", "j0"] });
 
-    // Input: the unscheduled set (j1 + reset j2, j4); booked j3 / done j0 untouched.
+    // Input: the unscheduled set (j1 + reset j4); proposed j2 (drop mark: keeps its slot), booked j3, done j0 untouched.
     expect(solveMock).toHaveBeenCalledTimes(1);
     const input = solveMock.mock.calls[0][0] as SchedulerInput;
-    expect(input.jobs.map((j) => j.id).sort()).toEqual(["j1", "j2", "j4"]);
+    expect(input.jobs.map((j) => j.id).sort()).toEqual(["j1", "j4"]);
     expect(input.closedDates).toEqual(["2026-10-14"]); // the weather-held job's day
     expect(input.now).toBe(NOW);
     expect(input.crew.map((c) => c.id)).toEqual(["A", "B", "C"]);
@@ -86,8 +89,9 @@ describe("schedule task", () => {
     expect(input.crewExceptions.map((e) => e.id)).toEqual(["x1"]); // approved only
     expect(input.crewAvailability).toHaveLength(15);
     expect(input.settings).toEqual({ drop_notice_hours: 24 });
-    // Existing assignments: active ones on still-scheduled jobs, with their job times.
+    // Existing assignments: holding ones on still-scheduled jobs, with their job times.
     expect(input.existingAssignments.map((a) => [a.id, a.start_at]).sort()).toEqual([
+      ["a2", at("2026-10-12", "09:00")],
       ["a3", at("2026-10-13", "09:00")],
       ["a9", at("2026-10-15", "09:00")],
     ]);
@@ -95,24 +99,97 @@ describe("schedule task", () => {
 
     const jobs = Object.fromEntries(db.tables.jobs.map((j) => [j.id, j]));
     expect(jobs.j1).toMatchObject({ status: "proposed", start_at: at("2026-10-12", "09:00"), schedule_reason: "Earliest slot." });
-    expect(jobs.j4).toMatchObject({ status: "proposed", weather_hold: false, start_at: at("2026-10-15", "13:00") });
-    expect(jobs.j2).toMatchObject({ status: "unscheduled", start_at: null });
+    expect(jobs.j4).toMatchObject({
+      status: "proposed", weather_hold: false, weather_hold_date: null, resolve_reason: null, start_at: at("2026-10-15", "13:00"),
+    });
+    expect(jobs.j2).toMatchObject({ status: "proposed", start_at: at("2026-10-12", "09:00"), resolve_reason: null }); // mark cleared
     expect(jobs.j3).toMatchObject({ status: "booked", start_at: at("2026-10-13", "09:00") });
 
     const rows = db.tables.job_assignments.map((a) => [a.job_id, a.crew_id, a.status]);
     expect(rows).toContainEqual(["j1", "A", "offered"]);
     expect(rows).toContainEqual(["j1", "B", "offered"]);
-    expect(rows).toContainEqual(["j2", "A", "dropped"]);
+    expect(rows).toContainEqual(["j2", "A", "offered"]);
     expect(rows).toContainEqual(["j3", "B", "accepted"]);
-    // (j4, A) is unique: the dropped row is re-offered, not duplicated.
-    expect(rows.filter(([j, c]) => j === "j4" && c === "A")).toEqual([["j4", "A", "offered"]]);
+    // (j4, A) is unique: the dropped row is re-offered, not duplicated; the swap candidate row is gone.
+    expect(rows.filter(([j]) => j === "j4")).toEqual([["j4", "A", "offered"]]);
 
-    expect(db.tables.approvals).toHaveLength(1);
-    expect(db.tables.approvals[0]).toMatchObject({
-      kind: "booking", ref_table: "jobs", ref_id: "j2", title: "Can't schedule Lee Wong", summary: "Nobody is free for 3 weeks.",
-      payload: { job_id: "j2", unschedulable: true, reason: "Nobody is free for 3 weeks." },
+    expect(db.tables.approvals).toHaveLength(0);
+    expect(res).toMatchObject({ resolved: 2, reset: 1, considered: 2, proposed: 2, unschedulable: 0, covers: 0, no_cover: 0 });
+  });
+
+  it("keeps a weather-held day closed on later sweeps until the job is re-placed, and doesn't repeat a card the owner saw", async () => {
+    const db = seed();
+    const ctx = makeCtx(db, { now: () => NOW, role: "scheduler" });
+    const nobody = { proposals: [], unschedulable: [{ job_id: "j4", reason: "Nobody is free." }] };
+    solveMock.mockReturnValue(nobody);
+    await runSchedule(ctx, { reason: "weather_hold" });
+    const j4 = () => db.tables.jobs.find((j) => j.id === "j4")!;
+    expect(j4()).toMatchObject({ status: "unscheduled", weather_hold: true, weather_hold_date: "2026-10-14", resolve_reason: null });
+    const cards = () => db.tables.approvals.filter((a) => a.ref_id === "j4");
+    expect(cards()).toHaveLength(1);
+
+    // Later sweep, no marks: the held day is still closed; the owner already "handled" the card.
+    cards()[0].status = "rejected";
+    await runSchedule(ctx, { reason: "sweep" });
+    expect((solveMock.mock.calls[1][0] as SchedulerInput).closedDates).toEqual(["2026-10-14"]);
+    expect(cards()).toHaveLength(1); // same reason: not raised again
+
+    // A different reason is news: a fresh card.
+    solveMock.mockReturnValue({ proposals: [], unschedulable: [{ job_id: "j4", reason: "Needs 3 crew but only 2 can take new jobs." }] });
+    await runSchedule(ctx, { reason: "sweep" });
+    expect(cards()).toHaveLength(2);
+
+    // Re-placed: hold and day cleared, so the next sweep has nothing closed.
+    solveMock.mockReturnValue({
+      proposals: [{ job_id: "j4", start_at: at("2026-10-16", "13:00"), end_at: at("2026-10-16", "14:00"), crew_ids: ["A"], reason: "r" }],
+      unschedulable: [],
     });
-    expect(res).toMatchObject({ reset: 2, considered: 3, proposed: 2, unschedulable: 1, covers: 0, no_cover: 0 });
+    await runSchedule(ctx, { reason: "sweep" });
+    expect(j4()).toMatchObject({ status: "proposed", weather_hold: false, weather_hold_date: null });
+    await runSchedule(ctx, { reason: "sweep" });
+    expect((solveMock.mock.calls[4][0] as SchedulerInput).closedDates).toBeUndefined();
+  });
+
+  it("a drop keeps the slot: cover is offered for the same time, and a swap candidate elsewhere is not busy", async () => {
+    const db = seed();
+    db.tables.jobs.push(
+      job("j5", { customer_id: "cust-j1", status: "booked", crew_size: 2, resolve_reason: "drop", start_at: at("2026-10-12", "13:00"), end_at: at("2026-10-12", "14:00") }) as never,
+      job("j7", { customer_id: "cust-j2", status: "booked", start_at: at("2026-10-12", "13:00"), end_at: at("2026-10-12", "14:00") }) as never,
+    );
+    db.tables.job_assignments.push(
+      assign("a5a", "j5", "A", "accepted"),
+      assign("a5b", "j5", "B", "dropped"),
+      // C is only being ASKED to take j7 over from B: that must not make C busy at 1pm.
+      assign("a7b", "j7", "B", "accepted"),
+      { ...assign("a7c", "j7", "C", "swap_offered"), swap_to_crew_id: "B" },
+    );
+    const res = await runSchedule(makeCtx(db, { now: () => NOW, role: "scheduler" }), { reason: "drop" });
+    expect(db.tables.jobs.find((j) => j.id === "j5")).toMatchObject({
+      status: "booked", start_at: at("2026-10-12", "13:00"), end_at: at("2026-10-12", "14:00"), resolve_reason: null,
+    });
+    expect(db.tables.job_assignments.filter((a) => a.job_id === "j5").map((a) => [a.crew_id, a.status])).toEqual([
+      ["A", "accepted"], ["B", "dropped"], ["C", "offered"],
+    ]);
+    // j7: one holder + a swap candidate = 1 holding crew of 1 needed; no cover, no card.
+    expect(db.tables.job_assignments.filter((a) => a.job_id === "j7").map((a) => a.status)).toEqual(["accepted", "swap_offered"]);
+    expect(db.tables.approvals.filter((a) => a.ref_id === "j5" || a.ref_id === "j7")).toHaveLength(0);
+    expect(res).toMatchObject({ covers: 1, no_cover: 0 });
+  });
+
+  it("leaves owner-held jobs alone: no proposal, no reset, no cover, mark kept for after release", async () => {
+    const db = seed();
+    db.tables.approvals = [];
+    for (const j of db.tables.jobs) if (j.id === "j1" || j.id === "j4") j.owner_hold = true;
+    db.tables.jobs.push(
+      job("j5", { customer_id: "cust-j1", status: "booked", crew_size: 2, owner_hold: true, start_at: at("2026-10-12", "13:00"), end_at: at("2026-10-12", "14:00") }) as never,
+    );
+    db.tables.job_assignments.push(assign("a5a", "j5", "A", "accepted"), assign("a5b", "j5", "B", "dropped"));
+    const res = await runSchedule(makeCtx(db, { now: () => NOW, role: "scheduler" }), { reason: "sweep" });
+    expect(solveMock).not.toHaveBeenCalled(); // j1 held → nothing to solve
+    expect(db.tables.jobs.find((j) => j.id === "j4")).toMatchObject({ status: "booked", resolve_reason: "weather_hold" });
+    expect(db.tables.job_assignments.filter((a) => a.job_id === "j5")).toHaveLength(2);
+    expect(db.tables.approvals).toHaveLength(0);
+    expect(res).toMatchObject({ resolved: 1, reset: 0, considered: 0, covers: 0, no_cover: 0 });
   });
 
   it("offers cover when a crew member declines, and asks the owner when nobody fits", async () => {

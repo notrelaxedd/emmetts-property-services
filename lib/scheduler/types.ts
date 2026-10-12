@@ -15,8 +15,8 @@ export type Interval = { start: number; end: number };
 
 /**
  * An assignment on some other (already scheduled) job, joined with that job's times.
- * Statuses `offered`, `accepted`, `swap_offered` and `drop_requested` hold the crew member;
- * `declined` and `dropped` are ignored. `customer_id` is optional and only used for the
+ * Statuses `offered`, `accepted` and `drop_requested` hold the crew member; `swap_offered` (a
+ * candidate being asked to take over), `declined` and `dropped` are ignored. `customer_id` is optional and only used for the
  * "next door to the Smith job" proximity bonus.
  */
 export type ExistingAssignment = JobAssignment & {
