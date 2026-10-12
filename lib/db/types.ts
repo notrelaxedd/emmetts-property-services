@@ -464,6 +464,9 @@ export type Database = {
     };
     Functions: {
       claim_task: { Args: { p_role: FleetRole; p_worker: string }; Returns: FleetTask[] };
+      complete_task: { Args: { p_id: string; p_result: Record<string, unknown> | null }; Returns: undefined };
+      fail_task: { Args: { p_id: string; p_error: string; p_retry_in?: string | null }; Returns: FleetTaskStatus };
+      requeue_stale_tasks: { Args: { p_stale?: string }; Returns: number };
       current_role: { Args: Record<string, never>; Returns: Role | null };
       is_owner: { Args: Record<string, never>; Returns: boolean };
       ai_spend_this_month: { Args: Record<string, never>; Returns: number };
