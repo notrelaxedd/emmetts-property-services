@@ -34,3 +34,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ops system
+/test-results
+/playwright-report
+/fleet/dist
+/fleet/node_modules
+/fleet/.env
