@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "fleet": "tsx fleet/worker.ts",
+    "fleet:check": "tsc -p fleet/tsconfig.json --noEmit",
     "test:db": "bash supabase/test/run.sh",
     "test:e2e": "playwright test",
     "db:types": "echo 'Types are hand-maintained in lib/db/types.ts; keep migrations in sync.'"
@@ -41,6 +43,7 @@
     "stripe": "^23.0.0",
     "tailwind-merge": "^3.7.0",
     "tailwindcss-animate": "^1.0.7",
+    "tsx": "^4.23.15",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -52,7 +55,6 @@
     "eslint-config-next": "14.2.35",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
-    "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^3.2.7"
   },
