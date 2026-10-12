@@ -1,0 +1,16 @@
+fleet-worker@.service is a systemd template unit. Install it once per box:
+
+  sudo cp /opt/fleet/fleet/systemd/fleet-worker@.service /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now fleet-worker@<instance>
+
+<instance> picks the env file /etc/fleet/<instance>.env (mode 0600, owner root:fleet, 0640).
+Use the role name as the instance (ads, quotes, scheduler, followup, host) so
+`journalctl -u fleet-worker@quotes` reads naturally. FLEET_ROLE inside the file is what counts.
+
+Logs:    journalctl -u fleet-worker@quotes -f
+Status:  systemctl status fleet-worker@quotes
+Restart: sudo systemctl restart fleet-worker@quotes   (after a git pull or env change)
+
+The unit runs as the unprivileged `fleet` user with a read-only /opt/fleet and a private /tmp.
+Full setup: /opt/fleet/fleet/README.md.

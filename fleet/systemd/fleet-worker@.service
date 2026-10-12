@@ -1,0 +1,50 @@
+# EOD Lawns fleet worker. One instance per box/role:
+#   sudo systemctl enable --now fleet-worker@quotes      (reads /etc/fleet/quotes.env)
+# The instance name only picks the env file; the role comes from FLEET_ROLE inside it.
+[Unit]
+Description=EOD Lawns fleet worker (%i)
+Documentation=file:///opt/fleet/fleet/README.md
+After=network-online.target
+Wants=network-online.target
+# Keep retrying forever (e.g. Wi-Fi down for an hour); RestartSec spaces the attempts.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=fleet
+Group=fleet
+WorkingDirectory=/opt/fleet
+EnvironmentFile=/etc/fleet/%i.env
+Environment=NODE_ENV=production
+Environment=FLEET_ROOT=/opt/fleet
+Environment=TSX_TSCONFIG_PATH=/opt/fleet/fleet/tsconfig.json
+# No on-disk transpile cache: esbuild is fast and the flash drive stays quiet.
+Environment=TSX_DISABLE_CACHE=1
+ExecStart=/usr/bin/node /opt/fleet/node_modules/.bin/tsx /opt/fleet/fleet/worker.ts
+Restart=always
+RestartSec=10
+# SIGTERM goes to tsx, which relays it once to the worker; the worker finishes its task (<= 45 s).
+KillMode=mixed
+TimeoutStopSec=60
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fleet-%i
+
+# Hardening: the worker only needs the network and a read-only checkout.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/fleet
+PrivateTmp=true
+ProtectHome=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=600M
+
+[Install]
+WantedBy=multi-user.target
