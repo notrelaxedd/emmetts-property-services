@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import Image from "next/image";
-import { Check, Phone } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, Check, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ContactLink } from "@/components/site/contact-link";
 import { Diagonal } from "@/components/site/diagonal";
@@ -59,6 +60,12 @@ export function Hero() {
             </Button>
             <Button asChild variant="cta-outline" size="cta" className="bg-paper/70">
               <ContactLink>{content.cta.contact}</ContactLink>
+            </Button>
+            <Button asChild variant="link" size="cta" className="px-4 font-semibold text-ink underline decoration-brand-green decoration-2 underline-offset-[6px] hover:decoration-brand-green-dark">
+              <Link href="/quote">
+                {content.quote.cta}
+                <ArrowRight aria-hidden="true" />
+              </Link>
             </Button>
           </div>
 

@@ -1,0 +1,32 @@
+import "server-only";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { services as siteServices } from "@/lib/services";
+
+export type QuoteServiceOption = { slug: string; name: string; blurb?: string };
+
+const fallback = (): QuoteServiceOption[] => siteServices.map((s) => ({ slug: s.slug, name: s.title, blurb: s.blurb }));
+
+/**
+ * Active services for the quote form's checkboxes. Reads `services` (active, in sort order) and
+ * falls back to the site's static list when Supabase isn't configured or has nothing yet, so the
+ * page always renders. Blurbs come from `lib/services.ts` when the slug matches.
+ */
+export async function loadQuoteServices(): Promise<QuoteServiceOption[]> {
+  const db = getSupabaseAdmin();
+  if (!db) return fallback();
+  try {
+    const { data, error } = await db
+      .from("services")
+      .select("slug, name, sort_order")
+      .eq("active", true)
+      .order("sort_order", { ascending: true });
+    if (error || !data || data.length === 0) return fallback();
+    return data.map((r) => ({
+      slug: r.slug,
+      name: r.name,
+      blurb: siteServices.find((s) => s.slug === r.slug)?.blurb,
+    }));
+  } catch {
+    return fallback();
+  }
+}

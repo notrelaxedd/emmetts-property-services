@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ArrowRight, Leaf, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ContactLink } from "@/components/site/contact-link";
@@ -45,6 +46,14 @@ function FeaturedService({ service }: { service: Service }) {
             {content.cta.call}
           </a>
         </Button>
+        <Link
+          href={`/quote?service=${service.slug}`}
+          className="mt-4 inline-flex items-center gap-2 rounded-full px-1 py-2 font-semibold text-white underline decoration-brand-green decoration-2 underline-offset-[6px] hover:decoration-white sm:ml-6 sm:mt-0"
+        >
+          {content.quote.cta}
+          <span className="sr-only">: {service.title}</span>
+          <ArrowRight className="size-4" aria-hidden="true" />
+        </Link>
       </div>
     </article>
   );
@@ -60,11 +69,21 @@ function ServiceCard({ service }: { service: Service }) {
       </div>
       <p className="mt-4 text-ink-body">{service.blurb}</p>
       {price && <p className="mt-3 font-semibold text-ink">From {price}</p>}
-      <ContactLink className="mt-auto inline-flex w-fit items-center gap-2 pt-6 font-semibold text-brand-green-dark outline-none after:absolute after:inset-0 after:rounded-[2rem] after:content-['']">
-        {content.services.linkLabel}
-        <span className="sr-only">: {service.title}</span>
-        <ArrowRight className="size-4 transition-transform duration-300 ease-out-quart group-hover:translate-x-1" aria-hidden="true" />
-      </ContactLink>
+      <div className="mt-auto flex flex-wrap items-center gap-x-6 gap-y-2 pt-6">
+        <ContactLink className="inline-flex w-fit items-center gap-2 font-semibold text-brand-green-dark outline-none after:absolute after:inset-0 after:rounded-[2rem] after:content-['']">
+          {content.services.linkLabel}
+          <span className="sr-only">: {service.title}</span>
+          <ArrowRight className="size-4 transition-transform duration-300 ease-out-quart group-hover:translate-x-1" aria-hidden="true" />
+        </ContactLink>
+        {/* Sits above the card's stretched link (z-10) so both stay clickable. */}
+        <Link
+          href={`/quote?service=${service.slug}`}
+          className="relative z-10 font-semibold text-ink underline decoration-brand-green decoration-2 underline-offset-[6px] hover:decoration-brand-green-dark"
+        >
+          {content.quote.cta}
+          <span className="sr-only">: {service.title}</span>
+        </Link>
+      </div>
     </article>
   );
 }

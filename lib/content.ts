@@ -9,6 +9,7 @@ export const content = {
   nav: [
     { label: "Services", href: "/#services" },
     { label: "Why Us", href: "/#why-us" },
+    { label: "Get a quote", href: "/quote" },
     { label: "Contact", href: "/#contact" },
   ],
 
@@ -105,6 +106,91 @@ export const content = {
   contactPage: {
     headline: ["Contact", "us"],
     body: "One call is all it takes. Tell us what your yard needs and we'll give you a price.",
+  },
+
+  quote: {
+    cta: "Get a quote",
+    headline: ["Get your", "free quote"],
+    body: "Tell us about your yard and what you need. We'll look it over and send you a price. No pressure, and you can always call us instead.",
+    steps: {
+      heading: "What happens next",
+      items: [
+        "We look at your address and what you asked for.",
+        "We send your price by email or text.",
+        "You pick a day that works and we show up.",
+      ],
+    },
+    form: {
+      legend: "Your details",
+      name: { label: "Your name", placeholder: "Jamie Smith" },
+      phone: { label: "Phone", placeholder: "(440) 555-0123" },
+      email: { label: "Email", placeholder: "you@example.com" },
+      address: {
+        label: "Address of the job",
+        placeholder: "123 Main St, Rocky River, OH",
+        hint: "Where the work will happen.",
+        verifyHint: "We'll verify the address.",
+      },
+      services: {
+        legend: "What do you need?",
+        hint: "Pick as many as you like.",
+      },
+      custom: {
+        label: "Something else?",
+        hint: "Tell us about anything that isn't on the list. Photos help a lot.",
+        placeholder: "A hedge that needs trimming, a pile of branches, a patio to sweep...",
+      },
+      photos: {
+        label: "Photos (optional)",
+        hint: "Up to 4 photos, 8 MB each.",
+        count: (n: number) => (n === 1 ? "1 photo selected" : `${n} photos selected`),
+      },
+      days: {
+        legend: "Days that work for you",
+        hint: "Optional. Pick any that suit you.",
+      },
+      consent: {
+        legend: "Stay in touch (optional)",
+        email: "Email me updates, seasonal reminders, and offers.",
+        sms: "Text me about my jobs and appointments. Message and data rates may apply.",
+        snow: "Add me to the snow list so you can reach me when it snows.",
+        note: "You can opt out any time. We never share your details.",
+      },
+      submit: "Send my quote request",
+      submitting: "Sending...",
+      callInstead: "Rather talk it through?",
+      turnstile: "Quick check to make sure you're a person.",
+    },
+    errors: {
+      fix: "Please fix the highlighted fields and try again.",
+      photosAgain: "Please add your photos again before sending.",
+      generic: `Something went wrong on our end. Please try again, or call us at ${siteConfig.phone.display}.`,
+      unavailable: `We can't take online quote requests right now. Please call us at ${siteConfig.phone.display} and we'll get you a price.`,
+      rateLimited: `You've sent a few requests in a short time. Please wait a few minutes, or call us at ${siteConfig.phone.display}.`,
+      turnstile: "We couldn't confirm the security check. Please try again.",
+    },
+    thanks: {
+      headline: ["Your quote", "is on the way"],
+      body: "Thanks! We've got your request and we're taking a look. We'll send your price as soon as it's ready.",
+      nextHeading: "What happens next",
+      next: [
+        "We look at your address and what you asked for.",
+        "We send your price by email or text.",
+        "Say yes, pick a day, and we'll take care of the rest.",
+      ],
+      soonerPrompt: "Need it sooner? Call the crew.",
+      back: "Back to home",
+    },
+    unsubscribe: {
+      doneTitle: ["You're", "unsubscribed"],
+      doneBody:
+        "We've stopped our emails and texts to you, and taken you off the snow list. You may still get a message about a job you've already booked.",
+      invalidTitle: ["That link", "didn't work"],
+      invalidBody: `We couldn't find that unsubscribe link. It may be out of date. Call us at ${siteConfig.phone.display} and we'll take care of it right away.`,
+      errorTitle: ["Something", "went wrong"],
+      errorBody: `We couldn't update your preferences just now. Please try the link again in a minute, or call us at ${siteConfig.phone.display}.`,
+      changedMind: "Changed your mind? Give us a call and we'll add you back.",
+    },
   },
 
   mobileBar: {
