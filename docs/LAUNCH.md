@@ -6,9 +6,10 @@ Everything below is on branch `claude/peaceful-brahmagupta-l7zdmt`; Vercel build
 
 1. **Supabase** → DONE: project `emmetts-property-services` (ref `xqeiprybuimewxkpffay`, us-east-1, free tier) exists
    with all nine migrations applied, the seed data, and the private `lead-photos` bucket. Still to do by hand:
-   turn **off** public sign-ups (Authentication → Providers → Email → "Allow new users to sign up"), and set the
-   Site URL + redirect URLs (Authentication → URL Configuration) to your Vercel domain so magic links come back
-   to `/api/auth/callback`. Details: `supabase/README.md`.
+   turn **off** public sign-ups (Authentication → Providers → Email → "Allow new users to sign up"), and in
+   Authentication → URL Configuration set Site URL = `https://www.eodlawns.com` and add these redirect URLs:
+   `https://www.eodlawns.com/api/auth/callback`, `https://*-notrelaxed11-3656s-projects.vercel.app/api/auth/callback`
+   (previews), `http://localhost:3000/api/auth/callback`. Details: `supabase/README.md`.
 2. **Vercel** → Project → Settings → Environment Variables. The form accepts a pasted `.env` block: paste the
    block below for **all environments** (Production, Preview, Development), then fill in the four secrets, then
    redeploy. (The anon key is public by design; RLS does the gating. The service-role key is not.)
@@ -27,12 +28,19 @@ Everything below is on branch `claude/peaceful-brahmagupta-l7zdmt`; Vercel build
    PARCEL_SOURCE=none
    ```
 
-   `NEXT_PUBLIC_SITE_URL` is optional until you have a custom domain; the code falls back to Vercel's
-   production URL.
+   Also add `NEXT_PUBLIC_SITE_URL=https://www.eodlawns.com` (Production only). It is used for the pay links in
+   quote emails and the Stripe redirect URLs, so it must be the `www` host, not the apex.
 3. **Your owner account** → sign in once at `/login` with your email (magic link), then in Supabase SQL:
    `update public.profiles set role = 'owner' where email = '<your email>';`
-4. **Stripe** → Developers → Webhooks → add `https://<site>/api/stripe/webhook` with the events listed in
-   `docs/ENV.md`; paste the signing secret into `STRIPE_WEBHOOK_SECRET`.
+4. **Stripe** (test mode toggle ON, top right) → Developers → Webhooks → **Add endpoint**:
+   - Endpoint URL: `https://www.eodlawns.com/api/stripe/webhook` (**must be `www`**: the apex `eodlawns.com`
+     308-redirects to it and Stripe does not follow redirects).
+   - Events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+     `checkout.session.expired`, `charge.refunded`.
+   - After saving, click **Reveal** under "Signing secret" and paste the `whsec_…` into Vercel as
+     `STRIPE_WEBHOOK_SECRET`, then redeploy.
+   - Test it: on the endpoint page use **Send test event** → `checkout.session.completed`. Expect HTTP 200 and a
+     row in `stripe_events` (it will say "no quote_id metadata" and be marked processed, which is correct).
 5. **Fleet boxes** → follow `fleet/README.md` (Node 20, `/etc/fleet/<role>.env`, `systemctl enable --now fleet-worker@quotes`, …).
 
 ## 2. What to try on the preview
