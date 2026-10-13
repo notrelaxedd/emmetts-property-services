@@ -9,11 +9,26 @@ Everything below is on branch `claude/peaceful-brahmagupta-l7zdmt`; Vercel build
    turn **off** public sign-ups (Authentication → Providers → Email → "Allow new users to sign up"), and set the
    Site URL + redirect URLs (Authentication → URL Configuration) to your Vercel domain so magic links come back
    to `/api/auth/callback`. Details: `supabase/README.md`.
-2. **Vercel** → add the env vars from `docs/ENV.md`. Supabase values for this project:
-   `NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_URL` = `https://xqeiprybuimewxkpffay.supabase.co`,
-   `NEXT_PUBLIC_SUPABASE_ANON_KEY` = the anon key from Project Settings → API (legacy anon key),
-   `SUPABASE_SERVICE_ROLE_KEY` = the service_role key from the same page (secret; never commit it).
-   Plus `ANTHROPIC_API_KEY`, the Stripe **test** keys and `NEXT_PUBLIC_SITE_URL`. Redeploy.
+2. **Vercel** → Project → Settings → Environment Variables. The form accepts a pasted `.env` block: paste the
+   block below for **all environments** (Production, Preview, Development), then fill in the four secrets, then
+   redeploy. (The anon key is public by design; RLS does the gating. The service-role key is not.)
+
+   ```dotenv
+   NEXT_PUBLIC_SUPABASE_URL=https://xqeiprybuimewxkpffay.supabase.co
+   SUPABASE_URL=https://xqeiprybuimewxkpffay.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxZWlwcnlidWltZXd4a3BmZmF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE5MTU0NjYsImV4cCI6MjEwNzQ5MTQ2Nn0.i9IoDUlGFeJkPBju3V44pPyzZZ_sK-rDqeVZr7BGqyY
+   SUPABASE_SERVICE_ROLE_KEY=            # Supabase → Project Settings → API → service_role (secret)
+   ANTHROPIC_API_KEY=                    # console.anthropic.com (secret)
+   ANTHROPIC_MODEL=claude-sonnet-5-5
+   STRIPE_SECRET_KEY=                    # Stripe → Developers → API keys → sk_test_… (test mode)
+   STRIPE_WEBHOOK_SECRET=                # after step 4 below: whsec_…
+   EMAIL_PROVIDER=log
+   GEOCODER=none
+   PARCEL_SOURCE=none
+   ```
+
+   `NEXT_PUBLIC_SITE_URL` is optional until you have a custom domain; the code falls back to Vercel's
+   production URL.
 3. **Your owner account** → sign in once at `/login` with your email (magic link), then in Supabase SQL:
    `update public.profiles set role = 'owner' where email = '<your email>';`
 4. **Stripe** → Developers → Webhooks → add `https://<site>/api/stripe/webhook` with the events listed in
