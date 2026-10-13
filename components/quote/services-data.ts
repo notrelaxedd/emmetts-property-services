@@ -13,14 +13,20 @@ const fallback = (): QuoteServiceOption[] => siteServices.map((s) => ({ slug: s.
  */
 export async function loadQuoteServices(): Promise<QuoteServiceOption[]> {
   const db = getSupabaseAdmin();
-  if (!db) return fallback();
+  if (!db) {
+    console.warn("[quote] SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set; using the static service list");
+    return fallback();
+  }
   try {
     const { data, error } = await db
       .from("services")
       .select("slug, name, sort_order")
       .eq("active", true)
       .order("sort_order", { ascending: true });
-    if (error || !data || data.length === 0) return fallback();
+    if (error || !data || data.length === 0) {
+      console.warn("[quote] services query failed or empty; using the static service list", error?.message);
+      return fallback();
+    }
     return data.map((r) => ({
       slug: r.slug,
       name: r.name,
