@@ -230,8 +230,12 @@ select tests.check(
 select tests.check(
   tests.run($$select * from public.claim_task('quotes', 'evil')$$) like 'err:42501:%',
   'anon cannot call claim_task');
-select tests.check(public.is_owner() = false and public.current_role() is null,
-  'anon: is_owner() = false, current_role() is null');
+-- 1000: the role helpers are not exposed to anon at all.
+select tests.check(
+  tests.run($$select public.is_owner()$$) like 'err:42501:%'
+  and tests.run($$select public.current_role()$$) like 'err:42501:%'
+  and tests.run($$select public.current_profile_id()$$) like 'err:42501:%',
+  'anon cannot call is_owner() / current_role() / current_profile_id()');
 
 reset role;
 
