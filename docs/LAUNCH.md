@@ -4,11 +4,16 @@ Everything below is on branch `claude/peaceful-brahmagupta-l7zdmt`; Vercel build
 
 ## 1. Wire up services (one-time)
 
-1. **Supabase** → create a project (or reuse one). Apply `supabase/migrations/*.sql` in order (`supabase link` +
-   `supabase db push`, or paste each file into the SQL editor). Turn **off** public sign-ups in Auth settings.
-   Create the `lead-photos` bucket if the storage migration was skipped. Details: `supabase/README.md`.
-2. **Vercel** → add the env vars from `docs/ENV.md` (Supabase URL + anon + service-role, `ANTHROPIC_API_KEY`,
-   Stripe **test** keys, `NEXT_PUBLIC_SITE_URL`). Redeploy.
+1. **Supabase** → DONE: project `emmetts-property-services` (ref `xqeiprybuimewxkpffay`, us-east-1, free tier) exists
+   with all nine migrations applied, the seed data, and the private `lead-photos` bucket. Still to do by hand:
+   turn **off** public sign-ups (Authentication → Providers → Email → "Allow new users to sign up"), and set the
+   Site URL + redirect URLs (Authentication → URL Configuration) to your Vercel domain so magic links come back
+   to `/api/auth/callback`. Details: `supabase/README.md`.
+2. **Vercel** → add the env vars from `docs/ENV.md`. Supabase values for this project:
+   `NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_URL` = `https://xqeiprybuimewxkpffay.supabase.co`,
+   `NEXT_PUBLIC_SUPABASE_ANON_KEY` = the anon key from Project Settings → API (legacy anon key),
+   `SUPABASE_SERVICE_ROLE_KEY` = the service_role key from the same page (secret; never commit it).
+   Plus `ANTHROPIC_API_KEY`, the Stripe **test** keys and `NEXT_PUBLIC_SITE_URL`. Redeploy.
 3. **Your owner account** → sign in once at `/login` with your email (magic link), then in Supabase SQL:
    `update public.profiles set role = 'owner' where email = '<your email>';`
 4. **Stripe** → Developers → Webhooks → add `https://<site>/api/stripe/webhook` with the events listed in

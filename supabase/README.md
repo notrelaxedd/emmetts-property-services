@@ -136,3 +136,12 @@ Any failed check makes the script exit non-zero. Requires `psql` and Node ≥ 20
   an accepted assignment on that job.
 - `payouts` rows block deleting a crew member's profile (`on delete restrict`)
   so pay history isn't lost. Pause crew instead of deleting them.
+
+## Note on the storage migration (0700)
+
+On the hosted project, `storage.objects` is owned by `supabase_storage_admin`, and the migration tool timed out
+running the `do $$ … $$` block. The bucket insert and the two policies were applied as three separate plain
+statements instead (same SQL, no DO block), and the migration was recorded by hand in
+`supabase_migrations.schema_migrations` as `20261012000700_storage` so `supabase db push` won't try to re-run it.
+If you ever recreate the project, apply 0700 the same way: run the `insert into storage.buckets …`, then each
+`create policy … on storage.objects` on its own.
