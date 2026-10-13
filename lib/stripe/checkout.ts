@@ -11,52 +11,65 @@ import { canTransition, transitionJob } from "../ops/jobs";
 import { check, one } from "../ops/types";
 import type { Db } from "../ops/types";
 import { getStripe } from "./client";
+import { taxConfig } from "./tax";
+import type { TaxConfig } from "./tax";
 
 export const ADJUSTMENT_LINE_NAME = "Minimum job adjustment";
 
 export type CheckoutLine = { name: string; unitAmount: number };
 
+/** One billed line, shared by Checkout and invoices. Amounts in cents. */
+export type BilledLine = { description: string; unit_amount_cents: number; quantity: number };
+
+type BillableItem = Pick<QuoteItem, "description" | "price" | "status" | "sort_order">;
+
 /**
- * Builds the Checkout lines (amounts in cents) for a quote.
+ * The lines a customer is charged for a quote (amounts in cents), used by both Checkout and invoices.
  * - Only `auto` / `priced` items with a positive price are billed; declined / referred / unpriced are skipped.
- * - If `priceTotal` is above the sum of item prices (minimum-job-price floor) the difference becomes a
+ * - If `price_total` is above the sum of item prices (minimum-job-price floor) the difference becomes a
  *   "Minimum job adjustment" line.
- * - If `priceTotal` is below the sum (owner overrode the total downwards) the item amounts are scaled
- *   down proportionally so the customer is charged exactly `priceTotal`.
+ * - If `price_total` is below the sum (owner overrode the total downwards) the item amounts are scaled
+ *   down proportionally so the customer is charged exactly `price_total`.
+ * `price_total` is pre-tax: with Stripe Tax on, tax is added on top (see ./tax.ts).
  */
-export function buildCheckoutLines(
-  items: Pick<QuoteItem, "description" | "price" | "status" | "sort_order">[],
-  priceTotal: number,
-): CheckoutLine[] {
+export function billedLines(quote: Pick<Quote, "price_total">, items: BillableItem[]): BilledLine[] {
   const billed = items
     .filter((i) => (i.status === "auto" || i.status === "priced") && i.price !== null && i.price !== undefined && i.price > 0)
     .sort((a, b) => a.sort_order - b.sort_order);
-  if (billed.length === 0) throw new Error("createCheckoutForQuote: quote has no priced items");
+  if (billed.length === 0) throw new Error("billedLines: quote has no priced items");
 
-  const lines: CheckoutLine[] = billed.map((i) => ({
-    name: i.description.trim().slice(0, 250) || "Service",
-    unitAmount: Math.round((i.price as number) * 100),
+  const lines: BilledLine[] = billed.map((i) => ({
+    description: i.description.trim().slice(0, 250) || "Service",
+    unit_amount_cents: Math.round((i.price as number) * 100),
+    quantity: 1,
   }));
-  const sum = lines.reduce((s, l) => s + l.unitAmount, 0);
-  const total = Math.round(priceTotal * 100);
-  if (!Number.isFinite(total) || total <= 0) throw new Error("createCheckoutForQuote: quote price_total must be positive");
+  const sum = lines.reduce((s, l) => s + l.unit_amount_cents * l.quantity, 0);
+  const total = Math.round(quote.price_total * 100);
+  if (!Number.isFinite(total) || total <= 0) throw new Error("billedLines: quote price_total must be positive");
 
   if (total > sum) {
-    lines.push({ name: ADJUSTMENT_LINE_NAME, unitAmount: total - sum });
+    lines.push({ description: ADJUSTMENT_LINE_NAME, unit_amount_cents: total - sum, quantity: 1 });
   } else if (total < sum) {
-    const scaled = lines.map((l) => ({ ...l, unitAmount: Math.max(1, Math.floor((l.unitAmount * total) / sum)) }));
-    const diff = total - scaled.reduce((s, l) => s + l.unitAmount, 0);
-    const biggest = scaled.reduce((bi, l, i) => (l.unitAmount > scaled[bi].unitAmount ? i : bi), 0);
-    scaled[biggest].unitAmount += diff;
-    if (scaled.some((l) => l.unitAmount <= 0)) throw new Error("createCheckoutForQuote: price_total too low for the quoted items");
+    const scaled = lines.map((l) => ({ ...l, unit_amount_cents: Math.max(1, Math.floor((l.unit_amount_cents * total) / sum)) }));
+    const diff = total - scaled.reduce((s, l) => s + l.unit_amount_cents, 0);
+    const biggest = scaled.reduce((bi, l, i) => (l.unit_amount_cents > scaled[bi].unit_amount_cents ? i : bi), 0);
+    scaled[biggest].unit_amount_cents += diff;
+    if (scaled.some((l) => l.unit_amount_cents <= 0)) throw new Error("billedLines: price_total too low for the quoted items");
     return scaled;
   }
   return lines;
 }
 
-function hashFor(lines: CheckoutLine[], email: string, siteUrl: string): string {
+/** `billedLines` in the Checkout shape (kept for callers / tests that predate invoices). */
+export function buildCheckoutLines(items: BillableItem[], priceTotal: number): CheckoutLine[] {
+  return billedLines({ price_total: priceTotal }, items).map((l) => ({ name: l.description, unitAmount: l.unit_amount_cents }));
+}
+
+function hashFor(lines: CheckoutLine[], email: string, siteUrl: string, tax: TaxConfig): string {
+  // Tax settings are part of the hash so flipping STRIPE_TAX_ENABLED / STRIPE_TAX_CODE mints a new session.
+  const taxPart = tax.enabled || tax.taxCode ? { tax: tax.enabled, code: tax.taxCode ?? null } : {};
   return createHash("sha256")
-    .update(JSON.stringify({ lines, email: email.toLowerCase(), siteUrl }))
+    .update(JSON.stringify({ lines, email: email.toLowerCase(), siteUrl, ...taxPart }))
     .digest("hex")
     .slice(0, 16);
 }
@@ -90,13 +103,19 @@ export async function createCheckoutForQuote(
   );
   if (!customer) throw new Error(`createCheckoutForQuote: customer ${quote.customer_id} not found`);
   if (!customer.email) throw new Error(`createCheckoutForQuote: customer ${customer.id} has no email address`);
+  if (quote.stripe_invoice_url) {
+    // One way to pay at a time: the owner switched to Checkout without voiding the invoice (the quote
+    // handler voids it first; the /quote/pay link redirects to the invoice instead of calling this).
+    throw new Error(`createCheckoutForQuote: quote ${quoteId} has an open Stripe invoice; void it before sending a Checkout link`);
+  }
   const items = check(
     await db.from("quote_items").select("*").eq("quote_id", quoteId).order("sort_order", { ascending: true }),
     "createCheckout(items)",
   );
 
   const lines = buildCheckoutLines(items ?? [], quote.price_total);
-  const hash = hashFor(lines, customer.email, siteUrl);
+  const tax = taxConfig();
+  const hash = hashFor(lines, customer.email, siteUrl, tax);
   const stripe = getStripe();
 
   if (quote.stripe_checkout_id) {
@@ -118,8 +137,16 @@ export async function createCheckoutForQuote(
       client_reference_id: quoteId,
       line_items: lines.map((l) => ({
         quantity: 1,
-        price_data: { currency: "usd", unit_amount: l.unitAmount, product_data: { name: l.name } },
+        price_data: {
+          currency: "usd",
+          unit_amount: l.unitAmount,
+          // price_total is pre-tax: any sales tax is added on top.
+          tax_behavior: "exclusive",
+          product_data: { name: l.name, ...(tax.taxCode ? { tax_code: tax.taxCode } : {}) },
+        },
       })),
+      // Stripe Tax (Ohio sales tax on lawn care) needs the buyer's address to compute tax.
+      ...(tax.enabled ? { automatic_tax: { enabled: true }, billing_address_collection: "required" as const } : {}),
       metadata: { quote_id: quoteId, customer_id: quote.customer_id, items_hash: hash },
       payment_intent_data: { metadata: { quote_id: quoteId, customer_id: quote.customer_id } },
       success_url: `${siteUrl}/quote/paid?session_id={CHECKOUT_SESSION_ID}`,
@@ -177,6 +204,9 @@ export async function expireOpenCheckout(db: Db, quoteId: string): Promise<{ exp
 /**
  * Owner-initiated full refund for a paid quote: refunds the stored payment intent, cancels the job
  * and marks the quote `declined`. Refuses (before touching Stripe) if the job is already done.
+ * Same path for Checkout and invoice payments: the webhook stores the PaymentIntent of either in
+ * `stripe_payment_intent_id`. A full refund returns everything charged, sales tax included. An invoice
+ * paid outside Stripe (marked paid by hand) has no PaymentIntent and can't be refunded here.
  */
 export async function refundQuote(
   db: Db,

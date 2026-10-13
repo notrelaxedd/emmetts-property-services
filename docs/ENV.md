@@ -15,7 +15,9 @@ with `NEXT_PUBLIC_`; never commit one.
 | `ANTHROPIC_API_KEY` | ✓ | ✓ | ✓ | **Secret.** All Claude calls go through `lib/ai/claude.ts`. |
 | `ANTHROPIC_MODEL` | ✓ | ✓ | — | Default `claude-sonnet-5-5`. Haiku model ids are refused at startup. |
 | `STRIPE_SECRET_KEY` | ✓ | — | ✓ | **Secret.** Use the `sk_test_…` key until the owner approves going live; the code warns loudly on a non-test key. |
-| `STRIPE_WEBHOOK_SECRET` | ✓ | — | ✓ | `whsec_…` for `/api/stripe/webhook` (events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.expired`, `charge.refunded`). |
+| `STRIPE_WEBHOOK_SECRET` | ✓ | — | ✓ | `whsec_…` for `https://www.eodlawns.com/api/stripe/webhook`. `npm run stripe:setup` creates the endpoint with the right events and prints this once (see `docs/STRIPE.md`). Events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.expired`, `charge.refunded`, `invoice.paid`, `invoice.payment_failed`, `invoice.voided`, `invoice.marked_uncollectible`. |
+| `STRIPE_TAX_ENABLED` | ✓ | ✓ | — | `true` turns on Stripe Tax (`automatic_tax`) for new Checkout sessions and invoices; Checkout then also requires a billing address. **Default off: leave unset until Ohio is registered in Stripe Tax** (the setup script checks). Set it on the quotes box too if quote autopilot is on: autopilot sends create the Checkout session / invoice there. |
+| `STRIPE_TAX_CODE` | ✓ | ✓ | — | **TODO [TAX CODE — owner picks]:** `txcd_…` product tax code put on every line. `npm run stripe:setup` prints the candidates (landscaping / lawn / garden / snow); pick one with your accountant. Unset = omitted, so Stripe uses the account's default tax code. Never guess one. |
 | `EMAIL_PROVIDER` | ✓ | ✓ | — | `log` (default, prints instead of sending) · `resend` · `postmark` · `smtp` (TODO). **[EMAIL PROVIDER — ask owner]** |
 | `EMAIL_FROM` | ✓ | ✓ | with provider | Sending address, e.g. `Emmett's Property Services <hello@…>`. **[sending domain — ask owner]** |
 | `RESEND_API_KEY` / `POSTMARK_SERVER_TOKEN` | ✓ | ✓ | with provider | Provider credential. |
@@ -46,6 +48,7 @@ null and badged **TODO** in the UI until the owner fills them in:
 | `partner_tree_service_name/email` | null | **[PARTNER — ask owner]** for referrals. |
 | `default_wage` / `margin` / card fees | 15 / 0.50 / 2.9 % + $0.30 | From the plan. |
 | `autopilot` | all off | Per approval kind. |
+| `invoice_days_until_due` | 7 | Default net terms for **Send as invoice** on a quote (the owner can change it per invoice). |
 
 ## Local development
 
@@ -55,5 +58,6 @@ npm run dev                          # http://localhost:3000
 npm run test                         # unit tests (vitest)
 npm run test:db                      # migrations + RLS against local Postgres (see supabase/README.md)
 stripe listen --forward-to localhost:3000/api/stripe/webhook   # copy the whsec into STRIPE_WEBHOOK_SECRET
+STRIPE_SECRET_KEY=sk_test_… npm run stripe:setup -- --site https://www.eodlawns.com   # production webhook + Stripe Tax check
 FLEET_ROLE=host npm run fleet        # run one worker locally
 ```

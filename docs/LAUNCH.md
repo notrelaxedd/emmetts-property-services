@@ -32,13 +32,16 @@ Everything below is on branch `claude/peaceful-brahmagupta-l7zdmt`; Vercel build
    quote emails and the Stripe redirect URLs, so it must be the `www` host, not the apex.
 3. **Your owner account** → sign in once at `/login` with your email (magic link), then in Supabase SQL:
    `update public.profiles set role = 'owner' where email = '<your email>';`
-4. **Stripe** (test mode toggle ON, top right) → Developers → Webhooks → **Add endpoint**:
-   - Endpoint URL: `https://www.eodlawns.com/api/stripe/webhook` (**must be `www`**: the apex `eodlawns.com`
-     308-redirects to it and Stripe does not follow redirects).
-   - Events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
-     `checkout.session.expired`, `charge.refunded`.
-   - After saving, click **Reveal** under "Signing secret" and paste the `whsec_…` into Vercel as
-     `STRIPE_WEBHOOK_SECRET`, then redeploy.
+4. **Stripe** (test mode). From your own machine (this needs to reach api.stripe.com):
+   ```bash
+   STRIPE_SECRET_KEY=sk_test_… npm run stripe:setup -- --site https://www.eodlawns.com
+   ```
+   It creates the webhook endpoint `https://www.eodlawns.com/api/stripe/webhook` (**must be `www`**: the apex
+   `eodlawns.com` 308-redirects to it and Stripe does not follow redirects; the script corrects an apex `--site`)
+   with every event the app handles, and prints the `whsec_…` **once**: paste it into Vercel as
+   `STRIPE_WEBHOOK_SECRET`, then redeploy. Re-running it updates the endpoint and never prints the secret again.
+   It also reports Stripe Tax and lists tax codes; leave `STRIPE_TAX_ENABLED` unset until Ohio is registered.
+   Details and the manual Dashboard steps: `docs/STRIPE.md`.
    - Test it: on the endpoint page use **Send test event** → `checkout.session.completed`. Expect HTTP 200 and a
      row in `stripe_events` (it will say "no quote_id metadata" and be marked processed, which is correct).
 5. **Fleet boxes** → follow `fleet/README.md` (Node 20, `/etc/fleet/<role>.env`, `systemctl enable --now fleet-worker@quotes`, …).

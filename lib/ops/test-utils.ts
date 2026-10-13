@@ -217,7 +217,7 @@ export function settingsRow(over: Partial<Settings> = {}): Settings {
     id: SETTINGS_ID, created_at: T0, updated_at: T0,
     ai_monthly_cap: null, default_wage: 15, margin: 0.5, min_job_price: null,
     card_fee_pct: 0.029, card_fee_fixed: 0.3, drop_notice_hours: 24,
-    autopilot: structuredClone(DEFAULT_AUTOPILOT), quote_valid_days: 14,
+    autopilot: structuredClone(DEFAULT_AUTOPILOT), quote_valid_days: 14, invoice_days_until_due: 7,
     base_lat: null, base_lng: null, partner_tree_service_name: null, partner_tree_service_email: null,
     ...over,
   };
@@ -236,6 +236,7 @@ export function customerRow(over: Partial<Customer> = {}): Customer {
     id: randomUUID(), created_at: T0, updated_at: T0, name: "Test Customer", email: null, phone: null,
     address: null, lat: null, lng: null, parcel_id: null, lot_acres: null, tree_cover: null,
     email_opt_in: false, sms_opt_in: false, snow_list: false, notes: null, unsubscribe_token: randomUUID(),
+    stripe_customer_id: null,
     ...over,
   };
 }

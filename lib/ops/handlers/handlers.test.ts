@@ -4,10 +4,13 @@ const m = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   draftMessage: vi.fn(),
   createCheckout: vi.fn(),
+  createInvoice: vi.fn(),
+  voidInvoice: vi.fn(),
 }));
 vi.mock("../../email", () => ({ sendMessage: m.sendMessage }));
 vi.mock("../../ai/claude", () => ({ draftMessage: m.draftMessage }));
 vi.mock("../../stripe/checkout", () => ({ createCheckoutForQuote: m.createCheckout }));
+vi.mock("../../stripe/invoice", () => ({ createInvoiceForQuote: m.createInvoice, voidInvoiceForQuote: m.voidInvoice }));
 
 import { AUTOPILOT_KINDS } from "../../../components/admin/autopilot/kinds";
 import { approvalRow, customerRow, fakeDb, jobRow, settingsRow } from "../test-utils";
@@ -98,6 +101,54 @@ describe("quoteHandler", () => {
     await quoteHandler(db, approval(), ctx);
     expect(db.tables.messages).toHaveLength(1);
     expect(db.tables.quotes[0].status).toBe("sent");
+  });
+
+  it("payload.method = invoice: Stripe creates + emails the invoice, no email of ours, a sent message row is logged", async () => {
+    m.createInvoice.mockResolvedValue({ id: "in_1", hosted_invoice_url: "https://invoice.stripe.test/i/in_1" });
+    const db = world();
+    const a = approvalRow({ kind: "quote", ref_table: "quotes", ref_id: "q1", status: "approved", payload: { quote_id: "q1", method: "invoice", days_until_due: 21 } });
+    await quoteHandler(db, a, ctx);
+    expect(m.createInvoice).toHaveBeenCalledWith(db, "q1", { siteUrl: ctx.siteUrl, daysUntilDue: 21, sendInvoice: true });
+    expect(m.createCheckout).not.toHaveBeenCalled();
+    expect(m.sendMessage).not.toHaveBeenCalled();
+    expect(m.draftMessage).not.toHaveBeenCalled();
+    expect(db.tables.messages).toHaveLength(1);
+    expect(db.tables.messages[0]).toMatchObject({
+      kind: "quote", channel: "email", status: "sent", quote_id: "q1", customer_id: "c1",
+      body: "https://invoice.stripe.test/i/in_1", provider_id: "in_1",
+    });
+    expect(String(db.tables.messages[0].subject)).toMatch(/\$80\.00, due in 21 days/);
+    expect(db.tables.messages[0].sent_at).toBeTruthy();
+  });
+
+  it("payload.method = invoice without days uses settings.invoice_days_until_due", async () => {
+    m.createInvoice.mockResolvedValue({ id: "in_1", hosted_invoice_url: "https://invoice.stripe.test/i/in_1" });
+    const db = world();
+    db.tables.settings[0].invoice_days_until_due = 30;
+    await quoteHandler(db, approvalRow({ kind: "quote", ref_table: "quotes", ref_id: "q1", status: "approved", payload: { method: "invoice" } }), ctx);
+    expect(m.createInvoice.mock.calls[0][2]).toMatchObject({ daysUntilDue: 30 });
+  });
+
+  it("sending a Checkout link for a quote with an open invoice voids the invoice first", async () => {
+    m.draftMessage.mockResolvedValue({ subject: "Quote", body: `Pay: ${PAY_URL}` });
+    const db = world();
+    db.tables.quotes[0].stripe_invoice_url = "https://invoice.stripe.test/i/in_1";
+    await quoteHandler(db, approval(), ctx);
+    expect(m.voidInvoice).toHaveBeenCalledWith(db, "q1");
+    expect(m.createCheckout).toHaveBeenCalled();
+    expect(m.voidInvoice.mock.invocationCallOrder[0]).toBeLessThan(m.createCheckout.mock.invocationCallOrder[0]);
+  });
+
+  it("mentions sales tax in the fallback email when Stripe Tax is on", async () => {
+    process.env.STRIPE_TAX_ENABLED = "true";
+    try {
+      m.draftMessage.mockRejectedValue(new Error("capped"));
+      const db = world();
+      await quoteHandler(db, approval(), ctx);
+      expect(String(db.tables.messages[0].body)).toContain("Total: $80.00 plus Ohio sales tax");
+    } finally {
+      delete process.env.STRIPE_TAX_ENABLED;
+    }
   });
 
   it("skips an already accepted quote", async () => {

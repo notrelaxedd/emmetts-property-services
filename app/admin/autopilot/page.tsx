@@ -50,6 +50,7 @@ export default async function AutopilotPage() {
                   card_fee_fixed: Number(settings.card_fee_fixed),
                   drop_notice_hours: Number(settings.drop_notice_hours),
                   quote_valid_days: Number(settings.quote_valid_days),
+                  invoice_days_until_due: Number(settings.invoice_days_until_due),
                   ai_monthly_cap: num(settings.ai_monthly_cap),
                   partner_tree_service_name: settings.partner_tree_service_name,
                   partner_tree_service_email: settings.partner_tree_service_email,

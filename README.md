@@ -6,7 +6,7 @@ Every section pushes toward one action: **call (440) 823-5545**.
 Next.js 14 (App Router) · TypeScript · Tailwind CSS · shadcn/ui · Vercel · Supabase · Stripe · Anthropic
 
 The marketing site is still static and phone-first. On top of it sits an **operations system**
-(see `docs/PLAN.md`, `docs/AUDIT.md`, `docs/ENV.md`):
+(see `docs/PLAN.md`, `docs/AUDIT.md`, `docs/ENV.md`, `docs/STRIPE.md`):
 
 | Where | What |
 | --- | --- |

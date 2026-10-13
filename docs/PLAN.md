@@ -158,6 +158,8 @@ Sidebar: Approval inbox (home, with pending count), Ads, Leads, Quotes, Schedule
 - Webhook `checkout.session.completed` → quote `accepted`, create `job` (`unscheduled`, `paid = true`), enqueue `schedule` task.
 - Refund path for cancellations (owner button).
 - Test mode only until I approve going live.
+- Added later (see `docs/STRIPE.md`): **Send as invoice** (Stripe Invoicing, net terms; `invoice.paid` accepts the
+  quote like Checkout), **Stripe Tax** for Ohio sales tax behind `STRIPE_TAX_ENABLED`, and `npm run stripe:setup`.
 
 ---
 

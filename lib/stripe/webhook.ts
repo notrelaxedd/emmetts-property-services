@@ -5,6 +5,14 @@
  * Idempotent through the `stripe_events` table (unique `stripe_event_id`): an event already marked
  * processed is a no-op. An event that was stored but failed to process keeps `processed_at = null`
  * and is retried when Stripe redelivers it, or via `reprocessPendingStripeEvents`.
+ *
+ * Events (keep in sync with WEBHOOK_EVENTS in ./setup.ts, which registers the endpoint):
+ *  - checkout.session.completed / .async_payment_succeeded, invoice.paid → accept the quote, store the
+ *    PaymentIntent, win the lead, create the job; flag a different amount or a second payment; note the
+ *    sales tax collected (Stripe Tax).
+ *  - checkout.session.expired → drop the stale Checkout URL (the /quote/pay link mints a new one).
+ *  - invoice.payment_failed / .voided / .marked_uncollectible → note on the quote (void → declined).
+ *  - charge.refunded → note on the quote.
  */
 import type Stripe from "stripe";
 import type { Quote } from "../db/types";
@@ -13,6 +21,8 @@ import { createJobFromQuote } from "../ops/jobs";
 import { check, one } from "../ops/types";
 import type { Db } from "../ops/types";
 import { appendNote } from "./checkout";
+import { getStripe } from "./client";
+import { salesTaxNote, taxConfig, usd } from "./tax";
 
 export type StripeEventResult = {
   /** True when this event was already fully processed before. */
@@ -92,6 +102,14 @@ async function dispatch(db: Db, event: Stripe.Event, ctx: DispatchCtx): Promise<
       return onCheckoutExpired(db, event.data.object);
     case "charge.refunded":
       return onChargeRefunded(db, event.data.object);
+    case "invoice.paid":
+      return onInvoicePaid(db, event.data.object, ctx);
+    case "invoice.payment_failed":
+      return onInvoiceProblem(db, event.data.object, "payment_failed");
+    case "invoice.voided":
+      return onInvoiceProblem(db, event.data.object, "voided");
+    case "invoice.marked_uncollectible":
+      return onInvoiceProblem(db, event.data.object, "marked_uncollectible");
     default:
       return; // unknown events are recorded and marked processed
   }
@@ -100,8 +118,6 @@ async function dispatch(db: Db, event: Stripe.Event, ctx: DispatchCtx): Promise<
 async function getQuote(db: Db, id: string): Promise<Quote | null> {
   return check(await db.from("quotes").select("*").eq("id", id).maybeSingle(), "stripe(quote lookup)");
 }
-
-const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 /**
  * Payment problems the owner must look at: a `quote` approval (no autopilot), keyed to the Stripe
@@ -131,16 +147,86 @@ async function onCheckoutPaid(db: Db, session: Stripe.Checkout.Session, ctx: Dis
     console.warn(`[stripe] checkout session ${session.id} has no quote_id metadata; ignoring`);
     return;
   }
-  const quote = await getQuote(db, quoteId);
-  if (!quote) throw new Error(`checkout session ${session.id}: quote ${quoteId} not found`);
+  // With Stripe Tax the customer pays price_total + tax: compare the pre-tax subtotal with the quote.
+  // The session says whether tax ran; the env flag is only a fallback for payloads without the field.
+  const taxed = session.automatic_tax ? session.automatic_tax.enabled : taxConfig().enabled;
+  const compared = taxed ? session.amount_subtotal : session.amount_total;
+  await acceptPayment(db, ctx, {
+    quoteId,
+    source: `checkout ${session.id}`,
+    paymentIntent: idOf(session.payment_intent),
+    comparedCents: typeof compared === "number" ? compared : null,
+    taxed,
+    taxCents: typeof session.total_details?.amount_tax === "number" ? session.total_details.amount_tax : null,
+    ref: { checkout_session: session.id },
+  });
+}
 
-  const pi = idOf(session.payment_intent);
-  const paid = typeof session.amount_total === "number" ? session.amount_total : null;
+/** `invoice.paid`: the same accept path as a paid Checkout session. */
+async function onInvoicePaid(db: Db, invoice: Stripe.Invoice, ctx: DispatchCtx): Promise<void> {
+  const quoteId = invoice.metadata?.quote_id;
+  if (!quoteId) {
+    console.warn(`[stripe] invoice ${invoice.id} has no quote_id metadata; ignoring`);
+    return;
+  }
+  const taxed = !!invoice.automatic_tax?.enabled;
+  const taxCents = invoice.total_taxes ? invoice.total_taxes.reduce((sum, t) => sum + t.amount, 0) : null;
+  const compared = taxed ? (invoice.total_excluding_tax ?? invoice.subtotal) : invoice.total;
+  await acceptPayment(db, ctx, {
+    quoteId,
+    source: `invoice ${invoice.id}`,
+    paymentIntent: await invoicePaymentIntent(invoice),
+    comparedCents: typeof compared === "number" ? compared : null,
+    taxed,
+    taxCents,
+    ref: { invoice: invoice.id },
+  });
+}
+
+/**
+ * The PaymentIntent that paid an invoice (refunds hang off it). Current API versions moved it from
+ * `invoice.payment_intent` to InvoicePayments; the legacy field is still read for endpoints pinned to an
+ * older API version. Null when the invoice was marked paid outside Stripe. THROWS if Stripe can't be
+ * asked, so the event is retried rather than accepted without a refundable payment.
+ */
+export async function invoicePaymentIntent(invoice: Stripe.Invoice): Promise<string | null> {
+  const legacy = (invoice as unknown as { payment_intent?: string | { id: string } | null }).payment_intent;
+  if (legacy) return idOf(legacy);
+  const pick = (payments: Stripe.InvoicePayment[] | undefined) =>
+    idOf(payments?.find((p) => p.status === "paid" && p.payment?.payment_intent)?.payment.payment_intent ?? null);
+  const embedded = pick(invoice.payments?.data);
+  if (embedded) return embedded;
+  const listed = await getStripe().invoicePayments.list({ invoice: invoice.id, status: "paid", limit: 10 });
+  return pick(listed.data);
+}
+
+type PaidQuote = {
+  quoteId: string;
+  /** "checkout cs_…" / "invoice in_…", used in notes. */
+  source: string;
+  paymentIntent: string | null;
+  /** Amount compared with `price_total` (cents): pre-tax when Stripe Tax ran, else the total charged. */
+  comparedCents: number | null;
+  taxed: boolean;
+  taxCents: number | null;
+  /** Extra ids for the alert payload. */
+  ref: Record<string, string>;
+};
+
+/**
+ * A payment for a quote arrived (Checkout or invoice): accept the quote, store the PaymentIntent, win
+ * the lead, create the job. Flags a different amount or a second payment for the owner, and notes the
+ * sales tax Stripe collected (`price_total` stays the pre-tax amount).
+ */
+async function acceptPayment(db: Db, ctx: DispatchCtx, p: PaidQuote): Promise<void> {
+  const { quoteId, paymentIntent: pi, comparedCents: paid } = p;
+  const quote = await getQuote(db, quoteId);
+  if (!quote) throw new Error(`${p.source}: quote ${quoteId} not found`);
 
   // A second, different payment for a quote that is already paid: keep the first payment on the quote
   // (refunds and the job hang off it) and make the owner refund this one by hand.
   if (quote.status === "accepted" && quote.stripe_payment_intent_id && pi && quote.stripe_payment_intent_id !== pi) {
-    const note = `WARNING: second payment ${pi}${paid !== null ? ` (${usd(paid)})` : ""} received for this already-paid quote (checkout ${session.id}) — refund manually in Stripe.`;
+    const note = `WARNING: second payment ${pi}${paid !== null ? ` (${usd(paid)})` : ""} received for this already-paid quote (${p.source}) — refund manually in Stripe.`;
     if (!quote.rationale?.includes(pi)) {
       check(
         await db.from("quotes").update({ rationale: appendNote(quote.rationale, note) }).eq("id", quoteId),
@@ -152,7 +238,7 @@ async function onCheckoutPaid(db: Db, session: Stripe.Checkout.Session, ctx: Dis
       quoteId,
       title: "Second payment received — refund manually",
       summary: note,
-      payload: { alert: "double_payment", payment_intent: pi, first_payment_intent: quote.stripe_payment_intent_id, checkout_session: session.id, amount_paid: paid },
+      payload: { alert: "double_payment", payment_intent: pi, first_payment_intent: quote.stripe_payment_intent_id, ...p.ref, amount_paid: paid },
     });
     return;
   }
@@ -162,8 +248,14 @@ async function onCheckoutPaid(db: Db, session: Stripe.Checkout.Session, ctx: Dis
   const expected = Math.round(quote.price_total * 100);
   const mismatch = paid !== null && paid !== expected;
   const mismatchNote = mismatch
-    ? `WARNING: Paid amount differs from quote — customer paid ${usd(paid)} but the quote total is ${usd(expected)} (checkout ${session.id}). Refund or collect the difference.`
+    ? `WARNING: Paid amount differs from quote — customer paid ${usd(paid)}${p.taxed ? " before tax" : ""} but the quote total is ${usd(expected)} (${p.source}). Refund or collect the difference.`
     : null;
+  const taxNote = p.taxCents !== null && (p.taxed || p.taxCents > 0) ? salesTaxNote(p.taxCents, p.source) : null;
+
+  let rationale = quote.rationale;
+  for (const note of [mismatchNote, taxNote]) {
+    if (note && !rationale?.includes(note)) rationale = appendNote(rationale, note);
+  }
 
   const now = new Date().toISOString();
   check(
@@ -173,7 +265,7 @@ async function onCheckoutPaid(db: Db, session: Stripe.Checkout.Session, ctx: Dis
         status: "accepted",
         accepted_at: quote.accepted_at ?? now,
         stripe_payment_intent_id: pi ?? quote.stripe_payment_intent_id,
-        ...(mismatchNote && !quote.rationale?.includes(session.id) ? { rationale: appendNote(quote.rationale, mismatchNote) } : {}),
+        ...(rationale !== quote.rationale ? { rationale } : {}),
       })
       .eq("id", quoteId),
     "stripe(accept quote)",
@@ -184,11 +276,49 @@ async function onCheckoutPaid(db: Db, session: Stripe.Checkout.Session, ctx: Dis
       quoteId,
       title: "Paid amount differs from quote",
       summary: mismatchNote,
-      payload: { alert: "amount_mismatch", payment_intent: pi, checkout_session: session.id, amount_paid: paid, amount_expected: expected },
+      payload: { alert: "amount_mismatch", payment_intent: pi, ...p.ref, amount_paid: paid, amount_expected: expected },
     });
   }
   check(await db.from("leads").update({ status: "won" }).eq("id", quote.lead_id), "stripe(lead won)");
   await createJobFromQuote(db, quoteId); // idempotent; enqueues the `schedule` task
+}
+
+/**
+ * `invoice.payment_failed` / `invoice.voided` / `invoice.marked_uncollectible`: a note on the quote.
+ * A void of the quote's live invoice (done by the owner in Stripe; our own voids clear
+ * `stripe_invoice_url` first) also declines a quote that is still `sent`. Uncollectible leaves the status
+ * alone: Stripe still accepts payment on it, and `invoice.paid` would accept the quote.
+ */
+async function onInvoiceProblem(
+  db: Db,
+  invoice: Stripe.Invoice,
+  kind: "payment_failed" | "voided" | "marked_uncollectible",
+): Promise<void> {
+  const quoteId = invoice.metadata?.quote_id;
+  if (!quoteId) return;
+  const quote = await getQuote(db, quoteId);
+  if (!quote) return;
+  const live = quote.stripe_invoice_id === invoice.id && !!quote.stripe_invoice_url;
+  if (kind === "voided" && !live) return; // we voided it ourselves (revise / re-send / switch to Checkout)
+
+  const decline = kind === "voided" && quote.status === "sent";
+  const note =
+    kind === "payment_failed"
+      ? `Invoice ${invoice.id} payment failed (attempt ${invoice.attempt_count}, ${usd(invoice.amount_due)} due). Stripe emails the customer; nothing to do unless it keeps failing.`
+      : kind === "voided"
+        ? `Invoice ${invoice.id} was voided in Stripe.${decline ? " Quote marked declined." : ""}`
+        : `Invoice ${invoice.id} was marked uncollectible in Stripe (${usd(invoice.amount_remaining)} unpaid). Collect another way, or void it to close the quote.`;
+  if (quote.rationale?.includes(note) && !decline) return;
+  check(
+    await db
+      .from("quotes")
+      .update({
+        ...(quote.rationale?.includes(note) ? {} : { rationale: appendNote(quote.rationale, note) }),
+        ...(decline ? { status: "declined" as const, stripe_invoice_url: null } : {}),
+      })
+      .eq("id", quoteId),
+    `stripe(invoice ${kind})`,
+  );
 }
 
 async function onCheckoutExpired(db: Db, session: Stripe.Checkout.Session): Promise<void> {

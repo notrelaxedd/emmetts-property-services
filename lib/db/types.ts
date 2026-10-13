@@ -162,6 +162,8 @@ export type Customer = Base & {
   notes: string | null;
   /** Token used in unsubscribe links. */
   unsubscribe_token: string;
+  /** Stripe Customer (`cus_…`) used for invoices; found by email or created on the first invoice. */
+  stripe_customer_id: string | null;
 };
 
 export type Lead = Base & {
@@ -189,6 +191,10 @@ export type Quote = Base & {
   stripe_checkout_id: string | null;
   stripe_checkout_url: string | null;
   stripe_payment_intent_id: string | null;
+  /** Latest Stripe invoice (`in_…`) when the quote was sent as an invoice instead of a Checkout link. */
+  stripe_invoice_id: string | null;
+  /** Hosted invoice page while that invoice is the live way to pay; cleared when it is voided by us. */
+  stripe_invoice_url: string | null;
   sent_at: string | null;
   accepted_at: string | null;
   expires_at: string | null;
@@ -375,6 +381,8 @@ export type Settings = Base & {
   drop_notice_hours: number;
   autopilot: AutopilotRules;
   quote_valid_days: number;
+  /** Default net terms for "Send as invoice" (Stripe `days_until_due`). */
+  invoice_days_until_due: number;
   /** Service-area centre for weather + distance. */
   base_lat: number | null;
   base_lng: number | null;

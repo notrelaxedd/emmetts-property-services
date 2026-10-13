@@ -54,6 +54,7 @@ const settingsSchema = z.object({
   card_fee_fixed: z.number().min(0).max(10),
   drop_notice_hours: z.number().int().min(0).max(24 * 14),
   quote_valid_days: z.number().int().min(1).max(365),
+  invoice_days_until_due: z.number().int().min(1).max(365),
   ai_monthly_cap: money.nullable(),
   partner_tree_service_name: z.string().trim().max(120).nullable(),
   partner_tree_service_email: z.union([z.email(), z.literal("")]).nullable(),

@@ -3,12 +3,15 @@ import type { Message, Quote, QuoteItem } from "../../db/types";
 import { sendMessage } from "../../email";
 import { siteConfig } from "../../site-config";
 import { createCheckoutForQuote } from "../../stripe/checkout";
+import { createInvoiceForQuote, voidInvoiceForQuote } from "../../stripe/invoice";
+import { taxConfig } from "../../stripe/tax";
 import type { ApprovalHandler } from "../approvals";
 import { getSettings } from "../settings";
 import { check, one } from "../types";
 import type { Db } from "../types";
 
 const money = (n: number) => `$${n.toFixed(2)}`;
+const taxNote = () => (taxConfig().enabled ? " + sales tax" : "");
 
 /** Billed items (priced + positive price), in display order. */
 function billedItems(items: QuoteItem[]): QuoteItem[] {
@@ -24,6 +27,8 @@ export function fallbackQuoteEmail(input: {
   total: number;
   checkoutUrl: string;
   validDays: number;
+  /** Stripe Tax is on: sales tax is added at checkout. */
+  plusTax?: boolean;
 }): { subject: string; body: string } {
   const lines = input.items.map((i) => `- ${i.description}: ${money(i.price)}`).join("\n");
   const body = [
@@ -33,7 +38,7 @@ export function fallbackQuoteEmail(input: {
     "",
     lines,
     "",
-    `Total: ${money(input.total)}`,
+    `Total: ${money(input.total)}${input.plusTax ? " plus Ohio sales tax (calculated at checkout)" : ""}`,
     "",
     `To accept, pay securely online by card: ${input.checkoutUrl}`,
     `This quote is good for ${input.validDays} days. Once payment comes through we'll reach out to schedule your job.`,
@@ -50,6 +55,9 @@ export function fallbackQuoteEmail(input: {
  * Side effect for an approved / edited "quote" approval: create the Stripe Checkout link, email it
  * to the customer, and mark the quote `sent`. Any owner edits (e.g. a `price_total` override) were
  * already written to the quote by the admin UI, so nothing is re-priced here.
+ *
+ * `payload.method === "invoice"` (admin "Send as invoice"): create + finalize a Stripe invoice and let
+ * Stripe email it (no email of ours), logging a `messages` row with the hosted invoice URL.
  * Stripe is TEST MODE ONLY (see lib/stripe/client.ts).
  */
 export const quoteHandler: ApprovalHandler = async (db, approval, ctx) => {
@@ -65,10 +73,38 @@ export const quoteHandler: ApprovalHandler = async (db, approval, ctx) => {
     "quoteHandler(customer)",
   );
   if (!customer) throw new Error(`quoteHandler: customer ${quote.customer_id} not found`);
+  const settings = await getSettings(db);
+
+  if (approval.payload.method === "invoice") {
+    const requested = Number(approval.payload.days_until_due);
+    const days = Number.isInteger(requested) && requested > 0 ? requested : settings.invoice_days_until_due;
+    const invoice = await createInvoiceForQuote(db, quoteId, { siteUrl: ctx.siteUrl, daysUntilDue: days, sendInvoice: true });
+    // Stripe emailed the invoice; keep the customer's message log complete anyway.
+    check(
+      await db.from("messages").insert({
+        customer_id: quote.customer_id,
+        quote_id: quoteId,
+        job_id: null,
+        channel: "email",
+        kind: "quote",
+        subject: `Stripe invoice for ${money(quote.price_total)}${taxNote()}, due in ${days} day${days === 1 ? "" : "s"}`,
+        body: invoice.hosted_invoice_url,
+        status: "sent",
+        sent_at: new Date().toISOString(),
+        error: null,
+        provider_id: invoice.id,
+      }),
+      "quoteHandler(log invoice message)",
+    );
+    return;
+  }
+
+  // Switching from an invoice to a Checkout link: void the invoice first so only one can be paid.
+  if (quote.stripe_invoice_url) await voidInvoiceForQuote(db, quoteId);
+
   const items = billedItems(
     check(await db.from("quote_items").select("*").eq("quote_id", quoteId), "quoteHandler(items)") ?? [],
   );
-  const settings = await getSettings(db);
 
   // Create the first Checkout session now (validates Stripe config and shows the link in /admin), but email
   // the durable /quote/pay/<id> link: Stripe sessions last 24 h, quotes last `quote_valid_days`.
@@ -136,6 +172,7 @@ async function draftQuoteEmail(
     total: quote.price_total,
     checkoutUrl,
     validDays,
+    plusTax: taxConfig().enabled,
   });
   try {
     const draft = await draftMessage(db, {
@@ -143,7 +180,7 @@ async function draftQuoteEmail(
       customer: { name: customerName, first_name: customerName.split(/\s+/)[0] },
       extra: {
         checkout_url: checkoutUrl,
-        price_total: money(quote.price_total),
+        price_total: `${money(quote.price_total)}${taxConfig().enabled ? " plus sales tax (calculated at checkout)" : ""}`,
         items: priced.map((i) => `${i.description}: ${money(i.price)}`).join("; "),
       },
     });

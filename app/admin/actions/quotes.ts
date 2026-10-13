@@ -15,6 +15,7 @@ import { getSettings } from "@/lib/ops/settings"
 import { check } from "@/lib/ops/types"
 import { fee, moneyRound, priceQuote } from "@/lib/pricing"
 import { expireOpenCheckout, refundQuote } from "@/lib/stripe/checkout"
+import { MAX_DAYS_UNTIL_DUE, voidInvoiceForQuote } from "@/lib/stripe/invoice"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 const Id = z.string().uuid()
@@ -159,11 +160,14 @@ export async function saveQuote(quoteId: string, input: SaveQuoteInput): Promise
   }
 }
 
+type SendMethod = { method: "checkout" } | { method: "invoice"; days_until_due: number }
+
 /**
- * "Send via Stripe": creates (or refreshes) the quote's approval, approves it as the owner and runs
- * the quote handler, which builds the Checkout session and emails the link.
+ * Shared by "Send via Stripe" and "Send as invoice": validates the quote, creates (or refreshes) its
+ * approval, approves it as the owner and runs the quote handler (lib/ops/handlers/quote.ts), which builds
+ * the Checkout session and emails the link, or (`payload.method = "invoice"`) has Stripe email an invoice.
  */
-export async function sendQuote(quoteId: string): Promise<ActionResult> {
+async function sendWith(quoteId: string, how: SendMethod): Promise<ActionResult> {
   const session = await requireOwner()
   const actor = actorOf(session)
   try {
@@ -185,50 +189,84 @@ export async function sendQuote(quoteId: string): Promise<ActionResult> {
     const billed = items.filter((i) => (i.status === "auto" || i.status === "priced") && (i.price ?? 0) > 0)
     if (!billed.length || !(quote.price_total > 0)) return { ok: false, error: "Nothing on this quote has a price yet." }
 
-    const approval = await createApproval(db, quoteApprovalInput(quote, items, customer.name, actor))
-    const decided = await decideApproval(db, approval.id, "approved", { decidedBy: actor, note: "Sent from the quote page" })
+    const input = quoteApprovalInput(quote, items, customer.name, actor)
+    input.payload = how.method === "invoice"
+      ? { ...input.payload, method: "invoice", days_until_due: how.days_until_due }
+      : { ...input.payload, method: "checkout" }
+    const approval = await createApproval(db, input)
+    const decided = await decideApproval(db, approval.id, "approved", {
+      decidedBy: actor,
+      note: how.method === "invoice" ? `Sent as a Stripe invoice (due in ${how.days_until_due} days) from the quote page` : "Sent from the quote page",
+    })
     const res = await runApprovalSideEffect(db, decided, actor)
     revalidateQuote(id)
     if (!res.ok) return { ok: false, error: `Approved, but sending failed: ${res.error}` }
-    return { ok: true, message: `Payment link emailed to ${customer.email}` }
+    return {
+      ok: true,
+      message: how.method === "invoice" ? `Stripe emailed the invoice to ${customer.email}` : `Payment link emailed to ${customer.email}`,
+    }
   } catch (e) {
     return { ok: false, error: errorMessage(e) }
   }
 }
 
+/** "Send via Stripe": Checkout pay link emailed by us. */
+export async function sendQuote(quoteId: string): Promise<ActionResult> {
+  return sendWith(quoteId, { method: "checkout" })
+}
+
+const DaysUntilDue = z.number().int("Days until due must be a whole number").min(1, "At least 1 day").max(MAX_DAYS_UNTIL_DUE)
+
+/** "Send as invoice": a Stripe invoice (net `daysUntilDue` days) that Stripe emails to the customer. */
+export async function sendQuoteAsInvoice(quoteId: string, daysUntilDue: number): Promise<ActionResult> {
+  await requireOwner()
+  const days = DaysUntilDue.safeParse(daysUntilDue)
+  if (!days.success) return { ok: false, error: days.error.issues[0]?.message ?? "Invalid days until due." }
+  return sendWith(quoteId, { method: "invoice", days_until_due: days.data })
+}
+
 /**
  * "Revise & re-send" for a quote that has been sent but not paid: expires its open Stripe Checkout
- * session (refuses if the customer already paid it), and puts the quote back to `draft` so it can be
- * edited and then sent again with the normal Send flow (which builds a new link). The emailed
- * /quote/pay/<id> link stops minting sessions while the quote is a draft.
+ * session and voids its open Stripe invoice (refuses if the customer already paid either), and puts the
+ * quote back to `draft` so it can be edited and then sent again with the normal Send flow (which builds a
+ * new link / invoice). The emailed /quote/pay/<id> link stops minting sessions while the quote is a draft.
  */
 export async function reviseQuote(quoteId: string): Promise<ActionResult> {
   await requireOwner()
   try {
     const id = Id.parse(quoteId)
     const db = requireSupabaseAdmin()
-    const quote = check(await db.from("quotes").select("id,status").eq("id", id).maybeSingle(), "reviseQuote(quote)")
+    const quote = check(await db.from("quotes").select("id,status,stripe_invoice_id,stripe_invoice_url").eq("id", id).maybeSingle(), "reviseQuote(quote)")
     if (!quote) return { ok: false, error: "Quote not found." }
     if (quote.status !== "sent") {
       return { ok: false, error: quote.status === "accepted" ? "This quote is paid; refund it instead." : `This quote is ${quote.status}; there's nothing to revise.` }
     }
     await expireOpenCheckout(db, id)
+    if (quote.stripe_invoice_id) await voidInvoiceForQuote(db, id)
     const { data: reopened, error } = await db
       .from("quotes")
-      .update({ status: "draft", stripe_checkout_url: null })
+      .update({ status: "draft", stripe_checkout_url: null, stripe_invoice_url: null })
       .eq("id", id)
       .eq("status", quote.status) // a payment landing in between wins
       .select("id")
     if (error) throw new Error(error.message)
     if (!reopened?.length) return { ok: false, error: "The quote changed while revising (was it just paid?). Reload the page." }
     revalidateQuote(id)
-    return { ok: true, message: "The old payment link is closed. Edit the quote, then send it again." }
+    return {
+      ok: true,
+      message: quote.stripe_invoice_url
+        ? "The open invoice is voided. Edit the quote, then send it again."
+        : "The old payment link is closed. Edit the quote, then send it again.",
+    }
   } catch (e) {
     return { ok: false, error: errorMessage(e) }
   }
 }
 
-/** Owner refund for a paid quote (cancels the job; Stripe TEST MODE until the owner goes live). */
+/**
+ * Owner refund for a paid quote, paid by Checkout or by invoice (both store the PaymentIntent); cancels
+ * the job. Stripe TEST MODE until the owner goes live.
+ */
 export async function refundQuoteAction(quoteId: string, reason: string): Promise<ActionResult> {
   await requireOwner()
   try {

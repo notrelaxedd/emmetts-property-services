@@ -31,6 +31,7 @@ const FIELDS: Field[] = [
   { key: "card_fee_fixed", label: "Card fee (fixed)", prefix: "$", step: 0.01 },
   { key: "drop_notice_hours", label: "Drop notice window", suffix: "hours", step: 1, hint: "Drops/time off inside this need your OK" },
   { key: "quote_valid_days", label: "Quotes valid for", suffix: "days", step: 1 },
+  { key: "invoice_days_until_due", label: "Invoices due in", suffix: "days", step: 1, hint: "Default net terms for \"Send as invoice\"" },
   { key: "ai_monthly_cap", label: "AI monthly spend cap", prefix: "$", nullable: true, todo: "CAP $", step: 5, hint: "Blank = no cap" },
   { key: "partner_tree_service_name", label: "Partner tree service", type: "text", nullable: true, todo: "PARTNER" },
   { key: "partner_tree_service_email", label: "Partner email", type: "email", nullable: true, todo: "PARTNER EMAIL" },

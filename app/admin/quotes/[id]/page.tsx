@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { PageHeader } from "@/components/ui/page-header"
 import { requireOwner } from "@/lib/auth/session"
 import { getSettings } from "@/lib/ops/settings"
+import { taxConfig } from "@/lib/stripe/tax"
 import { check } from "@/lib/ops/types"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
@@ -105,6 +106,8 @@ export default async function QuotePage({ params }: { params: { id: string } }) 
           services={services}
           customerEmail={customer?.email ?? null}
           pendingCustomItemIds={pendingCustomItemIds}
+          invoiceDaysDefault={settings.invoice_days_until_due}
+          taxEnabled={taxConfig().enabled}
         />
 
         <aside className="space-y-4">
@@ -133,6 +136,29 @@ export default async function QuotePage({ params }: { params: { id: string } }) 
                   </Button>
                 </div>
                 <p className="text-xs text-ink-muted">Stripe test mode. Checkout links expire after about 23 hours; re-send to refresh.</p>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {quote.stripe_invoice_url && quote.status !== "draft" ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Stripe invoice</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <p className="break-all rounded bg-paper p-2 font-mono text-xs text-ink">{quote.stripe_invoice_url}</p>
+                <div className="flex flex-wrap gap-2">
+                  <CopyButton text={quote.stripe_invoice_url} label="Copy link" />
+                  <Button asChild size="sm" variant="ghost">
+                    <a href={quote.stripe_invoice_url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink aria-hidden="true" /> Open
+                    </a>
+                  </Button>
+                </div>
+                <p className="text-xs text-ink-muted">
+                  Stripe test mode. Stripe emailed it{quote.stripe_invoice_id ? ` (${quote.stripe_invoice_id})` : ""} and sends the
+                  reminders; the quote is accepted when it is paid.
+                </p>
               </CardContent>
             </Card>
           ) : null}

@@ -2,8 +2,8 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Calculator, MapPin, Plus, RotateCcw, Save, Send, Trash2 } from "lucide-react"
-import { reviseQuote, saveQuote, sendQuote, type SaveQuoteInput } from "@/app/admin/actions/quotes"
+import { Calculator, FileText, MapPin, Plus, RotateCcw, Save, Send, Trash2 } from "lucide-react"
+import { reviseQuote, saveQuote, sendQuote, sendQuoteAsInvoice, type SaveQuoteInput } from "@/app/admin/actions/quotes"
 import { ConfirmDialog } from "@/components/admin/inbox/confirm-dialog"
 import { money } from "@/components/admin/inbox/format"
 import { ItemStatusBadge } from "@/components/admin/inbox/items-table"
@@ -80,6 +80,8 @@ export function QuoteEditor({
   services,
   customerEmail,
   pendingCustomItemIds,
+  invoiceDaysDefault = 7,
+  taxEnabled = false,
 }: {
   quote: Quote
   items: QuoteItem[]
@@ -88,6 +90,10 @@ export function QuoteEditor({
   services: EditorService[]
   customerEmail: string | null
   pendingCustomItemIds: string[]
+  /** `settings.invoice_days_until_due`: starting value of the "Send as invoice" stepper. */
+  invoiceDaysDefault?: number
+  /** STRIPE_TAX_ENABLED on the server: Stripe adds Ohio sales tax on top of the total. */
+  taxEnabled?: boolean
 }) {
   const { pending, run } = useActionRunner()
   // Sent quotes are locked too: the customer already has a price. "Revise & re-send" expires the old
@@ -165,6 +171,9 @@ export function QuoteEditor({
             : null
 
   const ids = { lat: React.useId(), lng: React.useId(), cover: React.useId() }
+  const [invoiceDays, setInvoiceDays] = React.useState(invoiceDaysDefault)
+  const hasInvoice = quote.status === "sent" && !!quote.stripe_invoice_url
+  const plusTax = taxEnabled ? " plus sales tax" : ""
 
   return (
     <div className="grid gap-4 2xl:grid-cols-[20rem_1fr]">
@@ -453,10 +462,43 @@ export function QuoteEditor({
             }
             disabled={pending || !!sendBlocker}
             title="Send the payment link?"
-            description={`Creates a Stripe Checkout link (test mode) for ${money(quote.price_total)} and emails it to ${customerEmail ?? "the customer"}.`}
+            description={`Creates a Stripe Checkout link (test mode) for ${money(quote.price_total)}${plusTax} and emails it to ${customerEmail ?? "the customer"}.${hasInvoice ? " The open Stripe invoice is voided so only one can be paid." : ""}`}
             confirmLabel="Send"
             onConfirm={() => run(() => sendQuote(quote.id))}
           />
+          <ConfirmDialog
+            triggerVariant="outline"
+            trigger={
+              <>
+                <FileText aria-hidden="true" /> {hasInvoice ? "Re-send invoice" : "Send as invoice"}
+              </>
+            }
+            disabled={pending || !!sendBlocker}
+            title={hasInvoice ? "Re-send the Stripe invoice?" : "Send a Stripe invoice?"}
+            description={
+              <>
+                Stripe (test mode) emails {customerEmail ?? "the customer"} an invoice for {money(quote.price_total)}
+                {plusTax}, payable online by card or bank transfer. Good for repeat customers and net terms.
+                {quote.stripe_checkout_url ? " The open Checkout link is closed so only one can be paid." : ""}
+              </>
+            }
+            confirmLabel={hasInvoice ? "Re-send invoice" : "Send invoice"}
+            confirmDisabled={!Number.isInteger(invoiceDays) || invoiceDays < 1 || invoiceDays > 365}
+            onConfirm={async () => {
+              const res = await run(() => sendQuoteAsInvoice(quote.id, invoiceDays))
+              return res.ok
+            }}
+          >
+            <NumberStepper
+              label="Due in"
+              suffix={invoiceDays === 1 ? "day" : "days"}
+              min={1}
+              max={365}
+              step={1}
+              value={invoiceDays}
+              onChange={(v) => setInvoiceDays(Math.round(v))}
+            />
+          </ConfirmDialog>
           {quote.status === "sent" ? (
             <ConfirmDialog
               triggerVariant="outline"
@@ -467,7 +509,7 @@ export function QuoteEditor({
               }
               disabled={pending}
               title="Revise this quote?"
-              description="Expires the payment link the customer has, and unlocks the quote for editing. Send it again when you're done."
+              description="Expires the payment link (or voids the Stripe invoice) the customer has, and unlocks the quote for editing. Send it again when you're done."
               confirmLabel="Unlock"
               onConfirm={() => run(() => reviseQuote(quote.id))}
             />
