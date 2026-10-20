@@ -16,6 +16,16 @@ just waits for a box to come back.
 Anything customer-facing goes through `approvals` unless the owner turned that kind's autopilot on
 (`/admin/autopilot`). Emails get an unsubscribe link from `lib/email`; texts go only to `sms_opt_in` customers.
 
+## Running everything on one machine (laptop or single box)
+
+`FLEET_ROLE=all` runs all five roles in one process, each with its own heartbeat row on the Fleet panel
+(`quotes-<hostname>`, `scheduler-<hostname>`, …). Use it for testing from a laptop or when you only have
+one box; the 4-box layout below spreads the same roles out.
+
+```bash
+FLEET_ROLE=all SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... ANTHROPIC_API_KEY=... SITE_URL=https://www.eodlawns.com npm run fleet
+```
+
 ## How it runs
 
 Every worker loop:

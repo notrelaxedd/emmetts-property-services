@@ -1,5 +1,29 @@
 # Launch checklist
 
+## 0. Tonight: the shortest path to a working system
+
+1. **Vercel env vars**: edit each variable and tick **Preview** too (they are Production-only right now), or
+   merge this branch into `main` so the production site at www.eodlawns.com runs the new code. Check
+   `/api/health` on the deployment: it must say `"ok": true`.
+2. **Supabase** (dashboard, 2 minutes): turn off email sign-ups; Site URL `https://www.eodlawns.com`; add the
+   redirect URLs from step 1 below.
+3. **Stripe webhook** (dashboard, 3 minutes, test mode): Developers → Webhooks → Add endpoint
+   `https://www.eodlawns.com/api/stripe/webhook` with the eight events in step 4 below; paste the signing secret
+   into Vercel as `STRIPE_WEBHOOK_SECRET`; redeploy. (Or run `npm run stripe:setup` from a laptop.)
+4. **Sign in** at `/login` with your email, then promote yourself to owner (SQL in `supabase/README.md`).
+5. **Workers from your laptop** (no Debian boxes needed tonight):
+   ```bash
+   git clone https://github.com/notrelaxedd/emmetts-property-services && cd emmetts-property-services
+   git checkout claude/peaceful-brahmagupta-l7zdmt && npm install
+   FLEET_ROLE=all SUPABASE_URL=https://xqeiprybuimewxkpffay.supabase.co SUPABASE_SERVICE_ROLE_KEY=... \
+     ANTHROPIC_API_KEY=... SITE_URL=https://www.eodlawns.com npm run fleet
+   ```
+   Leave it running in a terminal; the Fleet page shows five green rows.
+6. **Walk the flow** in section 2 using your own email as the customer. With `EMAIL_PROVIDER=log`, emails
+   print in the worker's terminal and in Vercel's function logs instead of sending; the pay link is in the
+   Quotes page too.
+
+
 Everything below is on branch `claude/peaceful-brahmagupta-l7zdmt`; Vercel builds a preview for every push.
 
 ## 1. Wire up services (one-time)

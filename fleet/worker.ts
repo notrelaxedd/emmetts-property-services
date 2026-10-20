@@ -1,7 +1,8 @@
 /**
- * Fleet worker entry point: one binary, role from FLEET_ROLE (ads | quotes | scheduler | followup | host).
+ * Fleet worker entry point: one binary, role from FLEET_ROLE (ads | quotes | scheduler | followup | host | all).
  *
  *   FLEET_ROLE=quotes SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npx tsx fleet/worker.ts
+ *   FLEET_ROLE=all ...   # every role in one process (laptop / single box); each role keeps its own heartbeat row
  *
  * See fleet/README.md for the env vars and the systemd setup. Logs go to stdout (journald), never files.
  */
@@ -9,7 +10,7 @@ import "../lib/ops/handlers"; // registers approval side effects for applyApprov
 import { aiFor } from "./context";
 import type { TaskContext } from "./context";
 import { createFleetDb } from "./db";
-import { AI_ROLES, parseEnv } from "./env";
+import { AI_ROLES, FLEET_ROLES, parseEnv } from "./env";
 import { resolveVersion } from "./heartbeat";
 import { createLogger, errorMessage } from "./log";
 import { runWorker } from "./runtime";
@@ -27,19 +28,24 @@ async function main(): Promise<void> {
   }
   const log = createLogger({ w: env.name });
   const version = resolveVersion();
-  if (AI_ROLES.has(env.role) && !env.hasAnthropicKey) {
+  const roles = env.role === "all" ? [...FLEET_ROLES] : [env.role];
+  if (roles.some((r) => AI_ROLES.has(r)) && !env.hasAnthropicKey) {
     log.warn("ANTHROPIC_API_KEY is not set: AI drafts will fail (follow-ups fall back to templates)");
   }
 
-  const ctx: TaskContext = {
-    db: createFleetDb(env.supabaseUrl, env.serviceRoleKey),
-    worker: env.name,
-    role: env.role,
-    siteUrl: env.siteUrl,
-    ai: aiFor(env.name),
-    log,
-    now: () => new Date(),
-  };
+  const db = createFleetDb(env.supabaseUrl, env.serviceRoleKey);
+  const contexts: TaskContext[] = roles.map((role) => {
+    const worker = env.role === "all" ? `${role}-${env.name}` : env.name;
+    return {
+      db,
+      worker,
+      role,
+      siteUrl: env.siteUrl,
+      ai: aiFor(worker),
+      log: env.role === "all" ? createLogger({ w: worker }) : log,
+      now: () => new Date(),
+    };
+  });
 
   const stop = new AbortController();
   let firstSignalAt = 0;
@@ -62,8 +68,8 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => onSignal("SIGINT"));
   process.on("unhandledRejection", (e) => log.error("unhandled rejection", { err: errorMessage(e) }));
 
-  log.info("starting", { role: env.role, version, site: env.siteUrl, node: process.version });
-  await runWorker({ ctx, version }, stop.signal);
+  log.info("starting", { role: env.role, roles: roles.join(","), version, site: env.siteUrl, node: process.version });
+  await Promise.all(contexts.map((ctx) => runWorker({ ctx, version }, stop.signal)));
   log.info("stopped");
   process.exit(0);
 }
