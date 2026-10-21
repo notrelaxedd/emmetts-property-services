@@ -52,6 +52,20 @@ async function verifyTurnstile(secret: string, token: string, ip: string): Promi
   }
 }
 
+/**
+ * Image type from the first bytes alone. Some browsers submit re-encoded photos as a nameless
+ * "blob" with no MIME type (seen on Windows Chrome), so the name and declared type can't be trusted.
+ */
+async function sniffImageType(file: File): Promise<PhotoType | null> {
+  const b = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  const ascii = (from: number, to: number) => String.fromCharCode(...Array.from(b.slice(from, to)));
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b[0] === 0x89 && ascii(1, 4) === "PNG") return "image/png";
+  if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return "image/webp";
+  if (ascii(4, 8) === "ftyp") return /^(heic|heix|hevc|hevx|mif1|msf1)/.test(ascii(8, 12)) ? "image/heic" : "image/heif";
+  return null;
+}
+
 /** Do the file's first bytes look like the image type it claims to be? */
 async function looksLikeImage(file: File, type: PhotoType): Promise<boolean> {
   const b = new Uint8Array(await file.slice(0, 16).arrayBuffer());
@@ -81,6 +95,15 @@ export async function submitQuote(_prev: QuoteFormState, formData: FormData): Pr
   // Bots fill the hidden field. Pretend it worked and store nothing.
   if (honeypot.trim() !== "") redirect("/quote/thanks");
 
+  // Trust bytes over names: a photo may arrive as "blob" with an empty type. Resolve each file's
+  // real type once here, and validate the metadata the schema sees with that resolved type.
+  const sniffed = await Promise.all(files.map((f) => sniffImageType(f)));
+  raw.photos = files.map((f, i) => ({
+    name: f.name && f.name !== "blob" ? f.name : `photo-${i + 1}.${sniffed[i] ? PHOTO_EXT[sniffed[i]!] : "bin"}`,
+    type: sniffed[i] ?? f.type,
+    size: f.size,
+  }));
+
   const parsed = quoteSchema.safeParse(raw);
   if (!parsed.success) {
     return errorState(copy.fix, values, hadPhotos, fieldErrorsFrom(parsed.error));
@@ -106,11 +129,12 @@ export async function submitQuote(_prev: QuoteFormState, formData: FormData): Pr
   try {
     // Photos: re-validate by sniffing bytes (the client check is only a convenience).
     const photos: { file: File; type: PhotoType }[] = [];
-    for (const file of files) {
-      const type = photoTypeOf(file);
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const type = sniffed[i] ?? photoTypeOf(file);
       if (!type || !(await looksLikeImage(file, type))) {
         return errorState(copy.fix, values, hadPhotos, {
-          photos: `"${file.name}" isn't a photo we can use. Please add JPG, PNG, WebP, or HEIC images.`,
+          photos: `"${raw.photos[i]?.name ?? file.name}" isn't a photo we can use. Please add JPG, PNG, WebP, or HEIC images.`,
         });
       }
       photos.push({ file, type });
