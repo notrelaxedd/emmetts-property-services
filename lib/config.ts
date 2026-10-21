@@ -13,6 +13,8 @@ export const opsConfig = {
   parcelSource: (process.env.PARCEL_SOURCE ?? "none") as "none" | "cuyahoga_gis" | "regrid",
   /** Spam protection for the quote form. Honeypot + rate limit always on; Turnstile when keys are set. */
   turnstileSiteKey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null,
+  /** Browser-restricted Google Maps key (public by design). Enables Places address autocomplete on the quote form. */
+  googleMapsBrowserKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? null,
   /** Service-area centre used for weather + drive-time until settings.base_lat/lng are set. Rocky River, OH. */
   defaultBase: { lat: 41.4756, lng: -81.8396 },
   timezone: "America/New_York",

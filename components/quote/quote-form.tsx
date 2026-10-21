@@ -24,6 +24,7 @@ import {
 import { siteConfig } from "@/lib/site-config";
 import { cn } from "@/lib/utils";
 import type { QuoteServiceOption } from "./services-data";
+import { AddressAutocomplete } from "./address-autocomplete";
 import { setInputFiles, shrinkPhotos } from "./compress-photos";
 import { Turnstile } from "./turnstile";
 import { UtmFields } from "./utm-fields";
@@ -359,12 +360,10 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
               className="sm:col-span-2"
             >
               {(a) => (
-                // TODO [GEOCODER — ask owner]: swap this for an autocomplete (Google Places / Mapbox /
-                // Nominatim) once a provider is chosen. Keep `name="address"` as the submitted free text;
-                // the server action geocodes it either way.
-                <Input
+                // Plain text box without NEXT_PUBLIC_GOOGLE_MAPS_API_KEY; with it, Google Places
+                // suggestions plus hidden lat/lng. `address` is always submitted as free text.
+                <AddressAutocomplete
                   {...a}
-                  name="address"
                   autoComplete="street-address"
                   enterKeyHint="next"
                   required

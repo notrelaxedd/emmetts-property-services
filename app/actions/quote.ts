@@ -161,7 +161,15 @@ export async function submitQuote(_prev: QuoteFormState, formData: FormData): Pr
     // TODO [GEOCODER — ask owner]: address autocomplete plugs into the address input in
     // components/quote/quote-form.tsx; this server-side lookup stays as the fallback.
     let coords: { lat: number; lng: number } | null = null;
-    if (opsConfig.geocoder !== "none") {
+    // Address autocomplete sends the picked place's coordinates; when valid, skip the geocode call.
+    const rawLat = formData.get("lat");
+    const rawLng = formData.get("lng");
+    const lat = typeof rawLat === "string" && rawLat.trim() !== "" ? Number(rawLat) : NaN;
+    const lng = typeof rawLng === "string" && rawLng.trim() !== "" ? Number(rawLng) : NaN;
+    if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+      coords = { lat, lng };
+    }
+    if (!coords && opsConfig.geocoder !== "none") {
       try {
         const hit = await Promise.race([
           geocode(data.address),

@@ -29,6 +29,7 @@ with `NEXT_PUBLIC_`; never commit one.
 | `NWS_USER_AGENT` | — | ✓ | — | api.weather.gov requires an identifying User-Agent with a contact email. |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | ✓ | — | — | Cloudflare Turnstile on the quote form (widget renders only when set). |
 | `TURNSTILE_SECRET_KEY` | ✓ | — | with site key | Server-side Turnstile verification. Honeypot + rate limit are always on. |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | ✓ | — | — | Address autocomplete on the quote form (Google Places). Public by design: a **browser-restricted** key, not a secret. Google Cloud: Maps Platform → enable **Places API (New)** + **Maps JavaScript API**; key restricted to HTTP referrers `https://www.eodlawns.com/*` and `https://*.vercel.app/*`, and to those two APIs. Unset = plain text box; the server still geocodes via `GEOCODER`. |
 | `BUSINESS_NAME` | ✓ | ✓ | — | Email header/footer name. Defaults to Emmett's Property Services. |
 | `REVIEW_URL` | — | ✓ | — | Google review link used in review-request drafts (TODO until the owner supplies it). |
 | `FLEET_ROLE` | — | ✓ | ✓ | `ads` · `quotes` · `scheduler` · `followup` · `host`. One per box. |
