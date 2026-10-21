@@ -83,11 +83,30 @@ export const quoteSchema = z
       .min(1, "Please enter a phone number so we can reach you.")
       .refine((v) => normalizePhone(v).length === 10, "Please enter a 10-digit phone number.")
       .transform((v) => normalizePhone(v)),
-    address: z
+    /** Street line only; city/state/ZIP are separate fields. See `formatAddress` for the stored form. */
+    street: z
       .string()
       .trim()
-      .min(5, "Please enter the street address for the job.")
-      .max(200, "Please keep the address under 200 characters."),
+      .min(3, "Please enter the street address for the job.")
+      .max(120, "Please keep the street address under 120 characters."),
+    city: z
+      .string()
+      .trim()
+      .min(2, "Please enter the city.")
+      .max(60, "Please keep the city under 60 characters."),
+    /** Two-letter state, uppercased ("oh" -> "OH"). */
+    state: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z]{2}$/, "Please enter a 2-letter state, like OH."),
+    /** 5 digits, or ZIP+4 ("12345-6789"). */
+    zip: z
+      .string()
+      .trim()
+      // "44116", "44116-1234", or "441161234" (normalised to the hyphenated form).
+      .transform((v) => (/^\d{9}$/.test(v) ? `${v.slice(0, 5)}-${v.slice(5)}` : v))
+      .refine((v) => /^\d{5}(-\d{4})?$/.test(v), "Please enter a 5-digit ZIP code."),
     /** services.slug values. */
     services: z
       .array(z.string().regex(SLUG_RE, "That service isn't available."))
@@ -131,8 +150,27 @@ export const quoteSchema = z
 
 export type QuoteInput = z.input<typeof quoteSchema>;
 export type QuoteData = z.output<typeof quoteSchema>;
-export type QuoteField = "name" | "email" | "phone" | "address" | "services" | "customRequest" | "photos" | "preferredDays";
+export type QuoteField =
+  | "name"
+  | "email"
+  | "phone"
+  | "street"
+  | "city"
+  | "state"
+  | "zip"
+  | "services"
+  | "customRequest"
+  | "photos"
+  | "preferredDays";
 export type QuoteFieldErrors = Partial<Record<QuoteField, string>>;
+
+/**
+ * The one-line address stored in `customers.address` (and geocoded / parsed by `lib/stripe/tax.ts`
+ * `parseUsAddress`): "123 Main St, Rocky River, OH 44116". Pass schema output (already trimmed).
+ */
+export function formatAddress(a: { street: string; city: string; state: string; zip: string }): string {
+  return `${a.street.trim()}, ${a.city.trim()}, ${a.state.trim().toUpperCase()} ${a.zip.trim()}`;
+}
 
 /** First message per top-level field, for inline display. */
 export function fieldErrorsFrom(error: z.ZodError): QuoteFieldErrors {
@@ -149,7 +187,10 @@ export type QuoteFormValues = {
   name: string;
   email: string;
   phone: string;
-  address: string;
+  street: string;
+  city: string;
+  state: string;
+  zip: string;
   services: string[];
   customRequest: string;
   preferredDays: number[];
@@ -206,7 +247,10 @@ export function parseQuoteFormData(fd: FormData): {
     name: text(fd, "name"),
     email: text(fd, "email"),
     phone: text(fd, "phone"),
-    address: text(fd, "address"),
+    street: text(fd, "street"),
+    city: text(fd, "city"),
+    state: text(fd, "state"),
+    zip: text(fd, "zip"),
     services,
     customRequest: text(fd, "customRequest"),
     preferredDays,

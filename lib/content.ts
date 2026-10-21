@@ -125,6 +125,10 @@ export const content = {
       name: { label: "Your name", placeholder: "Jamie Smith" },
       phone: { label: "Phone", placeholder: "(440) 555-0123" },
       email: { label: "Email", placeholder: "you@example.com" },
+      street: { label: "Street address", placeholder: "123 Main St" },
+      city: { label: "City", placeholder: "Rocky River" },
+      state: { label: "State", placeholder: "OH" },
+      zip: { label: "ZIP", placeholder: "44116" },
       address: {
         label: "Address of the job",
         placeholder: "123 Main St, Rocky River, OH",

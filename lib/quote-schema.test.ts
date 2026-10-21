@@ -3,19 +3,24 @@ import {
   MAX_PHOTOS,
   MAX_PHOTO_BYTES,
   fieldErrorsFrom,
+  formatAddress,
   parseQuoteFormData,
   photoError,
   photoTypeOf,
   quoteSchema,
   type QuoteInput,
 } from "./quote-schema";
+import { parseUsAddress } from "./stripe/tax";
 import { clientIpFrom, createRateLimiter } from "./rate-limit";
 
 const valid: QuoteInput = {
   name: "Pat Neighbor",
   email: "  Pat@Example.com ",
   phone: "(440) 823-5545",
-  address: "123 Wooster Rd, Rocky River, OH",
+  street: "123 Wooster Rd",
+  city: "Rocky River",
+  state: "OH",
+  zip: "44116",
   services: ["lawn-mowing"],
 };
 
@@ -46,12 +51,51 @@ describe("quoteSchema", () => {
     expect(fieldErrorsFrom(r.error).services).toMatch(/at least one service/i);
   });
 
-  it("requires name, email, phone and address, with field-level messages", () => {
-    const r = quoteSchema.safeParse({ name: "", email: "nope", phone: "", address: "12", services: ["lawn-mowing"] });
+  it("requires name, email, phone and every address part, with field-level messages", () => {
+    const r = quoteSchema.safeParse({
+      name: "",
+      email: "nope",
+      phone: "",
+      street: "12",
+      city: "R",
+      state: "Ohio",
+      zip: "4411",
+      services: ["lawn-mowing"],
+    });
     expect(r.success).toBe(false);
     if (r.success) return;
     const errs = fieldErrorsFrom(r.error);
-    expect(Object.keys(errs).sort()).toEqual(["address", "email", "name", "phone"]);
+    expect(Object.keys(errs).sort()).toEqual(["city", "email", "name", "phone", "state", "street", "zip"]);
+  });
+
+  it("gives each address field its own failure message", () => {
+    const errs = (patch: Partial<QuoteInput>) => {
+      const r = quoteSchema.safeParse({ ...valid, ...patch });
+      return r.success ? {} : fieldErrorsFrom(r.error);
+    };
+    expect(errs({ street: "  " }).street).toMatch(/street address/i);
+    expect(errs({ street: "x".repeat(121) }).street).toMatch(/under 120/);
+    expect(errs({ city: "R" }).city).toMatch(/enter the city/i);
+    expect(errs({ city: "x".repeat(61) }).city).toMatch(/under 60/);
+    expect(errs({ state: "O" }).state).toMatch(/2-letter state/i);
+    expect(errs({ state: "OHI" }).state).toMatch(/2-letter state/i);
+    expect(errs({ state: "1H" }).state).toMatch(/2-letter state/i);
+    expect(errs({ zip: "4411" }).zip).toMatch(/5-digit ZIP/i);
+    expect(errs({ zip: "44116-12" }).zip).toMatch(/5-digit ZIP/i);
+    expect(errs({ zip: "abcde" }).zip).toMatch(/5-digit ZIP/i);
+    expect(errs({})).toEqual({});
+  });
+
+  it("uppercases and trims the state", () => {
+    const r = quoteSchema.safeParse({ ...valid, state: " oh " });
+    expect(r.success && r.data.state).toBe("OH");
+  });
+
+  it("accepts a 5-digit ZIP and ZIP+4, trimmed", () => {
+    const a = quoteSchema.safeParse({ ...valid, zip: " 44116 " });
+    expect(a.success && a.data.zip).toBe("44116");
+    const b = quoteSchema.safeParse({ ...valid, zip: "44116-1234" });
+    expect(b.success && b.data.zip).toBe("44116-1234");
   });
 
   it.each([
@@ -100,6 +144,29 @@ describe("quoteSchema", () => {
   });
 });
 
+describe("formatAddress", () => {
+  it("builds the one-line stored address", () => {
+    expect(formatAddress({ street: "123 Main St", city: "Rocky River", state: "OH", zip: "44116" })).toBe(
+      "123 Main St, Rocky River, OH 44116",
+    );
+  });
+
+  it("formats parsed schema output and round-trips through the Stripe Tax parser", () => {
+    const r = quoteSchema.safeParse({ ...valid, street: " 123 Main St ", state: "oh", zip: "44116-1234" });
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    const line = formatAddress(r.data);
+    expect(line).toBe("123 Main St, Rocky River, OH 44116-1234");
+    expect(parseUsAddress(line)).toEqual({
+      line1: "123 Main St",
+      city: "Rocky River",
+      state: "OH",
+      postal_code: "44116",
+      country: "US",
+    });
+  });
+});
+
 describe("parseQuoteFormData", () => {
   it("reads checkboxes, days, utm and ignores the empty file input entry", () => {
     const fd = new FormData();
@@ -120,6 +187,17 @@ describe("parseQuoteFormData", () => {
     expect(p.raw.utm).toEqual({ source: "nextdoor" });
     expect(p.files).toHaveLength(0);
     expect(p.honeypot).toBe("bot inc");
+  });
+
+  it("reads the four address fields into values and raw", () => {
+    const fd = new FormData();
+    fd.set("street", "123 Main St");
+    fd.set("city", "Rocky River");
+    fd.set("state", "oh");
+    fd.set("zip", "44116");
+    const p = parseQuoteFormData(fd);
+    expect(p.values).toMatchObject({ street: "123 Main St", city: "Rocky River", state: "oh", zip: "44116" });
+    expect(p.raw).toMatchObject({ street: "123 Main St", city: "Rocky River", state: "oh", zip: "44116" });
   });
 
   it("collects real photo files", () => {

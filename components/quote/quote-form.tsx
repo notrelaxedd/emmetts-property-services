@@ -187,6 +187,9 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
   const formRef = useRef<HTMLFormElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const cityRef = useRef<HTMLInputElement>(null);
+  const stateRef = useRef<HTMLInputElement>(null);
+  const zipRef = useRef<HTMLInputElement>(null);
 
   const serverState = state.status === "error" ? state : null;
   const nonce = serverState?.nonce ?? 0;
@@ -196,7 +199,10 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
     name: "",
     email: "",
     phone: "",
-    address: "",
+    street: "",
+    city: "",
+    state: "OH",
+    zip: "",
     services: defaultService ? [defaultService] : [],
     customRequest: "",
     preferredDays: [],
@@ -353,26 +359,81 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
               )}
             </Field>
             <Field
-              id="q-address"
-              label={copy.address.label}
+              id="q-street"
+              label={copy.street.label}
               hint={verifyAddress ? `${copy.address.hint} ${copy.address.verifyHint}` : copy.address.hint}
-              error={errors.address}
+              error={errors.street}
               className="sm:col-span-2"
             >
               {(a) => (
                 // Plain text box without NEXT_PUBLIC_GOOGLE_MAPS_API_KEY; with it, Google Places
-                // suggestions plus hidden lat/lng. `address` is always submitted as free text.
+                // suggestions on the street line fill city/state/ZIP plus hidden lat/lng. Every
+                // address part is always submitted as free text.
                 <AddressAutocomplete
                   {...a}
-                  autoComplete="street-address"
+                  autoComplete="address-line1"
                   enterKeyHint="next"
                   required
-                  defaultValue={values.address}
-                  placeholder={copy.address.placeholder}
+                  defaultValue={values.street}
+                  placeholder={copy.street.placeholder}
                   className={inputClass}
+                  cityRef={cityRef}
+                  stateRef={stateRef}
+                  zipRef={zipRef}
                 />
               )}
             </Field>
+            <div className="grid grid-cols-6 gap-x-3 gap-y-5 sm:col-span-2 sm:gap-x-5">
+              <Field id="q-city" label={copy.city.label} error={errors.city} className="col-span-6 sm:col-span-3">
+                {(a) => (
+                  <Input
+                    {...a}
+                    ref={cityRef}
+                    name="city"
+                    autoComplete="address-level2"
+                    enterKeyHint="next"
+                    required
+                    defaultValue={values.city}
+                    placeholder={copy.city.placeholder}
+                    className={inputClass}
+                  />
+                )}
+              </Field>
+              <Field id="q-state" label={copy.state.label} error={errors.state} className="col-span-2 sm:col-span-1">
+                {(a) => (
+                  <Input
+                    {...a}
+                    ref={stateRef}
+                    name="state"
+                    autoComplete="address-level1"
+                    autoCapitalize="characters"
+                    enterKeyHint="next"
+                    maxLength={2}
+                    required
+                    defaultValue={values.state}
+                    placeholder={copy.state.placeholder}
+                    className={cn(inputClass, "uppercase")}
+                  />
+                )}
+              </Field>
+              <Field id="q-zip" label={copy.zip.label} error={errors.zip} className="col-span-4 sm:col-span-2">
+                {(a) => (
+                  <Input
+                    {...a}
+                    ref={zipRef}
+                    name="zip"
+                    inputMode="numeric"
+                    autoComplete="postal-code"
+                    enterKeyHint="next"
+                    maxLength={10}
+                    required
+                    defaultValue={values.zip}
+                    placeholder={copy.zip.placeholder}
+                    className={inputClass}
+                  />
+                )}
+              </Field>
+            </div>
           </div>
         </Group>
 

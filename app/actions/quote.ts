@@ -10,6 +10,7 @@ import { enqueueTask, upsertCustomer } from "@/lib/ops";
 import {
   PHOTO_EXT,
   fieldErrorsFrom,
+  formatAddress,
   parseQuoteFormData,
   photoTypeOf,
   quoteSchema,
@@ -109,6 +110,8 @@ export async function submitQuote(_prev: QuoteFormState, formData: FormData): Pr
     return errorState(copy.fix, values, hadPhotos, fieldErrorsFrom(parsed.error));
   }
   const data = parsed.data;
+  // One-line "123 Main St, Rocky River, OH 44116": stored on the customer and parsed by lib/stripe/tax.ts.
+  const address = formatAddress(data);
 
   const db = getSupabaseAdmin();
   if (!db) return errorState(copy.unavailable, values, hadPhotos);
@@ -159,7 +162,7 @@ export async function submitQuote(_prev: QuoteFormState, formData: FormData): Pr
 
     // Address -> lat/lng. Never blocks the request.
     // TODO [GEOCODER — ask owner]: address autocomplete plugs into the address input in
-    // components/quote/quote-form.tsx; this server-side lookup stays as the fallback.
+    // components/quote/address-autocomplete.tsx; this server-side lookup stays as the fallback.
     let coords: { lat: number; lng: number } | null = null;
     // Address autocomplete sends the picked place's coordinates; when valid, skip the geocode call.
     const rawLat = formData.get("lat");
@@ -172,7 +175,7 @@ export async function submitQuote(_prev: QuoteFormState, formData: FormData): Pr
     if (!coords && opsConfig.geocoder !== "none") {
       try {
         const hit = await Promise.race([
-          geocode(data.address),
+          geocode(address),
           new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
         ]);
         if (hit) coords = { lat: hit.lat, lng: hit.lng };
@@ -185,7 +188,7 @@ export async function submitQuote(_prev: QuoteFormState, formData: FormData): Pr
       name: data.name,
       email: data.email,
       phone: data.phone,
-      address: data.address,
+      address,
       lat: coords?.lat ?? null,
       lng: coords?.lng ?? null,
       email_opt_in: data.emailOptIn,

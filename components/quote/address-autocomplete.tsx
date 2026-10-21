@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState, type InputHTMLAttributes } from "react";
+import { useEffect, useRef, useState, type InputHTMLAttributes, type RefObject } from "react";
 
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 /**
- * Address field with Google Places autocomplete, as a progressive enhancement.
+ * Street-address field with Google Places autocomplete, as a progressive enhancement.
  *
- * - The submitted `address` is always a plain `<input name="address">` (free text). Selecting a
- *   suggestion rewrites it to the formatted address and fills hidden `lat` / `lng` inputs; typing
- *   after a selection clears them again so stale coordinates are never sent.
+ * - The widget attaches to the **street** input only. The submitted `street` is always a plain
+ *   `<input name="street">` (free text). Selecting a suggestion rewrites it to the street line
+ *   (street number + route), writes city / state / ZIP into the sibling inputs (passed as refs),
+ *   and fills hidden `lat` / `lng` inputs; typing after a selection clears the coordinates again
+ *   so stale ones are never sent. The sibling inputs stay ordinary, editable text boxes.
  * - Without NEXT_PUBLIC_GOOGLE_MAPS_API_KEY nothing extra renders and no script loads.
  * - If the script is blocked, errors, times out, or the key is rejected, the field stays a normal
  *   text box. Nothing here ever blocks submission.
@@ -21,14 +23,21 @@ import { cn } from "@/lib/utils";
 /* ---------- minimal local typings for the bits of the Maps JS API we touch ---------- */
 
 type GLatLng = { lat(): number; lng(): number };
+type GNewComponent = { longText?: string | null; shortText?: string | null; types?: string[] };
 type GNewPlace = {
   fetchFields(opts: { fields: string[] }): Promise<unknown>;
   formattedAddress?: string | null;
+  addressComponents?: GNewComponent[] | null;
   location?: GLatLng | null;
 };
 type GSelectEvent = Event & { placePrediction?: { toPlace(): GNewPlace }; place?: GNewPlace };
 type GPlaceElement = HTMLElement & { value?: string };
-type GClassicPlace = { formatted_address?: string; geometry?: { location?: GLatLng } };
+type GClassicComponent = { long_name?: string; short_name?: string; types?: string[] };
+type GClassicPlace = {
+  formatted_address?: string;
+  address_components?: GClassicComponent[];
+  geometry?: { location?: GLatLng };
+};
 type GClassicAutocomplete = { addListener(event: string, handler: () => void): unknown; getPlace(): GClassicPlace };
 type GPlacesLib = {
   PlaceAutocompleteElement?: new (options: Record<string, unknown>) => GPlaceElement;
@@ -138,6 +147,27 @@ function stripCountry(formatted: string): string {
   return formatted.replace(/,\s*(USA|United States(?: of America)?)\s*$/i, "").trim();
 }
 
+type AddressParts = { street: string; city: string; state: string; zip: string };
+type NormalComponent = { long: string; short: string; types: string[] };
+
+/** Splits Places address components (either API's shape, normalised first) into our four fields. */
+function partsFromComponents(components: NormalComponent[]): AddressParts {
+  const find = (type: string) => components.find((c) => c.types.includes(type));
+  const long = (type: string) => find(type)?.long ?? "";
+  const city = long("locality") || long("sublocality") || long("postal_town");
+  return {
+    street: [long("street_number"), long("route")].filter(Boolean).join(" "),
+    city,
+    state: find("administrative_area_level_1")?.short ?? "",
+    zip: long("postal_code"),
+  };
+}
+
+const fromNew = (list: GNewComponent[] | null | undefined): NormalComponent[] =>
+  (list ?? []).map((c) => ({ long: c.longText ?? "", short: c.shortText ?? "", types: c.types ?? [] }));
+const fromClassic = (list: GClassicComponent[] | undefined): NormalComponent[] =>
+  (list ?? []).map((c) => ({ long: c.long_name ?? "", short: c.short_name ?? "", types: c.types ?? [] }));
+
 function coord(v: unknown): number | null {
   const n = typeof v === "function" ? (v as () => unknown)() : v;
   return typeof n === "number" && Number.isFinite(n) ? n : null;
@@ -152,10 +182,16 @@ function pacVisible(): boolean {
 
 /* ---------- component ---------- */
 
-type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "type"> & { defaultValue?: string };
+type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "type"> & {
+  defaultValue?: string;
+  /** Sibling inputs the selected place fills in. Each is optional and left alone when missing. */
+  cityRef?: RefObject<HTMLInputElement>;
+  stateRef?: RefObject<HTMLInputElement>;
+  zipRef?: RefObject<HTMLInputElement>;
+};
 type Mode = "plain" | "element" | "classic";
 
-export function AddressAutocomplete({ className, defaultValue, ...inputProps }: Props) {
+export function AddressAutocomplete({ className, defaultValue, cityRef, stateRef, zipRef, ...inputProps }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const latRef = useRef<HTMLInputElement>(null);
@@ -176,6 +212,19 @@ export function AddressAutocomplete({ className, defaultValue, ...inputProps }: 
       if (lngRef.current) lngRef.current.value = lng === null ? "" : String(lng);
     };
     const clearCoords = () => setCoords(null, null);
+
+    /** Writes the sibling fields; a part Google didn't return leaves the user's own text in place. */
+    const fillSiblings = (parts: AddressParts) => {
+      const put = (ref: RefObject<HTMLInputElement> | undefined, value: string) => {
+        if (ref?.current && value) ref.current.value = value;
+      };
+      put(cityRef, parts.city);
+      put(stateRef, parts.state.toUpperCase());
+      put(zipRef, parts.zip);
+    };
+    /** Street line for the picked place, falling back to the first chunk of the formatted address. */
+    const streetFor = (parts: AddressParts, formatted: string | null | undefined) =>
+      parts.street || (formatted ? stripCountry(formatted).split(",")[0].trim() : "");
 
     // Registered before Google's own listener (capture, on the target) so it sees Enter while the
     // dropdown is still open; once Google handles the key the container may already be hidden.
@@ -240,13 +289,15 @@ export function AddressAutocomplete({ className, defaultValue, ...inputProps }: 
           const e = ev as GSelectEvent;
           const place = e.placePrediction ? e.placePrediction.toPlace() : e.place;
           if (!place) return;
-          await place.fetchFields({ fields: ["formattedAddress", "location"] });
+          await place.fetchFields({ fields: ["addressComponents", "location", "formattedAddress"] });
           if (disposed) return;
-          const formatted = place.formattedAddress ? stripCountry(place.formattedAddress) : "";
-          if (formatted) {
-            input.value = formatted;
-            setElValue(formatted);
+          const parts = partsFromComponents(fromNew(place.addressComponents));
+          const street = streetFor(parts, place.formattedAddress);
+          if (street) {
+            input.value = street;
+            setElValue(street);
           }
+          fillSiblings(parts);
           const loc = place.location;
           setCoords(loc ? coord(loc.lat.bind(loc)) : null, loc ? coord(loc.lng.bind(loc)) : null);
         } catch {
@@ -289,7 +340,7 @@ export function AddressAutocomplete({ className, defaultValue, ...inputProps }: 
         ac = new Ctor(input, {
           componentRestrictions: { country: "us" },
           types: ["address"],
-          fields: ["formatted_address", "geometry"],
+          fields: ["address_components", "geometry", "formatted_address"],
           bounds: BIAS_BOUNDS, // bias only: strictBounds is left off
         });
       } catch {
@@ -305,7 +356,9 @@ export function AddressAutocomplete({ className, defaultValue, ...inputProps }: 
             clearCoords(); // Enter with no suggestion picked: leave the typed text alone
             return;
           }
-          input.value = stripCountry(place.formatted_address);
+          const parts = partsFromComponents(fromClassic(place.address_components));
+          input.value = streetFor(parts, place.formatted_address);
+          fillSiblings(parts);
           setCoords(coord(loc.lat.bind(loc)), coord(loc.lng.bind(loc)));
         } catch {
           clearCoords();
@@ -339,7 +392,7 @@ export function AddressAutocomplete({ className, defaultValue, ...inputProps }: 
       teardown?.();
       teardown = null;
     };
-  }, []);
+  }, [cityRef, stateRef, zipRef]);
 
   const enhanced = API_KEY !== null;
   const mirrored = mode === "element";
@@ -350,7 +403,7 @@ export function AddressAutocomplete({ className, defaultValue, ...inputProps }: 
       <Input
         {...inputProps}
         ref={inputRef}
-        name="address"
+        name="street"
         defaultValue={defaultValue}
         // Keep the browser's own dropdown from fighting Google's.
         autoComplete={enhanced ? "off" : inputProps.autoComplete}
