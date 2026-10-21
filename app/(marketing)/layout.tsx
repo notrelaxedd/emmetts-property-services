@@ -2,6 +2,7 @@ import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
 import { LocalBusinessJsonLd } from "@/components/site/json-ld";
 import { MobileCallBar } from "@/components/site/mobile-call-bar";
+import { AuthHashCatcher } from "@/components/site/auth-hash-catcher";
 
 /** Marketing chrome (header, footer, call bar, JSON-LD). /admin and /crew have their own layouts. */
 export default function MarketingLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -20,6 +21,7 @@ export default function MarketingLayout({ children }: Readonly<{ children: React
       <SiteFooter />
       <MobileCallBar />
       <LocalBusinessJsonLd />
+      <AuthHashCatcher />
     </>
   );
 }
