@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { sendMagicLink, sendPhoneOtp, verifyPhoneOtp } from "./actions"
+import { sendMagicLink, sendPhoneOtp, signInWithPassword, verifyPhoneOtp } from "./actions"
 
 function Submit({ children }: { children: React.ReactNode }) {
   const { pending } = useFormStatus()
@@ -48,7 +48,7 @@ export function LoginForm({
         </TabsList>
 
         <TabsContent value="email" className="mt-4">
-          <form action={sendMagicLink} className="space-y-4">
+          <form action={signInWithPassword} className="space-y-4">
             <input type="hidden" name="next" value={next} />
             <div className="space-y-1.5">
               <Label htmlFor="email">Email address</Label>
@@ -63,7 +63,23 @@ export function LoginForm({
                 className="h-11"
               />
             </div>
-            <Submit>Email me a sign-in link</Submit>
+            <div className="space-y-1.5">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                minLength={8}
+                required
+                className="h-11"
+              />
+            </div>
+            <Submit>Sign in</Submit>
+            {/* Same fields, different action: a magic link for first sign-in or a forgotten password. */}
+            <Button type="submit" formAction={sendMagicLink} formNoValidate variant="link" className="w-full">
+              No password yet, or forgot it? Email me a sign-in link
+            </Button>
           </form>
         </TabsContent>
 

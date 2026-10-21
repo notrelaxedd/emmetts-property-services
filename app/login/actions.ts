@@ -72,6 +72,41 @@ export async function sendMagicLink(formData: FormData) {
   redirect(`/login/check-email?${new URLSearchParams({ email, ...(next ? { next } : {}) }).toString()}`)
 }
 
+/** Email + password sign-in. Wrong email and wrong password give the same generic error. */
+export async function signInWithPassword(formData: FormData) {
+  const email = field(formData, "email").toLowerCase()
+  const password = typeof formData.get("password") === "string" ? (formData.get("password") as string) : ""
+  const next = safeNext(field(formData, "next"))
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) redirect(loginUrl({ error: "email", next }))
+  if (password.length < 8) redirect(loginUrl({ error: "password", next }))
+
+  const supabase = createSupabaseServerClient()
+  if (!supabase) redirect(loginUrl({ error: "config", next }))
+
+  const { error } = await supabase.auth.signInWithPassword({ email, password })
+  if (error) redirect(loginUrl({ error: isRateLimit(error) ? "rate" : "password", next }))
+
+  const home = await homeForCurrentUser(supabase)
+  if (!home) {
+    await supabase.auth.signOut()
+    redirect(loginUrl({ error: "no-access" }))
+  }
+  redirect(next ?? home)
+}
+
+/** Signed-in users set or change their password at /account/password. */
+export async function updatePassword(formData: FormData): Promise<{ ok: boolean; error?: string }> {
+  const password = typeof formData.get("password") === "string" ? (formData.get("password") as string) : ""
+  const confirm = typeof formData.get("confirm") === "string" ? (formData.get("confirm") as string) : ""
+  if (password.length < 8) return { ok: false, error: "Use at least 8 characters." }
+  if (password !== confirm) return { ok: false, error: "The two passwords don’t match." }
+  const supabase = createSupabaseServerClient()
+  if (!supabase) return { ok: false, error: "Sign-in isn’t available right now." }
+  const { error } = await supabase.auth.updateUser({ password })
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
 export async function sendPhoneOtp(formData: FormData) {
   const phone = normalizePhone(field(formData, "phone"))
   const next = safeNext(field(formData, "next"))

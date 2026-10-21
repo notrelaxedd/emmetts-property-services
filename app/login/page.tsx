@@ -11,6 +11,7 @@ export const metadata: Metadata = {
 // Generic on purpose: nothing here says whether a given email or number has an account.
 const ERRORS: Record<string, string> = {
   email: "Enter a valid email address.",
+  password: "Wrong email or password. You can also email yourself a sign-in link below.",
   phone: "Enter a valid mobile number, including area code.",
   code: "That code didn’t work. Check it and try again, or request a new one.",
   rate: "Too many attempts. Please wait a minute and try again.",

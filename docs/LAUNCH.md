@@ -10,7 +10,11 @@
 3. **Stripe webhook** (dashboard, 3 minutes, test mode): Developers → Webhooks → Add endpoint
    `https://www.eodlawns.com/api/stripe/webhook` with the eight events in step 4 below; paste the signing secret
    into Vercel as `STRIPE_WEBHOOK_SECRET`; redeploy. (Or run `npm run stripe:setup` from a laptop.)
-4. **Sign in** at `/login` with your email, then promote yourself to owner (SQL in `supabase/README.md`).
+4. **Create your owner login** (Supabase dashboard → Authentication → Users → **Add user** → "Create new user":
+   your email + a password, tick **Auto Confirm User**). Then SQL editor → the promote statement from
+   `supabase/README.md`. Sign in at `/login` with email + password. (Magic links also work once the user exists,
+   but Supabase's built-in mailer is rate-limited to a few per hour and often lands in spam; crew can set a
+   password at `/account/password` after their first magic-link sign-in.)
 5. **Workers from your laptop** (no Debian boxes needed tonight):
    ```bash
    git clone https://github.com/notrelaxedd/emmetts-property-services && cd emmetts-property-services
