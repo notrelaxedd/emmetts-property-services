@@ -25,7 +25,11 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type })
     if (error) return fail("link")
   } else {
-    return fail("link")
+    // No code or token in the query: the session may be in the URL fragment (#access_token=…), which
+    // browsers keep across this redirect but never send to the server. Finish on the client.
+    const finish = new URL("/auth/finish", request.url)
+    if (next) finish.searchParams.set("next", next)
+    return NextResponse.redirect(finish)
   }
 
   const home = await homeForCurrentUser(supabase)

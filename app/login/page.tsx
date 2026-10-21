@@ -16,7 +16,7 @@ const ERRORS: Record<string, string> = {
   code: "That code didn’t work. Check it and try again, or request a new one.",
   rate: "Too many attempts. Please wait a minute and try again.",
   config: "Sign-in isn’t available right now. Please try again shortly.",
-  link: "That sign-in link has expired or was already used. Request a new one below.",
+  link: "That sign-in link has expired or was already used (links work once). Request a new one below, or sign in with your password.",
   "no-access": "This account doesn’t have access yet. Ask Emmett to send you an invite.",
 }
 
