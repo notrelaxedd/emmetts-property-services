@@ -99,6 +99,18 @@ export async function submitQuote(_prev: QuoteFormState, formData: FormData): Pr
   // Trust bytes over names: a photo may arrive as "blob" with an empty type. Resolve each file's
   // real type once here, and validate the metadata the schema sees with that resolved type.
   const sniffed = await Promise.all(files.map((f) => sniffImageType(f)));
+  for (let i = 0; i < files.length; i++) {
+    if (sniffed[i]) continue;
+    // Diagnostic only (no content): what did the browser actually send us?
+    const head = new Uint8Array(await files[i].slice(0, 12).arrayBuffer());
+    console.warn("[quote] unrecognised photo", {
+      name: files[i].name,
+      type: files[i].type,
+      size: files[i].size,
+      head: Array.from(head).map((b) => b.toString(16).padStart(2, "0")).join(" "),
+      ua: headers().get("user-agent")?.slice(0, 120),
+    });
+  }
   raw.photos = files.map((f, i) => ({
     name: f.name && f.name !== "blob" ? f.name : `photo-${i + 1}.${sniffed[i] ? PHOTO_EXT[sniffed[i]!] : "bin"}`,
     type: sniffed[i] ?? f.type,
