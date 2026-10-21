@@ -141,7 +141,7 @@ export const content = {
       },
       custom: {
         label: "Something else?",
-        hint: "Tell us about anything that isn't on the list. Photos help a lot.",
+        hint: "Tell us about anything that isn't on the list, and roughly how big it is.",
         placeholder: "A hedge that needs trimming, a pile of branches, a patio to sweep...",
       },
       photos: {

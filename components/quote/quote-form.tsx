@@ -47,6 +47,12 @@ type Props = {
  * One picked photo. `local` = not uploaded ahead of time; the file input still holds it and it goes
  * with the form (the original behaviour, and the fallback when the direct upload fails entirely).
  */
+/**
+ * Photo uploads are switched off: the owner decided they aren't needed, and mobile Safari was
+ * submitting empty files. Flip to true to bring the field (and its direct-to-storage upload) back.
+ */
+const PHOTOS_ENABLED = false;
+
 type PhotoRow = {
   id: number;
   name: string;
@@ -581,6 +587,7 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
               )}
             </Field>
 
+            {PHOTOS_ENABLED && (
             <Field id="q-photos" label={copy.photos.label} hint={copy.photos.hint} error={errors.photos}>
               {(a) => (
                 <>
@@ -621,6 +628,7 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
                 </>
               )}
             </Field>
+            )}
           </div>
         </Group>
 
