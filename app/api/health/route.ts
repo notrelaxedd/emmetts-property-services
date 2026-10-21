@@ -30,5 +30,46 @@ export async function GET() {
     database = error ? { ok: false, error: error.message } : { ok: true, services: count ?? 0 };
   }
 
-  return NextResponse.json({ ok: database.ok, env, database }, { status: database.ok ? 200 : 503 });
+  // The browser/auth path uses the PUBLIC url + anon key, not the service role: check it separately.
+  let auth: { ok: boolean; host?: string; sameProject?: boolean; status?: number; error?: string } = { ok: false };
+  const pubUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (pubUrl && anon) {
+    let host: string | undefined;
+    try {
+      host = new URL(pubUrl).host;
+    } catch {
+      auth = { ok: false, error: "NEXT_PUBLIC_SUPABASE_URL is not a valid URL" };
+    }
+    if (host) {
+      const sameProject = (() => {
+        try {
+          return new URL(process.env.SUPABASE_URL ?? pubUrl).host === host;
+        } catch {
+          return false;
+        }
+      })();
+      try {
+        const r = await fetch(`${pubUrl.replace(/\/$/, "")}/auth/v1/settings`, {
+          headers: { apikey: anon.trim(), Authorization: `Bearer ${anon.trim()}` },
+          cache: "no-store",
+        });
+        const body = (await r.json().catch(() => ({}))) as { external?: { email?: boolean }; msg?: string; message?: string };
+        auth = {
+          ok: r.ok && body.external?.email !== false,
+          host,
+          sameProject,
+          status: r.status,
+          error: r.ok ? (body.external?.email === false ? "email provider disabled in Supabase Auth settings" : undefined) : (body.msg ?? body.message ?? `HTTP ${r.status}`),
+        };
+      } catch (e) {
+        auth = { ok: false, host, sameProject, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+  } else {
+    auth = { ok: false, error: "NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY not set" };
+  }
+
+  const ok = database.ok && auth.ok;
+  return NextResponse.json({ ok, env, database, auth }, { status: ok ? 200 : 503 });
 }

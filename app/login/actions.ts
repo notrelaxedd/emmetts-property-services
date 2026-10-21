@@ -67,6 +67,7 @@ export async function sendMagicLink(formData: FormData) {
     email,
     options: { emailRedirectTo: callback.toString(), shouldCreateUser: false },
   })
+  if (error) console.warn("[login] magic link request failed", { status: error.status, code: error.code, message: error.message })
   if (error && isRateLimit(error)) redirect(loginUrl({ error: "rate", next }))
 
   redirect(`/login/check-email?${new URLSearchParams({ email, ...(next ? { next } : {}) }).toString()}`)
@@ -84,7 +85,11 @@ export async function signInWithPassword(formData: FormData) {
   if (!supabase) redirect(loginUrl({ error: "config", next }))
 
   const { error } = await supabase.auth.signInWithPassword({ email, password })
-  if (error) redirect(loginUrl({ error: isRateLimit(error) ? "rate" : "password", next }))
+  if (error) {
+    // Operational detail only (no credentials): shows up in Vercel's function logs.
+    console.warn("[login] password sign-in failed", { status: error.status, code: error.code, message: error.message })
+    redirect(loginUrl({ error: isRateLimit(error) ? "rate" : "password", next }))
+  }
 
   const home = await homeForCurrentUser(supabase)
   if (!home) {
