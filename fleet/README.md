@@ -16,6 +16,28 @@ just waits for a box to come back.
 Anything customer-facing goes through `approvals` unless the owner turned that kind's autopilot on
 (`/admin/autopilot`). Emails get an unsubscribe link from `lib/email`; texts go only to `sms_opt_in` customers.
 
+## One Debian box, everything on it (recommended to start)
+
+On a fresh headless Debian 12 (or Ubuntu) machine with network, as a user with sudo:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/notrelaxedd/emmetts-property-services/main/fleet/install.sh | sudo bash
+sudo nano /etc/fleet/all.env          # paste the keys (same values as your laptop's fleet/.env)
+sudo systemctl enable --now fleet-worker@all
+journalctl -fu fleet-worker@all       # Ctrl+C to stop watching; the service keeps running
+```
+
+The service starts on boot, restarts itself on crashes or network loss, logs to journald (capped at 50 MB) and
+writes nothing else to disk. `/admin/fleet` shows five rows named `<role>-<hostname>`.
+
+**Update later** (pulls `main`, reinstalls deps, restarts): re-run the same `curl … | sudo bash` line.
+
+**Stop / start:** `sudo systemctl stop fleet-worker@all` / `start`. **Change keys:** edit `/etc/fleet/all.env`,
+then `sudo systemctl restart fleet-worker@all`.
+
+Splitting roles across the four boxes later is the same installer with `FLEET_ROLE=quotes` (etc.) in front of
+the `sudo bash`, which writes `/etc/fleet/quotes.env` and the unit `fleet-worker@quotes`.
+
 ## Running from a laptop (Windows, Mac or Linux)
 
 Copy `fleet/env.example` to `fleet/.env` (git-ignored), fill in the values, then:
