@@ -4,10 +4,13 @@ import {
   MAX_PHOTO_BYTES,
   fieldErrorsFrom,
   formatAddress,
+  isPendingPhotoPath,
   parseQuoteFormData,
   photoError,
   photoTypeOf,
   quoteSchema,
+  sniffImageBytes,
+  splitPhotoPath,
   type QuoteInput,
 } from "./quote-schema";
 import { parseUsAddress } from "./stripe/tax";
@@ -141,6 +144,121 @@ describe("quoteSchema", () => {
 
   it("rejects unknown weekday numbers", () => {
     expect(quoteSchema.safeParse({ ...valid, preferredDays: [7] }).success).toBe(false);
+  });
+});
+
+const BATCH = "0f8fad5b-d9cb-469f-a165-70867728950e";
+const pending = (n: number, ext = "jpg") => `pending/${BATCH}/${n}.${ext}`;
+
+describe("pending photo paths", () => {
+  it.each([pending(1), pending(4, "png"), pending(2, "webp"), pending(3, "heic"), pending(1, "heif"), `pending/${crypto.randomUUID()}/2.jpg`])(
+    "accepts %s",
+    (path) => expect(isPendingPhotoPath(path)).toBe(true),
+  );
+
+  it.each([
+    pending(5),
+    pending(0),
+    pending(1, "gif"),
+    pending(1, "jpeg"),
+    pending(1, "JPG"),
+    `leads/${BATCH}/1.jpg`,
+    `pending/${BATCH}/../1.jpg`,
+    `pending/${BATCH}/1.jpg/`,
+    `pending/${BATCH}/1.jpg\n`,
+    ` pending/${BATCH}/1.jpg`,
+    `pending/${BATCH}/sub/1.jpg`,
+    `pending/${BATCH.toUpperCase()}/1.jpg`,
+    `pending/${BATCH.slice(1)}/1.jpg`,
+    `pending/${"-".repeat(36)}/1.jpg`,
+    "pending//1.jpg",
+    "../pending/x/1.jpg",
+    "",
+  ])("rejects %j", (path) => expect(isPendingPhotoPath(path)).toBe(false));
+
+  it("splits a path into folder and file name", () => {
+    expect(splitPhotoPath(pending(2, "png"))).toEqual({ dir: `pending/${BATCH}`, name: "2.png" });
+  });
+});
+
+describe("sniffImageBytes", () => {
+  const bytes = (...b: number[]) => Uint8Array.from([...b, ...new Array(16 - b.length).fill(0)]);
+  const ascii = (s: string, at = 0) => {
+    const out = new Uint8Array(16);
+    out.set(Array.from(s, (c) => c.charCodeAt(0)), at);
+    return out;
+  };
+
+  it("recognises JPEG, PNG, WebP and HEIC/HEIF by content", () => {
+    expect(sniffImageBytes(bytes(0xff, 0xd8, 0xff, 0xe0))).toBe("image/jpeg");
+    expect(sniffImageBytes(bytes(0x89, 0x50, 0x4e, 0x47))).toBe("image/png");
+    const webp = ascii("RIFF");
+    webp.set(Array.from("WEBP", (c) => c.charCodeAt(0)), 8);
+    expect(sniffImageBytes(webp)).toBe("image/webp");
+    const heic = ascii("ftypheic", 4);
+    expect(sniffImageBytes(heic)).toBe("image/heic");
+    expect(sniffImageBytes(ascii("ftypmif1", 4))).toBe("image/heic");
+    expect(sniffImageBytes(ascii("ftypavif", 4))).toBe("image/heif");
+  });
+
+  it("rejects everything else", () => {
+    expect(sniffImageBytes(ascii("<html><script>"))).toBeNull();
+    expect(sniffImageBytes(ascii("GIF89a"))).toBeNull();
+    expect(sniffImageBytes(new Uint8Array(0))).toBeNull();
+    expect(sniffImageBytes(new Uint8Array(16))).toBeNull();
+  });
+});
+
+describe("photo_paths", () => {
+  it("parseQuoteFormData collects photo_paths and ignores empty values", () => {
+    const fd = new FormData();
+    fd.append("photo_paths", pending(1));
+    fd.append("photo_paths", "");
+    fd.append("photo_paths", pending(2, "png"));
+    fd.append("photo_paths", new File([new Uint8Array(3)], "x.jpg"));
+    const p = parseQuoteFormData(fd);
+    expect(p.photoPaths).toEqual([pending(1), pending(2, "png")]);
+    expect(p.raw.photoPaths).toEqual(p.photoPaths);
+    expect(p.files).toHaveLength(0);
+  });
+
+  it("does not treat the unnamed/ignored file input as photos", () => {
+    const fd = new FormData();
+    fd.append("photos_direct", new File([new Uint8Array(10)], "a.jpg", { type: "image/jpeg" }));
+    fd.append("photo_paths", pending(1));
+    const p = parseQuoteFormData(fd);
+    expect(p.files).toHaveLength(0);
+    expect(p.raw.photos).toEqual([]);
+  });
+
+  it("accepts up to four valid, distinct paths", () => {
+    const r = quoteSchema.safeParse({ ...valid, photoPaths: [pending(1), pending(2), pending(3, "png"), pending(4, "webp")] });
+    expect(r.success).toBe(true);
+    expect(quoteSchema.safeParse(valid).success && quoteSchema.parse(valid).photoPaths).toEqual([]);
+  });
+
+  it("rejects more than four, malformed, and duplicate paths on the photos field", () => {
+    const errs = (photoPaths: string[], photos: QuoteInput["photos"] = []) => {
+      const r = quoteSchema.safeParse({ ...valid, photoPaths, photos });
+      return r.success ? {} : fieldErrorsFrom(r.error);
+    };
+    expect(errs([pending(1), pending(2), pending(3), pending(4), `pending/${BATCH}/1.png`]).photos).toMatch(/up to 4/);
+    expect(errs([`leads/${BATCH}/1.jpg`]).photos).toMatch(/add your photos again/i);
+    expect(errs(["pending/not-a-uuid/1.jpg"]).photos).toMatch(/add your photos again/i);
+    expect(errs([pending(1), pending(1)]).photos).toMatch(/add your photos again/i);
+  });
+
+  it("counts uploaded paths and files together against the limit", () => {
+    const r = quoteSchema.safeParse({
+      ...valid,
+      photoPaths: [pending(1), pending(2), pending(3)],
+      photos: [jpg(1), jpg(2)],
+    });
+    expect(r.success).toBe(false);
+    if (r.success) return;
+    expect(fieldErrorsFrom(r.error).photos).toMatch(/up to 4/);
+    const ok = quoteSchema.safeParse({ ...valid, photoPaths: [pending(1), pending(2)], photos: [jpg(1), jpg(2)] });
+    expect(ok.success).toBe(true);
   });
 });
 

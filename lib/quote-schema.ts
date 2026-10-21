@@ -43,6 +43,37 @@ export function photoTypeOf(file: { name: string; type: string }): PhotoType | n
   return EXT_TO_TYPE[ext] ?? null;
 }
 
+/**
+ * Image type from a file's first bytes alone (pass at least the first 12). Browsers sometimes hand
+ * over photos with no name or MIME type, and clients can lie, so the server decides by content.
+ */
+export function sniffImageBytes(b: Uint8Array): PhotoType | null {
+  const ascii = (from: number, to: number) => String.fromCharCode(...Array.from(b.slice(from, to)));
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b[0] === 0x89 && ascii(1, 4) === "PNG") return "image/png";
+  if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return "image/webp";
+  if (ascii(4, 8) === "ftyp") return /^(heic|heix|hevc|hevx|mif1|msf1)/.test(ascii(8, 12)) ? "image/heic" : "image/heif";
+  return null;
+}
+
+/**
+ * Where a browser-direct upload lands before the lead exists: `pending/<batch uuid>/<n>.<ext>` in
+ * the private `lead-photos` bucket. Only paths `createPhotoUploads` could have issued are accepted
+ * by `submitQuote`, which then moves them to `leads/<leadId>/<n>.<ext>`.
+ */
+export const PENDING_PHOTO_PATH_RE =
+  /^pending\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[1-4]\.(jpg|png|webp|heic|heif)$/;
+
+export function isPendingPhotoPath(path: string): boolean {
+  return PENDING_PHOTO_PATH_RE.test(path);
+}
+
+/** `pending/<batch>/2.jpg` -> `{ dir: "pending/<batch>", name: "2.jpg" }`. */
+export function splitPhotoPath(path: string): { dir: string; name: string } {
+  const i = path.lastIndexOf("/");
+  return { dir: path.slice(0, i), name: path.slice(i + 1) };
+}
+
 export type PhotoMeta = { name: string; type: string; size: number };
 
 /** Human-readable problem with a set of photos, or null when they're fine. Empty list is fine. */
@@ -128,6 +159,17 @@ export const quoteSchema = z
         const msg = photoError(photos);
         if (msg) ctx.addIssue({ code: "custom", message: msg });
       }),
+    /** Storage paths of photos the browser already uploaded (hidden `photo_paths` inputs). */
+    photoPaths: z
+      .array(z.string())
+      .default([])
+      .superRefine((paths, ctx) => {
+        if (paths.length > MAX_PHOTOS) {
+          ctx.addIssue({ code: "custom", message: `Please add up to ${MAX_PHOTOS} photos.` });
+        } else if (!paths.every(isPendingPhotoPath) || new Set(paths).size !== paths.length) {
+          ctx.addIssue({ code: "custom", message: "One of your photos didn't upload properly. Please add your photos again." });
+        }
+      }),
     utm: z
       .object({
         source: z.string().max(200).optional(),
@@ -139,6 +181,9 @@ export const quoteSchema = z
       .default({}),
   })
   .superRefine((v, ctx) => {
+    if (v.photos.length + v.photoPaths.length > MAX_PHOTOS) {
+      ctx.addIssue({ code: "custom", path: ["photos"], message: `Please add up to ${MAX_PHOTOS} photos.` });
+    }
     if (v.services.length === 0 && v.customRequest.length === 0) {
       ctx.addIssue({
         code: "custom",
@@ -176,7 +221,8 @@ export function formatAddress(a: { street: string; city: string; state: string; 
 export function fieldErrorsFrom(error: z.ZodError): QuoteFieldErrors {
   const out: QuoteFieldErrors = {};
   for (const issue of error.issues) {
-    const key = String(issue.path[0] ?? "") as QuoteField;
+    const first = String(issue.path[0] ?? "");
+    const key = (first === "photoPaths" ? "photos" : first) as QuoteField;
     if (key && !(key in out)) out[key] = issue.message;
   }
   return out;
@@ -228,6 +274,8 @@ export function parseQuoteFormData(fd: FormData): {
   raw: QuoteInput;
   values: QuoteFormValues;
   files: File[];
+  /** Raw `photo_paths` values (unvalidated; `quoteSchema` checks them). */
+  photoPaths: string[];
   honeypot: string;
 } {
   const services = fd.getAll("services").filter((v): v is string => typeof v === "string");
@@ -236,6 +284,10 @@ export function parseQuoteFormData(fd: FormData): {
     .map((v) => (typeof v === "string" ? Number.parseInt(v, 10) : Number.NaN))
     .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
   const files = fd.getAll("photos").filter(isRealFile);
+  const photoPaths = fd
+    .getAll("photo_paths")
+    .filter((v): v is string => typeof v === "string" && v !== "")
+    .slice(0, 20);
 
   const utm: Record<string, string> = {};
   for (const k of ["source", "medium", "campaign", "content", "term"] as const) {
@@ -263,10 +315,12 @@ export function parseQuoteFormData(fd: FormData): {
     raw: {
       ...values,
       photos: files.map((f) => ({ name: f.name, type: f.type, size: f.size })),
+      photoPaths,
       utm,
     },
     values,
     files,
+    photoPaths,
     honeypot: text(fd, "company"),
   };
 }

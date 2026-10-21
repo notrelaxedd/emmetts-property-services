@@ -8,19 +8,21 @@ import type { Lead, Weekday } from "@/lib/db/types";
 import { geocode } from "@/lib/geo";
 import { enqueueTask, upsertCustomer } from "@/lib/ops";
 import {
+  MAX_PHOTO_BYTES,
   PHOTO_EXT,
   fieldErrorsFrom,
   formatAddress,
   parseQuoteFormData,
-  photoTypeOf,
   quoteSchema,
+  sniffImageBytes,
+  splitPhotoPath,
   type PhotoType,
   type QuoteFieldErrors,
   type QuoteFormState,
   type QuoteFormValues,
 } from "@/lib/quote-schema";
 import { clientIpFrom, quoteRateLimiter } from "@/lib/rate-limit";
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { getSupabaseAdmin, type AdminClient } from "@/lib/supabase/admin";
 
 const copy = content.quote.errors;
 const PHOTO_BUCKET = "lead-photos";
@@ -58,29 +60,91 @@ async function verifyTurnstile(secret: string, token: string, ip: string): Promi
  * "blob" with no MIME type (seen on Windows Chrome), so the name and declared type can't be trusted.
  */
 async function sniffImageType(file: File): Promise<PhotoType | null> {
-  const b = new Uint8Array(await file.slice(0, 16).arrayBuffer());
-  const ascii = (from: number, to: number) => String.fromCharCode(...Array.from(b.slice(from, to)));
-  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
-  if (b[0] === 0x89 && ascii(1, 4) === "PNG") return "image/png";
-  if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return "image/webp";
-  if (ascii(4, 8) === "ftyp") return /^(heic|heix|hevc|hevx|mif1|msf1)/.test(ascii(8, 12)) ? "image/heic" : "image/heif";
-  return null;
+  return sniffImageBytes(new Uint8Array(await file.slice(0, 16).arrayBuffer()));
 }
 
-/** Do the file's first bytes look like the image type it claims to be? */
-async function looksLikeImage(file: File, type: PhotoType): Promise<boolean> {
-  const b = new Uint8Array(await file.slice(0, 16).arrayBuffer());
-  const ascii = (from: number, to: number) => String.fromCharCode(...Array.from(b.slice(from, to)));
-  switch (type) {
-    case "image/jpeg":
-      return b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
-    case "image/png":
-      return b[0] === 0x89 && ascii(1, 4) === "PNG";
-    case "image/webp":
-      return ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP";
-    case "image/heic":
-    case "image/heif":
-      return ascii(4, 8) === "ftyp";
+/**
+ * First 16 bytes of a stored object, or null if it can't be read. Prefers a ranged GET on a
+ * short-lived signed URL so a big photo isn't pulled into memory; falls back to a full download
+ * (photos are capped at 8 MB) if that fails for any reason.
+ */
+async function readObjectHead(db: AdminClient, path: string): Promise<Uint8Array | null> {
+  const bucket = db.storage.from(PHOTO_BUCKET);
+  try {
+    const { data } = await bucket.createSignedUrl(path, 60);
+    if (data?.signedUrl) {
+      const res = await fetch(data.signedUrl, {
+        headers: { Range: "bytes=0-15" },
+        cache: "no-store",
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok && res.body) {
+        // 206 normally. A plain 200 means Range was ignored: read just the first chunk and drop the rest.
+        const reader = res.body.getReader();
+        const head = new Uint8Array(16);
+        let got = 0;
+        while (got < head.length) {
+          const { done, value } = await reader.read();
+          if (done || !value) break;
+          const take = Math.min(value.length, head.length - got);
+          head.set(value.subarray(0, take), got);
+          got += take;
+        }
+        await reader.cancel().catch(() => undefined);
+        if (got > 0) return head.slice(0, got);
+      }
+    }
+  } catch (e) {
+    console.warn(`[quote] ranged read failed (${path}), falling back to download:`, e instanceof Error ? e.message : e);
+  }
+  try {
+    const { data, error } = await bucket.download(path);
+    if (error || !data) return null;
+    return new Uint8Array(await data.slice(0, 16).arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Claims one browser-uploaded photo for a lead: checks the object exists and is a sane size,
+ * sniffs its real type from the bytes (the client's declared type is never trusted), then moves it
+ * from `pending/<batch>/<n>.<ext>` to `leads/<leadId>/<n>.<ext>` using the sniffed extension.
+ * Returns the final path, or null (logged) if anything fails; the lead is already saved by then.
+ */
+async function claimPendingPhoto(db: AdminClient, from: string, leadId: string, n: number): Promise<string | null> {
+  const bucket = db.storage.from(PHOTO_BUCKET);
+  const { dir, name } = splitPhotoPath(from);
+  try {
+    const { data: listing, error: listError } = await bucket.list(dir, { limit: 10, search: name });
+    const entry = listing?.find((o) => o.name === name);
+    if (listError || !entry) {
+      console.error(`[quote] pending photo missing (${from}):`, listError?.message ?? "not found");
+      return null;
+    }
+    const size = (entry.metadata as { size?: number } | null)?.size;
+    if (typeof size === "number" && (size === 0 || size > MAX_PHOTO_BYTES)) {
+      console.error(`[quote] pending photo wrong size (${from}): ${size} bytes`);
+      await bucket.remove([from]);
+      return null;
+    }
+    const head = await readObjectHead(db, from);
+    const type = head ? sniffImageBytes(head) : null;
+    if (!type) {
+      console.error(`[quote] pending photo is not a recognised image (${from})`);
+      await bucket.remove([from]);
+      return null;
+    }
+    const to = `leads/${leadId}/${n}.${PHOTO_EXT[type]}`;
+    const { error: moveError } = await bucket.move(from, to);
+    if (moveError) {
+      console.error(`[quote] pending photo move failed (${from} -> ${to}):`, moveError.message);
+      return null;
+    }
+    return to;
+  } catch (e) {
+    console.error(`[quote] pending photo claim failed (${from}):`, e instanceof Error ? e.message : e);
+    return null;
   }
 }
 
@@ -142,12 +206,13 @@ export async function submitQuote(_prev: QuoteFormState, formData: FormData): Pr
   }
 
   try {
-    // Photos: re-validate by sniffing bytes (the client check is only a convenience).
+    // Photos sent with the form (the no-JS / upload-failed fallback): re-validate by sniffing bytes
+    // (the client check is only a convenience).
     const photos: { file: File; type: PhotoType }[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const type = sniffed[i] ?? photoTypeOf(file);
-      if (!type || !(await looksLikeImage(file, type))) {
+      const type = sniffed[i];
+      if (!type) {
         return errorState(copy.fix, values, hadPhotos, {
           photos: `"${raw.photos[i]?.name ?? file.name}" isn't a photo we can use. Please add JPG, PNG, WebP, or HEIC images.`,
         });
@@ -222,11 +287,19 @@ export async function submitQuote(_prev: QuoteFormState, formData: FormData): Pr
     if (leadError || !lead) throw new Error(`lead insert: ${leadError?.message ?? "no row returned"}`);
 
     // Photos live at leads/<leadId>/<n>.<ext> (n starts at 1) in the private `lead-photos` bucket.
-    // A failed upload is logged and skipped: the lead is already saved and shouldn't be lost.
+    // Browser-direct uploads (photo_paths) are claimed first by moving them out of pending/; photos
+    // that came with the form are uploaded after. A failed photo is logged and skipped: the lead is
+    // already saved and shouldn't be lost.
     const photoPaths: string[] = [];
-    for (let i = 0; i < photos.length; i++) {
-      const { file, type } = photos[i];
-      const path = `leads/${lead.id}/${i + 1}.${PHOTO_EXT[type]}`;
+    let n = 0;
+    for (const from of data.photoPaths) {
+      n++;
+      const claimed = await claimPendingPhoto(db, from, lead.id, n);
+      if (claimed) photoPaths.push(claimed);
+    }
+    for (const { file, type } of photos) {
+      n++;
+      const path = `leads/${lead.id}/${n}.${PHOTO_EXT[type]}`;
       const { error } = await db.storage.from(PHOTO_BUCKET).upload(path, file, { contentType: type, upsert: false });
       if (error) {
         console.error(`[quote] photo upload failed (${path}):`, error.message);

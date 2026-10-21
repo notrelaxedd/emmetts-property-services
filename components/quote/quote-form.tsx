@@ -18,6 +18,7 @@ import {
   parseQuoteFormData,
   photoError,
   quoteSchema,
+  type PhotoType,
   type QuoteFieldErrors,
   type QuoteFormValues,
 } from "@/lib/quote-schema";
@@ -27,6 +28,7 @@ import type { QuoteServiceOption } from "./services-data";
 import { AddressAutocomplete } from "./address-autocomplete";
 import { setInputFiles, shrinkPhotos } from "./compress-photos";
 import { Turnstile } from "./turnstile";
+import { sniffFileType, uploadPhotosDirect } from "./upload-photos";
 import { UtmFields } from "./utm-fields";
 
 const copy = content.quote.form;
@@ -39,6 +41,21 @@ type Props = {
   verifyAddress: boolean;
   /** NEXT_PUBLIC_TURNSTILE_SITE_KEY; the widget only renders when set. */
   turnstileSiteKey: string | null;
+};
+
+/**
+ * One picked photo. `local` = not uploaded ahead of time; the file input still holds it and it goes
+ * with the form (the original behaviour, and the fallback when the direct upload fails entirely).
+ */
+type PhotoRow = {
+  id: number;
+  name: string;
+  file: File;
+  type: PhotoType | null;
+  status: "uploading" | "done" | "error" | "local";
+  /** `pending/<batch>/<n>.<ext>` once uploaded. */
+  path?: string;
+  error?: string;
 };
 
 /* ---------- small building blocks ---------- */
@@ -182,11 +199,13 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
   const [state, formAction] = useFormState(submitQuote, initialQuoteState);
   const [clientErrors, setClientErrors] = useState<QuoteFieldErrors | null>(null);
   const [photoMsg, setPhotoMsg] = useState<string | null>(null);
-  const [photoNames, setPhotoNames] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<PhotoRow[]>([]);
   const [processing, setProcessing] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const pickRef = useRef(0);
+  const rowIdRef = useRef(0);
   const cityRef = useRef<HTMLInputElement>(null);
   const stateRef = useRef<HTMLInputElement>(null);
   const zipRef = useRef<HTMLInputElement>(null);
@@ -219,7 +238,9 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
     if (!serverState) return;
     setClientErrors(null);
     setPhotoMsg(null);
-    setPhotoNames([]);
+    // Photos already in storage stay valid after a failed submit; ones that travelled with the form
+    // were wiped along with the remounted file input, so the banner asks for those again.
+    setPhotos((prev) => prev.filter((p) => p.status === "done"));
     const firstInvalid = formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]');
     (firstInvalid ?? bannerRef.current)?.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -235,6 +256,17 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
       e.preventDefault();
       return;
     }
+    if (photos.some((p) => p.status === "uploading")) {
+      e.preventDefault();
+      return;
+    }
+    // Some uploaded and some not: submitting would silently drop the rest.
+    if (photos.some((p) => p.status === "error")) {
+      e.preventDefault();
+      setPhotoMsg(copy.photos.partialFail);
+      fileRef.current?.focus();
+      return;
+    }
     const { raw } = parseQuoteFormData(new FormData(e.currentTarget));
     const result = quoteSchema.safeParse(raw);
     if (!result.success) {
@@ -245,28 +277,105 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
     setClientErrors(null);
   }
 
+  /** Uploads these rows straight to storage. `pick` guards against a newer file pick landing meanwhile. */
+  async function uploadRows(rows: PhotoRow[], pick: number) {
+    const todo = rows.filter((r): r is PhotoRow & { type: PhotoType } => r.type !== null);
+    const ids = new Set(todo.map((r) => r.id));
+    setPhotos((prev) => prev.map((p) => (ids.has(p.id) ? { ...p, status: "uploading", error: undefined } : p)));
+    await uploadPhotosDirect(
+      todo.map((r) => ({ file: r.file, type: r.type })),
+      (i, res) => {
+        if (pickRef.current !== pick) return;
+        const id = todo[i].id;
+        setPhotos((prev) =>
+          prev.map((p) =>
+            p.id !== id
+              ? p
+              : res.status === "done"
+                ? { ...p, status: "done", path: res.path, error: undefined }
+                : { ...p, status: "error", error: res.error },
+          ),
+        );
+      },
+    );
+    if (pickRef.current !== pick) return;
+    // Nothing got through (offline, blocked, misconfigured): fall back to sending the files with the
+    // form, as before. If only some failed, keep them as errors so the user can retry.
+    setPhotos((prev) =>
+      prev.some((p) => p.status === "done")
+        ? prev
+        : prev.map((p) => (p.status === "error" || p.status === "uploading" ? { ...p, status: "local" } : p)),
+    );
+  }
+
   async function onPhotosChange() {
     const input = fileRef.current;
     if (!input) return;
     const picked = Array.from(input.files ?? []);
     const problem = photoError(picked);
+    const pick = ++pickRef.current;
     if (problem) {
       setPhotoMsg(problem);
-      setPhotoNames([]);
+      setPhotos([]);
+      setProcessing(false);
       input.value = "";
       return;
     }
     setPhotoMsg(null);
-    setPhotoNames(picked.map((f) => f.name));
-    if (picked.length === 0) return;
+    if (picked.length === 0) {
+      setPhotos([]);
+      setProcessing(false);
+      return;
+    }
     setProcessing(true);
     try {
       const shrunk = await shrinkPhotos(picked);
       setInputFiles(input, shrunk);
+      const types = await Promise.all(shrunk.map((f) => sniffFileType(f)));
+      if (pickRef.current !== pick) return;
+      // If any file isn't a recognisable image, skip the direct upload and let the server explain.
+      const direct = types.every((t) => t !== null);
+      const rows: PhotoRow[] = shrunk.map((file, i) => ({
+        id: ++rowIdRef.current,
+        name: picked[i]?.name ?? file.name,
+        file,
+        type: types[i],
+        status: direct ? "uploading" : "local",
+      }));
+      setPhotos(rows);
+      if (direct) await uploadRows(rows, pick);
     } finally {
-      setProcessing(false);
+      if (pickRef.current === pick) setProcessing(false);
     }
   }
+
+  async function retryPhotos() {
+    const rows = photos.filter((p) => p.status === "error" || p.status === "local");
+    if (rows.length === 0 || processing) return;
+    const pick = pickRef.current;
+    setPhotoMsg(null);
+    setProcessing(true);
+    try {
+      await uploadRows(rows, pick);
+    } finally {
+      if (pickRef.current === pick) setProcessing(false);
+    }
+  }
+
+  // Uploaded photos travel as hidden `photo_paths`; the file input is left unnamed (an unnamed input
+  // is not submitted) so the bytes never go through the server action. With no direct upload in play
+  // (no JS, upload failed) it stays named `photos` and the files go with the form.
+  const uploadedPaths = photos.flatMap((p) => (p.status === "done" && p.path ? [p.path] : []));
+  const sendingDirect = photos.some((p) => p.status === "uploading" || p.status === "done" || p.status === "error");
+  const canRetry = photos.some((p) => p.status === "error" || p.status === "local") && photos.every((p) => p.type !== null);
+  const photoStatusText = (p: PhotoRow) =>
+    p.status === "uploading"
+      ? copy.photos.uploading
+      : p.status === "done"
+        ? copy.photos.uploaded
+        : p.status === "local"
+          ? copy.photos.withForm
+          : (p.error ?? copy.photos.failed);
 
   const bannerMessage = serverState
     ? serverState.hadPhotos
@@ -306,6 +415,10 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
       <Suspense fallback={null}>
         <UtmFields />
       </Suspense>
+
+      {uploadedPaths.map((path) => (
+        <input key={path} type="hidden" name="photo_paths" value={path} />
+      ))}
 
       {/* Remounting on each server response re-seeds the defaults from what the user typed. */}
       <div key={nonce} className="grid gap-8">
@@ -474,7 +587,7 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
                   <Input
                     {...a}
                     ref={fileRef}
-                    name="photos"
+                    name={sendingDirect ? undefined : "photos"}
                     type="file"
                     accept="image/*"
                     multiple
@@ -482,11 +595,28 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
                     onChange={onPhotosChange}
                     className="h-auto cursor-pointer rounded-xl px-4 py-3 text-base file:mr-3 file:rounded-full file:bg-ink file:px-4 file:py-1.5 file:text-sm file:font-semibold file:text-white"
                   />
-                  {photoNames.length > 0 && (
-                    <p className="mt-2 text-sm font-medium text-ink" aria-live="polite">
-                      {copy.photos.count(Math.min(photoNames.length, MAX_PHOTOS))}
-                      <span className="font-normal text-ink-muted">: {photoNames.join(", ")}</span>
-                    </p>
+                  {photos.length > 0 && (
+                    <div className="mt-2 text-sm" aria-live="polite">
+                      <p className="font-medium text-ink">{copy.photos.count(Math.min(photos.length, MAX_PHOTOS))}</p>
+                      <ul className="mt-1 grid gap-1">
+                        {photos.map((p) => (
+                          <li key={p.id} className="flex flex-wrap gap-x-2 text-ink-muted">
+                            <span className="min-w-0 break-all">{p.name}</span>
+                            <span className={cn("font-medium", p.status === "error" ? "text-destructive" : "text-ink")}>
+                              {photoStatusText(p)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      {photos.some((p) => p.status === "local") && photos.every((p) => p.type !== null) && (
+                        <p className="mt-1.5 text-ink-muted">{copy.photos.fallbackNote}</p>
+                      )}
+                      {canRetry && (
+                        <Button type="button" variant="outline" size="sm" className="mt-2" disabled={processing} onClick={retryPhotos}>
+                          {copy.photos.retry}
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </>
               )}

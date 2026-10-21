@@ -148,6 +148,13 @@ export const content = {
         label: "Photos (optional)",
         hint: "Up to 4 photos, 8 MB each.",
         count: (n: number) => (n === 1 ? "1 photo selected" : `${n} photos selected`),
+        uploading: "Uploading...",
+        uploaded: "Uploaded \u2713",
+        failed: "Couldn't upload",
+        withForm: "Will be sent with your request",
+        retry: "Try uploading again",
+        fallbackNote: "We couldn't upload your photos ahead of time, so we'll send them with the form. You can also try again.",
+        partialFail: "Some photos didn't upload. Please try again, or choose your photos again, before sending.",
       },
       days: {
         legend: "Days that work for you",
