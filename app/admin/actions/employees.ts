@@ -67,7 +67,8 @@ export async function inviteCrew(input: { name: string; contact: string; rate: n
     let userId: string | undefined
     if (email) {
       const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-        redirectTo: `${siteOrigin()}/api/auth/callback?next=/crew`,
+        // Land new crew on the set-password page so they never depend on email links again.
+        redirectTo: `${siteOrigin()}/api/auth/callback?next=${encodeURIComponent("/account/password?welcome=1")}`,
         data: { name },
       })
       if (error) return { ok: false, reason: error.message }

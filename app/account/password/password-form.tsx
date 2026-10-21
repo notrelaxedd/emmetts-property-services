@@ -27,10 +27,10 @@ export function PasswordForm({ home }: { home: string }) {
       <div className="space-y-4">
         <Alert variant="success">
           <CheckCircle2 aria-hidden="true" />
-          <AlertDescription>Password saved.</AlertDescription>
+          <AlertDescription>Password saved. Sign in with it next time.</AlertDescription>
         </Alert>
         <Button asChild size="lg" className="h-11 w-full">
-          <Link href={home}>Continue</Link>
+          <Link href={home}>{home === "/crew" ? "See my jobs" : "Continue"}</Link>
         </Button>
       </div>
     )

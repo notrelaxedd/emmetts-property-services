@@ -33,5 +33,9 @@ export async function GET(request: NextRequest) {
     await supabase.auth.signOut()
     return fail("no-access")
   }
+  // Invites and password recoveries (e.g. sent from the Supabase dashboard) go to the password page.
+  if (!next && (type === "invite" || type === "recovery")) {
+    return NextResponse.redirect(new URL("/account/password?welcome=1", request.url))
+  }
   return NextResponse.redirect(new URL(next ?? home, request.url))
 }

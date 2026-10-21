@@ -35,7 +35,7 @@ export function AuthHashCatcher() {
         if (!profile) {
           window.location.assign("/login?error=no-access");
         } else if (recovery) {
-          window.location.assign("/account/password");
+          window.location.assign("/account/password?welcome=1");
         } else {
           window.location.assign(profile.role === "owner" ? "/admin" : "/crew");
         }
