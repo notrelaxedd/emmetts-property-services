@@ -129,7 +129,7 @@ export async function gatherSchedulerInput(db: Db, now: Date, closedDates: strin
     ? check(await db.from("job_assignments").select("*").in("job_id", scheduledIds), "schedule(assignments)") ?? []
     : [];
 
-  const crew = check(await db.from("profiles").select("*").eq("role", "crew"), "schedule(crew)") ?? [];
+  const crew = check(await db.from("profiles").select("*").eq("role", "crew").is("removed_at", null), "schedule(crew)") ?? [];
   const ownerWindows = check(await db.from("owner_windows").select("*"), "schedule(owner windows)") ?? [];
   const today = localDate(now);
   const ownerExceptions = (check(await db.from("owner_exceptions").select("*"), "schedule(owner exceptions)") ?? []).filter(

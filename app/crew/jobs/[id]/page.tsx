@@ -51,7 +51,7 @@ export default async function CrewJobPage({ params }: { params: { id: string } }
         .eq("job_id", job.id)
         .eq("swap_to_crew_id", profile.id)
         .eq("status", "swap_offered"),
-      admin.from("profiles").select("id").eq("role", "crew").eq("paused", false).neq("id", profile.id),
+      admin.from("profiles").select("id").eq("role", "crew").eq("paused", false).is("removed_at", null).neq("id", profile.id),
       admin.from("job_assignments").select("crew_id").eq("job_id", job.id),
       admin.from("jobs").select("completion_photo_paths").eq("id", job.id).maybeSingle(),
     ])

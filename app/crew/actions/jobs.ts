@@ -63,7 +63,7 @@ export async function offerSwap(jobId: string): Promise<ActionResult> {
 
     const db = requireSupabaseAdmin()
     const [{ data: crew, error: crewErr }, { data: onJob, error: onErr }] = await Promise.all([
-      db.from("profiles").select("id").eq("role", "crew").eq("paused", false).neq("id", ctx.me),
+      db.from("profiles").select("id").eq("role", "crew").eq("paused", false).is("removed_at", null).neq("id", ctx.me),
       db.from("job_assignments").select("crew_id").eq("job_id", id.data),
     ])
     if (crewErr) throw new Error(crewErr.message)

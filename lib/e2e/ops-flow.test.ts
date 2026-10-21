@@ -111,7 +111,7 @@ const FALL: Service = {
 
 const profile = (over: Partial<Profile>): Profile => ({
   id: id(), created_at: T0, updated_at: T0, user_id: id(), role: "crew", name: "Crew", email: null, phone: null,
-  max_hours_week: 40, paused: false, hourly_rate: 20, lat: null, lng: null, ...over,
+  max_hours_week: 40, paused: false, hourly_rate: 20, removed_at: null, lat: null, lng: null, ...over,
 });
 const OWNER_PROFILE = profile({ role: "owner", name: "Emmett", email: "owner@example.test", hourly_rate: 0 });
 const ANN = profile({ name: "Ann Lee", hourly_rate: 18 });

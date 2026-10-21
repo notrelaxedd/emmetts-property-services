@@ -2,8 +2,9 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { updateEmployee } from "@/app/admin/actions/employees"
+import { removeEmployee, restoreEmployee, updateEmployee } from "@/app/admin/actions/employees"
 import { usd } from "@/app/admin/money/math"
+import { ConfirmDialog } from "@/components/admin/inbox/confirm-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -22,6 +23,7 @@ export type EmployeeRow = {
   paused: boolean
   hoursThisWeek: number
   cashOwed: number
+  removed?: boolean
 }
 
 function Row({ e }: { e: EmployeeRow }) {
@@ -40,6 +42,15 @@ function Row({ e }: { e: EmployeeRow }) {
     startTransition(async () => {
       const r = await updateEmployee(e.id, patch)
       toast(r.ok ? { title: `${e.name}: ${r.message ?? "saved"}`, variant: "success" } : { title: "Couldn't save", description: r.reason, variant: "destructive" })
+    })
+
+  const result = (r: Awaited<ReturnType<typeof removeEmployee>>, failTitle: string) => {
+    toast(r.ok ? { title: `${e.name || "Team member"}: ${r.message ?? "done"}`, variant: "success" } : { title: failTitle, description: r.reason, variant: "destructive" })
+    return r.ok
+  }
+  const restore = () =>
+    startTransition(async () => {
+      result(await restoreEmployee(e.id), "Couldn't restore")
     })
 
   return (
@@ -89,14 +100,35 @@ function Row({ e }: { e: EmployeeRow }) {
         {e.cashOwed > 0 ? <span className="font-semibold text-ink">{usd(e.cashOwed)}</span> : <span className="text-ink-muted">{usd(0)}</span>}
       </TableCell>
       <TableCell className="text-right">
-        <Button
-          size="sm"
-          variant={dirty ? "default" : "ghost"}
-          disabled={!dirty || pending || rate.trim() === "" || maxHours.trim() === ""}
-          onClick={() => save({ hourly_rate: Number(rate), max_hours_week: Number(maxHours) })}
-        >
-          Save
-        </Button>
+        <div className="flex justify-end gap-1">
+          {e.removed ? (
+            <Button size="sm" variant="outline" disabled={pending} onClick={restore}>
+              Restore
+            </Button>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant={dirty ? "default" : "ghost"}
+                disabled={!dirty || pending || rate.trim() === "" || maxHours.trim() === ""}
+                onClick={() => save({ hourly_rate: Number(rate), max_hours_week: Number(maxHours) })}
+              >
+                Save
+              </Button>
+              {e.role === "owner" ? null : (
+                <ConfirmDialog
+                  trigger="Remove"
+                  triggerVariant="ghost"
+                  title={`Remove ${e.name || "this team member"}?`}
+                  description="They'll be taken off any upcoming jobs and lose access. Past payouts stay on record."
+                  confirmLabel="Remove"
+                  confirmVariant="default"
+                  onConfirm={async () => result(await removeEmployee(e.id), "Couldn't remove")}
+                />
+              )}
+            </>
+          )}
+        </div>
       </TableCell>
     </TableRow>
   )
@@ -115,7 +147,7 @@ export function EmployeesTable({ rows }: { rows: EmployeeRow[] }) {
           <TableHead>This week</TableHead>
           <TableHead>Cash owed</TableHead>
           <TableHead className="text-right">
-            <span className="sr-only">Save</span>
+            <span className="sr-only">Actions</span>
           </TableHead>
         </TableRow>
       </TableHeader>

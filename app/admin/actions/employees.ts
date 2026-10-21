@@ -4,7 +4,8 @@ import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { requireOwner } from "@/lib/auth/session"
-import { check } from "@/lib/ops"
+import { check, enqueueSchedule, markForResolve, releaseCrewFromJob } from "@/lib/ops"
+import type { AssignmentStatus, JobStatus } from "@/lib/db/types"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; reason: string }
@@ -174,6 +175,109 @@ export async function markAllPaid(crewId: string): Promise<ActionResult> {
     revalidate(crewId)
     revalidatePath("/admin/money")
     return { ok: true, message: rows?.length ? `Marked ${rows.length} payout${rows.length === 1 ? "" : "s"} paid ($${total.toFixed(2)}).` : "Nothing owed." }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+/** Assignment / job states that mean "still on the books": removing someone takes them off these. */
+const LIVE_ASSIGNMENT_STATUSES: AssignmentStatus[] = ["offered", "accepted", "swap_offered", "drop_requested"]
+const LIVE_JOB_STATUSES: JobStatus[] = ["proposed", "crew_confirmed", "booked"]
+/** Jobs with work done (or underway) by the crew member: that history can't be deleted. */
+const WORKED_JOB_STATUSES: JobStatus[] = ["in_progress", "done"]
+/** About 100 years: Supabase has no permanent ban, so this is the longest practical one. */
+const BAN_FOREVER = "876000h"
+
+/**
+ * Remove a team member. They come off every upcoming job (the scheduler re-solves for cover). With
+ * no payouts and no completed jobs the profile and sign-in are deleted outright; otherwise it is a
+ * soft remove (`removed_at`, paused, login banned) so payouts and job history stay on record.
+ */
+export async function removeEmployee(profileId: string): Promise<ActionResult> {
+  const session = await requireOwner()
+  if (!idSchema.safeParse(profileId).success) return { ok: false, reason: "Invalid employee." }
+  try {
+    const db = requireSupabaseAdmin()
+    const profile = check(await db.from("profiles").select("*").eq("id", profileId).maybeSingle(), "load employee")
+    if (!profile) return { ok: false, reason: "Employee not found." }
+    if (profile.role === "owner" || profile.id === session.profile.id) return { ok: false, reason: "You can't remove an owner here." }
+
+    // (a) Off every upcoming job, then ask the scheduler to find cover.
+    const mine =
+      check(
+        await db.from("job_assignments").select("job_id").eq("crew_id", profile.id).in("status", LIVE_ASSIGNMENT_STATUSES),
+        "removeEmployee(assignments)",
+      ) ?? []
+    const liveJobs = mine.length
+      ? (check(
+          await db.from("jobs").select("id").in("id", Array.from(new Set(mine.map((a) => a.job_id)))).in("status", LIVE_JOB_STATUSES),
+          "removeEmployee(jobs)",
+        ) ?? [])
+      : []
+    const released: string[] = []
+    for (const j of liveJobs) {
+      if (await releaseCrewFromJob(db, j.id, profile.id, { actor: "owner:remove-employee", from: LIVE_ASSIGNMENT_STATUSES })) {
+        released.push(j.id)
+      }
+    }
+    // Swap offers they sent or hold, including on jobs that aren't live any more.
+    check(await db.from("job_assignments").delete().eq("swap_to_crew_id", profile.id).eq("status", "swap_offered"), "removeEmployee(swaps to)")
+    check(await db.from("job_assignments").delete().eq("crew_id", profile.id).eq("status", "swap_offered"), "removeEmployee(swaps from)")
+    await markForResolve(db, released, "crew_change")
+    await enqueueSchedule(db, "crew_removed", released)
+
+    // (b) / (c) Delete outright only when no payout or completed work hangs off the profile.
+    const payouts = await db.from("payouts").select("id", { count: "exact", head: true }).eq("crew_id", profile.id)
+    if (payouts.error) throw new Error(payouts.error.message)
+    const accepted =
+      check(await db.from("job_assignments").select("job_id").eq("crew_id", profile.id).eq("status", "accepted"), "removeEmployee(history)") ?? []
+    let worked = 0
+    if (accepted.length) {
+      const res = await db
+        .from("jobs")
+        .select("id", { count: "exact", head: true })
+        .in("id", accepted.map((a) => a.job_id))
+        .in("status", WORKED_JOB_STATUSES)
+      if (res.error) throw new Error(res.error.message)
+      worked = res.count ?? 0
+    }
+
+    const who = profile.name || "They"
+    const jobsNote = released.length ? ` Taken off ${released.length} upcoming job${released.length === 1 ? "" : "s"}; the scheduler is finding cover.` : ""
+    if ((payouts.count ?? 0) === 0 && worked === 0) {
+      const { error } = await db.auth.admin.deleteUser(profile.user_id)
+      if (error) return { ok: false, reason: error.message }
+      revalidate(profile.id)
+      revalidatePath("/admin/schedule")
+      return { ok: true, message: `Deleted ${who === "They" ? "the team member" : who}: no payouts or finished jobs to keep.${jobsNote}` }
+    }
+
+    const { error: banErr } = await db.auth.admin.updateUserById(profile.user_id, { ban_duration: BAN_FOREVER })
+    if (banErr) return { ok: false, reason: banErr.message }
+    check(await db.from("profiles").update({ removed_at: new Date().toISOString(), paused: true }).eq("id", profile.id), "removeEmployee(soft)")
+    revalidate(profile.id)
+    revalidatePath("/admin/schedule")
+    return { ok: true, message: `Removed ${who === "They" ? "the team member" : who}. Sign-in is blocked; payouts and job history stay on record.${jobsNote}` }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+/** Undo a soft remove: back on the team list, sign-in allowed again. Still paused until you turn them back on. */
+export async function restoreEmployee(profileId: string): Promise<ActionResult> {
+  await requireOwner()
+  if (!idSchema.safeParse(profileId).success) return { ok: false, reason: "Invalid employee." }
+  try {
+    const db = requireSupabaseAdmin()
+    const profile = check(await db.from("profiles").select("id,user_id,name,removed_at").eq("id", profileId).maybeSingle(), "load employee")
+    if (!profile) return { ok: false, reason: "Employee not found." }
+    if (!profile.removed_at) return { ok: true, message: "Already on the team." }
+    const { error } = await db.auth.admin.updateUserById(profile.user_id, { ban_duration: "none" })
+    if (error) return { ok: false, reason: error.message }
+    check(await db.from("profiles").update({ removed_at: null, paused: false }).eq("id", profile.id), "restoreEmployee")
+    await enqueueSchedule(db, "crew_restored")
+    revalidate(profile.id)
+    return { ok: true, message: `Restored ${profile.name || "the team member"}.` }
   } catch (e) {
     return fail(e)
   }

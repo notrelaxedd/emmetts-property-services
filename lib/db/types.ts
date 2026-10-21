@@ -129,6 +129,8 @@ export type Profile = Base & {
   max_hours_week: number;
   paused: boolean;
   hourly_rate: number;
+  /** Soft-removed by the owner (hidden, unschedulable, login banned); null = active. */
+  removed_at: string | null;
   /** Home base for drive-time estimates. */
   lat: number | null;
   lng: number | null;

@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { Users } from "lucide-react"
 import { EmployeesTable, type EmployeeRow } from "@/components/admin/employees/employees-table"
 import { InviteForm } from "@/components/admin/employees/invite-form"
@@ -37,7 +38,7 @@ async function load() {
   const owed = new Map<string, number>()
   for (const p of unpaid.data ?? []) owed.set(p.crew_id, (owed.get(p.crew_id) ?? 0) + Number(p.amount))
 
-  const rows: EmployeeRow[] = (profiles.data ?? []).map((p) => ({
+  const all: EmployeeRow[] = (profiles.data ?? []).map((p) => ({
     id: p.id,
     name: p.name,
     role: p.role,
@@ -48,11 +49,15 @@ async function load() {
     paused: p.paused,
     hoursThisWeek: (minutes.get(p.id) ?? 0) / 60,
     cashOwed: Math.round((owed.get(p.id) ?? 0) * 100) / 100,
+    removed: p.removed_at !== null,
   }))
-  return { rows, defaultWage: Number(settings.data?.default_wage ?? 15) }
+  const rows = all.filter((r) => !r.removed)
+  const removed = all.filter((r) => r.removed)
+  return { rows, removed, defaultWage: Number(settings.data?.default_wage ?? 15) }
 }
 
-export default async function EmployeesPage() {
+export default async function EmployeesPage({ searchParams }: { searchParams: { removed?: string } }) {
+  const showRemoved = searchParams.removed === "1"
   await requireOwner()
   let data: Awaited<ReturnType<typeof load>> | null = null
   let error: string | null = null
@@ -89,6 +94,27 @@ export default async function EmployeesPage() {
           )}
         </CardContent>
       </Card>
+      {data && data.removed.length > 0 ? (
+        <div className="text-sm">
+          <Link
+            href={showRemoved ? "/admin/employees" : "/admin/employees?removed=1"}
+            className="text-ink-muted underline-offset-4 hover:underline"
+          >
+            {showRemoved ? "Hide removed" : `Show removed (${data.removed.length})`}
+          </Link>
+        </div>
+      ) : null}
+      {data && showRemoved && data.removed.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Removed</CardTitle>
+            <CardDescription>No longer on the schedule and cannot sign in. Past payouts stay on record.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0 pb-2">
+            <EmployeesTable rows={data.removed} />
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   )
 }

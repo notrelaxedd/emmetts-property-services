@@ -32,6 +32,7 @@ export function crew(id: string, name: string, over: Partial<Profile> = {}): Pro
     max_hours_week: 40,
     paused: false,
     hourly_rate: 20,
+    removed_at: null,
     lat: null,
     lng: null,
     ...over,

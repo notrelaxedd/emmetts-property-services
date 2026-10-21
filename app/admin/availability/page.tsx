@@ -18,7 +18,7 @@ async function load(today: string) {
   const [windows, exceptions, crew, blocks, requests] = await Promise.all([
     db.from("owner_windows").select("weekday,start_time,end_time").order("weekday").order("start_time"),
     db.from("owner_exceptions").select("id,date,closed,start_time,end_time,note").gte("date", addDays(today, -7)).order("date"),
-    db.from("profiles").select("id,name,paused,max_hours_week").eq("role", "crew").order("name"),
+    db.from("profiles").select("id,name,paused,max_hours_week").eq("role", "crew").is("removed_at", null).order("name"),
     db.from("crew_availability").select("crew_id,weekday,start_time,end_time"),
     db.from("crew_exceptions").select("*").eq("status", "pending").order("date_from"),
   ])
