@@ -18,9 +18,10 @@
 5. **Workers from your laptop** (no Debian boxes needed tonight):
    ```bash
    git clone https://github.com/notrelaxedd/emmetts-property-services && cd emmetts-property-services
-   git checkout claude/peaceful-brahmagupta-l7zdmt && npm install
-   FLEET_ROLE=all SUPABASE_URL=https://xqeiprybuimewxkpffay.supabase.co SUPABASE_SERVICE_ROLE_KEY=... \
-     ANTHROPIC_API_KEY=... SITE_URL=https://www.eodlawns.com npm run fleet
+   npm install
+   copy fleet\env.example fleet\.env     # Windows (Mac/Linux: cp fleet/env.example fleet/.env)
+   # edit fleet/.env: FLEET_ROLE=all, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY, SITE_URL
+   npm run fleet:local
    ```
    Leave it running in a terminal; the Fleet page shows five green rows.
 6. **Walk the flow** in section 2 using your own email as the customer. With `EMAIL_PROVIDER=log`, emails

@@ -15,7 +15,8 @@
     "stripe:setup": "tsx scripts/stripe-setup.ts",
     "test:db": "bash supabase/test/run.sh",
     "test:e2e": "playwright test",
-    "db:types": "echo 'Types are hand-maintained in lib/db/types.ts; keep migrations in sync.'"
+    "db:types": "echo 'Types are hand-maintained in lib/db/types.ts; keep migrations in sync.'",
+    "fleet:local": "node --env-file=fleet/.env node_modules/tsx/dist/cli.mjs fleet/worker.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",

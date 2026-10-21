@@ -16,6 +16,17 @@ just waits for a box to come back.
 Anything customer-facing goes through `approvals` unless the owner turned that kind's autopilot on
 (`/admin/autopilot`). Emails get an unsubscribe link from `lib/email`; texts go only to `sms_opt_in` customers.
 
+## Running from a laptop (Windows, Mac or Linux)
+
+Copy `fleet/env.example` to `fleet/.env` (git-ignored), fill in the values, then:
+
+```bash
+npm run fleet:local
+```
+
+That reads `fleet/.env` and works the same in PowerShell, cmd and bash. Set `FLEET_ROLE=all` in the file to
+run every role in one process.
+
 ## Running everything on one machine (laptop or single box)
 
 `FLEET_ROLE=all` runs all five roles in one process, each with its own heartbeat row on the Fleet panel
