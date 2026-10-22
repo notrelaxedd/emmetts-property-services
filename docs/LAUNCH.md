@@ -40,6 +40,8 @@ Everything below is on branch `claude/peaceful-brahmagupta-l7zdmt`; Vercel build
    Authentication → URL Configuration set Site URL = `https://www.eodlawns.com` and add these redirect URLs:
    `https://www.eodlawns.com/api/auth/callback`, `https://*-notrelaxed11-3656s-projects.vercel.app/api/auth/callback`
    (previews), `http://localhost:3000/api/auth/callback`. Details: `supabase/README.md`.
+   Then load the branded invite / sign-in / password emails: `SUPABASE_ACCESS_TOKEN=sbp_… npm run supabase:emails`
+   (or paste `supabase/templates/*.html` into Authentication → Emails; see "Auth emails" in `supabase/README.md`).
 2. **Vercel** → Project → Settings → Environment Variables. The form accepts a pasted `.env` block: paste the
    block below for **all environments** (Production, Preview, Development), then fill in the four secrets, then
    redeploy. (The anon key is public by design; RLS does the gating. The service-role key is not.)

@@ -91,6 +91,42 @@ After applying:
    filters rows itself (owner: all; crew: only jobs they're assigned to; anon:
    nothing).
 
+## Auth emails (invite, sign-in link, password reset, …)
+
+Supabase sends the crew invite, magic-link, password-reset and change-email emails itself. The branded
+versions live in `templates/`, one HTML file per email, styled like the app's own customer emails:
+
+| File | Dashboard template | Subject |
+| --- | --- | --- |
+| `invite.html` | Invite user | You're invited to the Emmett's crew app |
+| `magic_link.html` | Magic link | Your sign-in link for Emmett's Property Services |
+| `recovery.html` | Reset password | Reset your Emmett's Property Services password |
+| `email_change.html` | Change email address | Confirm your new email address |
+| `confirmation.html` | Confirm sign up | Confirm your email address (sign-ups are off, so rarely sent) |
+| `reauthentication.html` | Reauthentication | `{{ .Token }} is your verification code` |
+| `password_changed_notification.html` | Password changed (security notification) | Your Emmett's Property Services password was changed |
+
+The subjects and the file list are in `lib/auth/email-templates.ts`; `npm test` checks every template has the
+variables it needs (`{{ .ConfirmationURL }}`, `{{ .Token }}`, …). Links use `{{ .ConfirmationURL }}`, so the
+existing `/api/auth/callback` → `/auth/finish` flow and the redirect-URL allow list work unchanged.
+
+**Apply them to the hosted project** (re-run after editing a template):
+
+```bash
+SUPABASE_ACCESS_TOKEN=sbp_… npm run supabase:emails -- --project-ref xqeiprybuimewxkpffay
+npm run supabase:emails -- --dry-run     # check the templates without calling the API
+```
+
+The token is a personal access token from <https://supabase.com/dashboard/account/tokens> (not the
+service-role key); don't put it in Vercel or `.env.local`. The script sets every subject and body and turns on
+the "password changed" notification. **Or by hand:** Dashboard → Authentication → Emails → Templates, pick each
+template, paste the subject from the table and the whole HTML file, and save; for the password-changed email,
+also switch the notification on.
+
+The built-in Supabase mailer is rate-limited and often lands in spam. Once the sending domain is decided, set
+up custom SMTP (Authentication → Emails → SMTP Settings) with the same provider as `EMAIL_PROVIDER`; the
+templates don't change. Turn off click tracking at that provider: it rewrites the links and breaks them.
+
 ## Local test harness
 
 `npm run test:db` runs `test/run.sh`, which:
