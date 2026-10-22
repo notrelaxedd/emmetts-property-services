@@ -17,7 +17,7 @@ const ONLINE_WINDOW_MS = 2 * 60 * 1000
 
 /** Sidebar numbers. Every query is guarded: missing env or tables render 0, never an error page. */
 async function loadSidebarData(): Promise<{ pendingCount: number; fleetSummary: FleetSummary }> {
-  const empty = { pendingCount: 0, fleetSummary: { online: 0, total: 0, aiSpend: 0 } }
+  const empty = { pendingCount: 0, fleetSummary: { online: 0, aiSpend: 0 } }
   try {
     const supabase = createSupabaseServerClient()
     if (!supabase) return empty
@@ -36,7 +36,6 @@ async function loadSidebarData(): Promise<{ pendingCount: number; fleetSummary: 
       pendingCount: pending.error ? 0 : (pending.count ?? 0),
       fleetSummary: {
         online,
-        total: rows.length,
         aiSpend: spend.error ? 0 : Number(spend.data ?? 0) || 0,
       },
     }

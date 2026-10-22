@@ -76,7 +76,8 @@ export default async function FleetPage() {
   } catch (e) {
     error = e instanceof Error ? e.message : String(e)
   }
-  const online = data?.workers.filter((w) => w.last_heartbeat && now - Date.parse(w.last_heartbeat) < ONLINE_MS).length ?? 0
+  // Offline workers are not listed: a box that stops heartbeating drops off (the host also deletes its row).
+  const workers = data?.workers.filter((w) => w.last_heartbeat && now - Date.parse(w.last_heartbeat) < ONLINE_MS) ?? []
 
   return (
     <div className="space-y-5">
@@ -86,7 +87,7 @@ export default async function FleetPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Stat label="Workers online" value={`${online}/${data.workers.length}`} deltaTone={online === data.workers.length ? "up" : "down"} />
+            <Stat label="Workers online" value={workers.length} deltaTone={workers.length ? "up" : "down"} />
             <Stat label="AI spend this month" value={data.aiSpend === null ? "—" : usd(data.aiSpend)} />
             <Stat label="Queued / running" value={`${data.byStatus.queued} / ${data.byStatus.running}`} />
             <Stat label="Failed tasks" value={data.byStatus.failed} deltaTone={data.byStatus.failed ? "down" : "neutral"} />
@@ -96,9 +97,13 @@ export default async function FleetPage() {
             <CardHeader>
               <CardTitle>Workers</CardTitle>
             </CardHeader>
-            <CardContent className={data.workers.length ? "p-0 pb-2" : undefined}>
-              {data.workers.length === 0 ? (
-                <EmptyState icon={Cpu} title="No workers have checked in" description="Workers appear after their first heartbeat (see fleet/README.md)." />
+            <CardContent className={workers.length ? "p-0 pb-2" : undefined}>
+              {workers.length === 0 ? (
+                <EmptyState
+                  icon={Cpu}
+                  title="No workers online"
+                  description="Workers appear while they are heartbeating and drop off after 2 minutes of silence (see fleet/README.md)."
+                />
               ) : (
                 <Table>
                   <TableHeader>
@@ -114,8 +119,7 @@ export default async function FleetPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.workers.map((w) => {
-                      const isOnline = !!w.last_heartbeat && now - Date.parse(w.last_heartbeat) < ONLINE_MS
+                    {workers.map((w) => {
                       const hot = w.temp_c !== null && Number(w.temp_c) >= 75
                       return (
                         <TableRow key={w.id}>
@@ -124,7 +128,7 @@ export default async function FleetPage() {
                             <p className="text-xs text-ink-muted">{w.role}</p>
                           </TableCell>
                           <TableCell>
-                            <Badge variant={isOnline ? "success" : "destructive"}>{isOnline ? "Online" : "Offline"}</Badge>
+                            <Badge variant="success">Online</Badge>
                             <p className="mt-0.5 text-xs text-ink-muted">{ago(w.last_heartbeat, now)}</p>
                           </TableCell>
                           <TableCell className="text-right tabular-nums">{pct(w.cpu)}</TableCell>
