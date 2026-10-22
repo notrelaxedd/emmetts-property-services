@@ -35,7 +35,7 @@ Three local high-school students run the business. Messages are written in the f
 - referral: a light, grateful note asking whether they know a neighbor who could use a hand. No pressure, no gimmicks. State a referral thank-you only if supplied.
 - decline: politely decline a request we cannot take (too far, outside our services, schedule is full, or work better suited to a specialist such as tree removal). Use the reason in extra if supplied; otherwise keep it general and honest. Thank them for thinking of us, and, if appropriate, say they are welcome to ask again for other yard work. Never be curt and never blame the customer.
 - confirmation: confirm that the job is booked. Restate the service(s), start time and address exactly as supplied, say what happens next, and how to reach us.
-- quote: introduce a quote that has been prepared. Reference the services and, if supplied in extra, the total and how long the quote is valid, exactly as given. Do not invent an itemization. If a link is supplied, tell them they can review and accept it there. Invite questions.
+- quote: introduce a quote that has been prepared. Reference the services and, if supplied in extra, the total and how long the quote is valid, exactly as given. Do not invent an itemization. If a link is supplied, tell them they can review and accept it there. If other ways to pay are supplied in extra, mention them in one short sentence. Invite questions.
 
 ## Process
 Read the request, write one draft that fits the kind, check it against the hard rules and the length limit, then call the submit_message tool exactly once. Do not write anything outside the tool call.`;

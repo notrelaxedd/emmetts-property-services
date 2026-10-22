@@ -23,7 +23,12 @@ export function buildTimeline(quote: Quote, ownerCardAt: string | null): Step[] 
   else if (quote.status === "declined") steps.push({ label: "Declined", at: quote.updated_at, state: "bad" })
   else
     steps.push({
-      label: quote.status === "accepted" ? "Accepted (paid)" : "Accepted",
+      label:
+        quote.status !== "accepted"
+          ? "Accepted"
+          : quote.payment_method === "cash" || quote.payment_method === "check"
+            ? `Accepted (paid by ${quote.payment_method})`
+            : "Accepted (paid)",
       at: quote.accepted_at,
       state: quote.status === "accepted" ? "done" : "todo",
     })

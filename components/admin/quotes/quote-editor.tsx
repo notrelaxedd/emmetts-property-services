@@ -2,8 +2,15 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Calculator, FileText, MapPin, Plus, RotateCcw, Save, Send, Trash2 } from "lucide-react"
-import { reviseQuote, saveQuote, sendQuote, sendQuoteAsInvoice, type SaveQuoteInput } from "@/app/admin/actions/quotes"
+import { Banknote, Calculator, FileText, MapPin, Plus, RotateCcw, Save, Send, Trash2 } from "lucide-react"
+import {
+  recordCashOrCheckPayment,
+  reviseQuote,
+  saveQuote,
+  sendQuote,
+  sendQuoteAsInvoice,
+  type SaveQuoteInput,
+} from "@/app/admin/actions/quotes"
 import { ConfirmDialog } from "@/components/admin/inbox/confirm-dialog"
 import { money } from "@/components/admin/inbox/format"
 import { ItemStatusBadge } from "@/components/admin/inbox/items-table"
@@ -176,6 +183,20 @@ export function QuoteEditor({
   const [invoiceDays, setInvoiceDays] = React.useState(invoiceDaysDefault)
   const hasInvoice = quote.status === "sent" && !!quote.stripe_invoice_url
   const plusTax = taxEnabled ? " plus sales tax" : ""
+
+  // Cash / check: the customer paid in person. No email needed, and an expired quote can still be paid.
+  const canPayOffline = quote.status !== "accepted" && quote.status !== "declined"
+  const offlineBlocker = dirty
+    ? "Save your changes first."
+    : needsOwner
+      ? "Price, refer or decline the custom item first."
+      : !(quote.price_total > 0)
+        ? "Nothing is priced yet."
+        : null
+  const [payMethod, setPayMethod] = React.useState<"cash" | "check">("check")
+  const [payAmount, setPayAmount] = React.useState(quote.price_total)
+  const [checkNumber, setCheckNumber] = React.useState("")
+  const payIds = { method: React.useId(), check: React.useId() }
 
   return (
     <div className="grid gap-4 2xl:grid-cols-[20rem_1fr]">
@@ -495,6 +516,59 @@ export function QuoteEditor({
               onChange={(v) => setInvoiceDays(Math.round(v))}
             />
           </ConfirmDialog>
+          {canPayOffline ? (
+            <ConfirmDialog
+              triggerVariant="outline"
+              trigger={
+                <>
+                  <Banknote aria-hidden="true" /> Record cash / check
+                </>
+              }
+              disabled={pending || !!offlineBlocker}
+              title="Record a cash or check payment?"
+              description={
+                <>
+                  Use this when the customer paid you in person. It accepts the quote with no card fee, books the job for
+                  scheduling and closes any Stripe payment link or invoice they have.
+                  {taxEnabled ? " Stripe doesn't collect sales tax on cash or check, so account for it yourself." : ""}
+                </>
+              }
+              confirmLabel="Record payment"
+              confirmDisabled={!(payAmount > 0)}
+              onConfirm={async () => {
+                const res = await run(() =>
+                  recordCashOrCheckPayment(quote.id, {
+                    method: payMethod,
+                    amount: payAmount,
+                    check_number: payMethod === "check" && checkNumber.trim() ? checkNumber.trim() : null,
+                  }),
+                )
+                return res.ok
+              }}
+            >
+              <div className="grid gap-3">
+                <div className="grid gap-1.5">
+                  <Label htmlFor={payIds.method}>Paid by</Label>
+                  <NativeSelect id={payIds.method} value={payMethod} onChange={(e) => setPayMethod(e.target.value as "cash" | "check")}>
+                    <option value="check">Check</option>
+                    <option value="cash">Cash</option>
+                  </NativeSelect>
+                </div>
+                {payMethod === "check" ? (
+                  <div className="grid gap-1.5">
+                    <Label htmlFor={payIds.check}>Check number (optional)</Label>
+                    <Input id={payIds.check} maxLength={40} value={checkNumber} onChange={(e) => setCheckNumber(e.target.value)} />
+                  </div>
+                ) : null}
+                <NumberStepper label="Amount received" prefix="$" min={0} step={5} value={payAmount} onChange={setPayAmount} />
+                {payAmount > 0 && Math.abs(payAmount - quote.price_total) >= 0.01 ? (
+                  <p className="text-xs text-amber-900">
+                    The quote total is {money(quote.price_total)}. The difference is noted on the quote.
+                  </p>
+                ) : null}
+              </div>
+            </ConfirmDialog>
+          ) : null}
           {quote.status === "sent" ? (
             <ConfirmDialog
               triggerVariant="outline"

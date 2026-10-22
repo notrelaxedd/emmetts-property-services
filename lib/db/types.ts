@@ -13,6 +13,8 @@
 export type Role = "owner" | "crew";
 export type LeadStatus = "new" | "quoting" | "quoted" | "won" | "lost" | "spam";
 export type QuoteStatus = "draft" | "needs_owner" | "sent" | "accepted" | "expired" | "declined";
+/** How a quote was paid: Stripe (Checkout or invoice), or cash / check recorded by the owner. */
+export type PaymentMethod = "stripe" | "cash" | "check";
 export type QuoteItemStatus = "auto" | "needs_owner" | "priced" | "referred" | "declined";
 export type JobStatus =
   | "unscheduled"
@@ -197,6 +199,8 @@ export type Quote = Base & {
   stripe_invoice_id: string | null;
   /** Hosted invoice page while that invoice is the live way to pay; cleared when it is voided by us. */
   stripe_invoice_url: string | null;
+  /** Null until paid. Cash / check payments carry no card fee and can't be refunded from the app. */
+  payment_method: PaymentMethod | null;
   sent_at: string | null;
   accepted_at: string | null;
   expires_at: string | null;

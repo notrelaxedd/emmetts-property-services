@@ -11,6 +11,7 @@ import { requireOwner } from "@/lib/auth/session"
 import type { QuoteItem, QuoteItemStatus } from "@/lib/db/types"
 import { createApproval, decideApproval } from "@/lib/ops/approvals"
 import { quoteApprovalInput, quoteEditLockReason } from "@/lib/ops/handlers/custom_item"
+import { OFFLINE_METHODS, recordOfflinePayment } from "@/lib/ops/payments"
 import { getSettings } from "@/lib/ops/settings"
 import { check } from "@/lib/ops/types"
 import { fee, moneyRound, priceQuote } from "@/lib/pricing"
@@ -258,6 +259,44 @@ export async function reviseQuote(quoteId: string): Promise<ActionResult> {
         ? "The open invoice is voided. Edit the quote, then send it again."
         : "The old payment link is closed. Edit the quote, then send it again.",
     }
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) }
+  }
+}
+
+const OfflinePaymentSchema = z.object({
+  method: z.enum(OFFLINE_METHODS),
+  amount: z.number().positive("Enter the amount received").max(1_000_000),
+  check_number: z.string().trim().max(40).nullable(),
+})
+
+export type OfflinePaymentInput = z.infer<typeof OfflinePaymentSchema>
+
+/**
+ * "Record cash / check": the customer paid in person. Closes any open Checkout link / Stripe invoice
+ * (refuses if one was already paid), accepts the quote with no card fee, wins the lead and books the job,
+ * the same as a Stripe payment (lib/ops/payments.ts).
+ */
+export async function recordCashOrCheckPayment(quoteId: string, input: OfflinePaymentInput): Promise<ActionResult> {
+  const session = await requireOwner()
+  try {
+    const id = Id.parse(quoteId)
+    const parsed = OfflinePaymentSchema.safeParse(input)
+    if (!parsed.success) return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; ") }
+    const db = requireSupabaseAdmin()
+    const items = check(await db.from("quote_items").select("status,price").eq("quote_id", id), "offlinePayment(items)") ?? []
+    if (items.some((i) => i.status === "needs_owner")) return { ok: false, error: "Price, refer or decline the custom item first." }
+    if (!items.some((i) => (i.status === "auto" || i.status === "priced") && (i.price ?? 0) > 0)) {
+      return { ok: false, error: "Nothing on this quote has a price yet." }
+    }
+    await recordOfflinePayment(db, id, {
+      method: parsed.data.method,
+      amount: parsed.data.amount,
+      checkNumber: parsed.data.method === "check" ? parsed.data.check_number : null,
+      recordedBy: actorOf(session),
+    })
+    revalidateQuote(id)
+    return { ok: true, message: `${parsed.data.method === "cash" ? "Cash" : "Check"} payment recorded; the job is ready to schedule` }
   } catch (e) {
     return { ok: false, error: errorMessage(e) }
   }

@@ -8,8 +8,9 @@
  *
  * Events (keep in sync with WEBHOOK_EVENTS in ./setup.ts, which registers the endpoint):
  *  - checkout.session.completed / .async_payment_succeeded, invoice.paid → accept the quote, store the
- *    PaymentIntent, win the lead, create the job; flag a different amount or a second payment; note the
- *    sales tax collected (Stripe Tax).
+ *    PaymentIntent, win the lead, create the job; flag a different amount or a second payment (including
+ *    one for a quote the owner already recorded as paid by cash / check); note the sales tax collected
+ *    (Stripe Tax).
  *  - checkout.session.expired → drop the stale Checkout URL (the /quote/pay link mints a new one).
  *  - invoice.payment_failed / .voided / .marked_uncollectible → note on the quote (void → declined).
  *  - charge.refunded → note on the quote.
@@ -223,10 +224,14 @@ async function acceptPayment(db: Db, ctx: DispatchCtx, p: PaidQuote): Promise<vo
   const quote = await getQuote(db, quoteId);
   if (!quote) throw new Error(`${p.source}: quote ${quoteId} not found`);
 
-  // A second, different payment for a quote that is already paid: keep the first payment on the quote
-  // (refunds and the job hang off it) and make the owner refund this one by hand.
-  if (quote.status === "accepted" && quote.stripe_payment_intent_id && pi && quote.stripe_payment_intent_id !== pi) {
-    const note = `WARNING: second payment ${pi}${paid !== null ? ` (${usd(paid)})` : ""} received for this already-paid quote (${p.source}) — refund manually in Stripe.`;
+  // A second, different payment for a quote that is already paid (by Stripe, or by cash / check the owner
+  // recorded): keep the first payment on the quote (refunds and the job hang off it) and make the owner
+  // refund this one by hand.
+  const paidOffline = quote.status === "accepted" && (quote.payment_method === "cash" || quote.payment_method === "check");
+  const secondStripe = quote.status === "accepted" && !!quote.stripe_payment_intent_id && quote.stripe_payment_intent_id !== pi;
+  if (pi && (paidOffline || secondStripe)) {
+    const how = paidOffline ? `; it was paid by ${quote.payment_method}` : "";
+    const note = `WARNING: second payment ${pi}${paid !== null ? ` (${usd(paid)})` : ""} received for this already-paid quote (${p.source}${how}) — refund manually in Stripe.`;
     if (!quote.rationale?.includes(pi)) {
       check(
         await db.from("quotes").update({ rationale: appendNote(quote.rationale, note) }).eq("id", quoteId),
@@ -238,7 +243,7 @@ async function acceptPayment(db: Db, ctx: DispatchCtx, p: PaidQuote): Promise<vo
       quoteId,
       title: "Second payment received — refund manually",
       summary: note,
-      payload: { alert: "double_payment", payment_intent: pi, first_payment_intent: quote.stripe_payment_intent_id, ...p.ref, amount_paid: paid },
+      payload: { alert: "double_payment", payment_intent: pi, first_payment_intent: quote.stripe_payment_intent_id, first_payment_method: quote.payment_method, ...p.ref, amount_paid: paid },
     });
     return;
   }
@@ -265,6 +270,7 @@ async function acceptPayment(db: Db, ctx: DispatchCtx, p: PaidQuote): Promise<vo
         status: "accepted",
         accepted_at: quote.accepted_at ?? now,
         stripe_payment_intent_id: pi ?? quote.stripe_payment_intent_id,
+        payment_method: quote.payment_method ?? "stripe",
         ...(rationale !== quote.rationale ? { rationale } : {}),
       })
       .eq("id", quoteId),

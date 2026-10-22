@@ -12,6 +12,8 @@ import type { Db } from "../types";
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 const taxNote = () => (taxConfig().enabled ? " + sales tax" : "");
+/** Told to every customer: the owner records these on the quote page (lib/ops/payments.ts). */
+export const CASH_OR_CHECK_LINE = "Rather pay by cash or check? Just reply to this email or give us a call and we'll set it up.";
 
 /** Billed items (priced + positive price), in display order. */
 function billedItems(items: QuoteItem[]): QuoteItem[] {
@@ -41,6 +43,7 @@ export function fallbackQuoteEmail(input: {
     `Total: ${money(input.total)}${input.plusTax ? " plus Ohio sales tax (calculated at checkout)" : ""}`,
     "",
     `To accept, pay securely online by card: ${input.checkoutUrl}`,
+    CASH_OR_CHECK_LINE,
     `This quote is good for ${input.validDays} days. Once payment comes through we'll reach out to schedule your job.`,
     "",
     `Questions? Call us at ${siteConfig.phone.display}.`,
@@ -182,10 +185,12 @@ async function draftQuoteEmail(
         checkout_url: checkoutUrl,
         price_total: `${money(quote.price_total)}${taxConfig().enabled ? " plus sales tax (calculated at checkout)" : ""}`,
         items: priced.map((i) => `${i.description}: ${money(i.price)}`).join("; "),
+        other_ways_to_pay: CASH_OR_CHECK_LINE,
       },
     });
-    // The link is the whole point: never send a quote email without it.
-    const body = draft.body.includes(checkoutUrl) ? draft.body : `${draft.body}\n\nPay securely online: ${checkoutUrl}`;
+    // The link is the whole point: never send a quote email without it. Same for the cash / check option.
+    let body = draft.body.includes(checkoutUrl) ? draft.body : `${draft.body}\n\nPay securely online: ${checkoutUrl}`;
+    if (!/\bcash\b/i.test(body)) body = `${body}\n\n${CASH_OR_CHECK_LINE}`;
     return { subject: draft.subject, body };
   } catch (e) {
     console.warn("[approvals] AI quote draft failed, using the plain-text template:", e instanceof Error ? e.message : e);
