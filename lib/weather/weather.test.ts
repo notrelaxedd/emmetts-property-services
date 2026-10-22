@@ -95,4 +95,15 @@ describe("getForecast", () => {
     const f = vi.fn(async () => new Response("nope", { status: 500 }));
     await expect(getForecast({ lat: 1, lng: 2 }, { fetchImpl: f as unknown as typeof fetch })).rejects.toThrow(/500/);
   });
+  it("names the point and the NWS detail when /points fails", async () => {
+    const f = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ title: "Data Unavailable For Requested Point", detail: "Unable to provide data for requested point 41.4756,81.8396" }), {
+          status: 404,
+        }),
+    );
+    await expect(getForecast({ lat: 41.4756, lng: 81.8396 }, { fetchImpl: f as unknown as typeof fetch })).rejects.toThrow(
+      "NWS points 404 for 41.4756,81.8396: Unable to provide data for requested point 41.4756,81.8396",
+    );
+  });
 });

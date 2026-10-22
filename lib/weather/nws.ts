@@ -16,10 +16,18 @@ export async function getForecast(
     Accept: "application/geo+json",
   };
   // NWS wants at most 4 decimal places in /points.
-  const url = `https://api.weather.gov/points/${point.lat.toFixed(4)},${point.lng.toFixed(4)}`;
+  const where = `${point.lat.toFixed(4)},${point.lng.toFixed(4)}`;
+  const url = `https://api.weather.gov/points/${where}`;
 
   const pointRes = await f(url, { headers });
-  if (!pointRes.ok) throw new Error(`NWS points ${pointRes.status}`);
+  if (!pointRes.ok) {
+    // NWS explains itself in a problem+json `detail` (e.g. a point outside the US, or a bad User-Agent).
+    const detail = await pointRes
+      .json()
+      .then((j: { detail?: string; title?: string }) => j.detail ?? j.title ?? "")
+      .catch(() => "");
+    throw new Error(`NWS points ${pointRes.status} for ${where}${detail ? `: ${String(detail).slice(0, 200)}` : ""}`);
+  }
   const pointJson = (await pointRes.json()) as { properties?: { forecast?: string } };
   const forecastUrl = pointJson.properties?.forecast;
   if (!forecastUrl) throw new Error("NWS points response had no properties.forecast");

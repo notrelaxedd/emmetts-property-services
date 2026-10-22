@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/admin/inbox/confirm-dialog"
 import { money } from "@/components/admin/inbox/format"
 import { ItemStatusBadge } from "@/components/admin/inbox/items-table"
 import { useActionRunner } from "@/components/admin/inbox/use-action"
+import { PropertyMap } from "@/components/admin/quotes/property-map"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -27,6 +28,7 @@ export type EditorProperty = {
   lng: number | null
   lot_acres: number | null
   tree_cover: TreeCover | null
+  parcel_id: string | null
 }
 
 type EditItem = {
@@ -186,13 +188,7 @@ export function QuoteEditor({
           <CardDescription>{property.address ?? "No address on file"}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div
-            className="flex aspect-[4/3] items-center justify-center rounded-md border border-dashed border-ink/25 bg-gray-light/60 p-4 text-center text-sm text-ink-muted"
-            role="img"
-            aria-label="Map placeholder"
-          >
-            Map / parcel: TODO [PARCEL DATA SOURCE]
-          </div>
+          <PropertyMap lat={property.lat} lng={property.lng} parcelId={property.parcel_id} />
           <div className="grid grid-cols-2 gap-2">
             <div className="grid gap-1.5">
               <Label htmlFor={ids.lat}>Lat</Label>

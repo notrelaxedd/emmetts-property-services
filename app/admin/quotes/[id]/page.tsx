@@ -95,6 +95,7 @@ export default async function QuotePage({ params }: { params: { id: string } }) 
             lng: customer?.lng ?? null,
             lot_acres: customer?.lot_acres ?? null,
             tree_cover: customer?.tree_cover ?? null,
+            parcel_id: customer?.parcel_id ?? null,
           }}
           settings={{
             default_wage: settings.default_wage,
