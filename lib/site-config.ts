@@ -48,13 +48,13 @@ export const siteConfig = {
   },
 
   serviceArea: {
-    primary: "Rocky River",
+    primary: "Northeast Ohio",
     region: "OH",
     regionName: "Ohio",
-    summary: "Rocky River, Ohio and surrounding west-side Cleveland suburbs",
+    summary: "Northeast Ohio and surrounding west-side Cleveland suburbs",
     // TODO: list the suburbs you actually serve (e.g. Bay Village, Westlake, Fairview Park, Lakewood).
     // They're used in the footer and in search-engine data, so only add places you'll really drive to.
-    cities: ["Rocky River"] as string[],
+    cities: [] as string[],
   },
 
   /** Timezone used to decide what "today" means for the preferred-date field. */

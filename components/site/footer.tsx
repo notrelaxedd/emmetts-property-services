@@ -96,7 +96,7 @@ export function SiteFooter() {
           <p>
             &copy; {year} {siteConfig.name}
           </p>
-          <p>{siteConfig.altName} · Rocky River, Ohio</p>
+          <p>{siteConfig.altName} · Northeast Ohio</p>
         </div>
       </div>
     </footer>

@@ -46,7 +46,7 @@ export const metadata: Metadata = {
   formatDetection: { telephone: false },
   other: {
     "geo.region": "US-OH",
-    "geo.placename": "Rocky River",
+    "geo.placename": "Northeast Ohio",
   },
 };
 
