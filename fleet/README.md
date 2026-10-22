@@ -134,11 +134,12 @@ Some boxes boot from 16 GB flash drives, so the setup keeps disk writes small: l
 is no local database, no transpile cache, and the npm cache is cleaned.
 
 ```bash
-# 1. Node 20 (NodeSource) + git
+# 1. Node 22 (NodeSource) + git. supabase-js needs Node 22's native WebSocket; on Node 20 the worker exits
+#    at startup with "FATAL Node.js detected but native WebSocket not found".
 sudo apt update && sudo apt install -y ca-certificates curl git
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs
-node -v   # v20.x
+node -v   # v22.x
 
 # 2. Keep the journal small (flash drives)
 sudo mkdir -p /etc/systemd/journald.conf.d

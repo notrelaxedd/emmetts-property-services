@@ -17,7 +17,7 @@ The marketing site is still static and phone-first. On top of it sits an **opera
 | `lib/pricing.ts`, `lib/scheduler/` | Pure, unit-tested pricing and greedy scheduling. |
 | `lib/ai/claude.ts` | The only place that calls the Anthropic API: ad drafts, customer messages, custom-request summaries, tree-cover estimates. Every call is logged to `ai_usage` and capped monthly. |
 | `supabase/migrations/` | Schema, RLS (crew never see prices or customer contact details), task queue (`claim_task` with `SKIP LOCKED`), seed. |
-| `fleet/` | One Node 20 worker binary for the Debian boxes (`ads`, `quotes`, `scheduler`, `followup`, `host`) + systemd units. Workers talk only to Supabase. |
+| `fleet/` | One Node 22 worker binary for the Debian boxes (`ads`, `quotes`, `scheduler`, `followup`, `host`) + systemd units. Workers talk only to Supabase. |
 
 Everything AI-written or customer-facing lands in the approval inbox first; autopilot rules are all off by default.
 
