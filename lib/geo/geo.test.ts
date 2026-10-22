@@ -222,6 +222,10 @@ describe("lookupParcel", () => {
 });
 
 describe("parcelFromAttributes", () => {
+  it("reads the Cuyahoga Parcel Fabric Taxparcels fields (parcel_id, parcel_acreage)", () => {
+    const attrs = { ObjectID: 7, parcel_id: "30104011", parentpin: "301-04-011", parcel_lot_size: "60X150", parcel_acreage: 0.2066, Shape__Area: 9000 };
+    expect(parcelFromAttributes(attrs, {})).toEqual({ parcel_id: "30104011", lot_acres: 0.207, source: "cuyahoga_gis" });
+  });
   it("auto-detects fields case-insensitively and converts square feet", () => {
     expect(parcelFromAttributes({ ParcelPin: " 301-01-001 ", Land_SqFt: 8712 }, {})).toEqual({
       parcel_id: "301-01-001",

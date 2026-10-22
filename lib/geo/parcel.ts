@@ -25,8 +25,10 @@ export async function lookupParcel(q: ParcelQuery, opts: { fetchImpl?: typeof fe
 // PARCEL_GIS_URL is the layer URL (".../FeatureServer/0" or ".../MapServer/0"); it is configured, not hard-coded,
 // because the county moves services between hosts. Field names are auto-detected from the attributes
 // (PARCEL_GIS_ID_FIELD / PARCEL_GIS_ACRES_FIELD / PARCEL_GIS_SQFT_FIELD override). Square feet / 43,560 = acres.
+// Cuyahoga: gis.cuyahogacounty.gov/server/rest/services/CCFO/Parcel_Fabric_Taxparcels/FeatureServer/0
+// (EPSG 102722, PIN in `parcel_id`, size in `parcel_acreage`; `Shape__Area` is in state-plane feet, unused).
 const ID_FIELDS = ["parcelpin", "parcel_pin", "parcel_id", "parcelid", "pin", "parcelnumb", "parcel_number"];
-const ACRE_FIELDS = ["calc_acres", "calcacres", "gis_acres", "acres", "acreage", "total_acres", "totalacres", "deeded_acres", "deededacres", "land_acres", "ll_gisacre"];
+const ACRE_FIELDS = ["parcel_acreage", "calc_acres", "calcacres", "gis_acres", "acres", "acreage", "total_acres", "totalacres", "deeded_acres", "deededacres", "land_acres", "ll_gisacre"];
 const SQFT_FIELDS = ["calc_sqft", "land_sqft", "landsqft", "sqft", "sq_ft", "square_feet", "area_sqft", "lot_sqft", "total_sqft"];
 const SQFT_PER_ACRE = 43_560;
 /** Fallback search radius when the point misses every parcel (a geocoded point on the street side). */

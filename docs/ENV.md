@@ -45,9 +45,15 @@ autocomplete) against the county's tax-parcel polygons. If the point misses ever
 it retries within 20 m and accepts the result only when exactly one parcel is that close. Anything else leaves the
 lot size for the owner. Failures are logged as `parcel lookup failed` and never block a quote.
 
-Cuyahoga County publishes its parcels on its GIS hub (`geospatial.gis.cuyahogacounty.gov`, Data → "Parcel Fabric
-Taxparcels"; the dataset's "View API resources" link shows the GeoService URL). Check a candidate from any machine
-with internet, using a Rocky River point:
+Cuyahoga County's layer (checked 2026-10-22: layer 0 "Parcel Fabric Taxparcels", PIN `parcel_id`, size
+`parcel_acreage`, both auto-detected):
+
+```
+PARCEL_GIS_URL=https://gis.cuyahogacounty.gov/server/rest/services/CCFO/Parcel_Fabric_Taxparcels/FeatureServer/0
+```
+
+If the county moves it, the service list is at `https://gis.cuyahogacounty.gov/server/rest/services?f=json`. Check a
+candidate from any machine with internet, using a Rocky River point:
 
 ```bash
 URL='https://…/FeatureServer/0'
