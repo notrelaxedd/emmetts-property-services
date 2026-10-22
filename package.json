@@ -13,6 +13,7 @@
     "fleet": "tsx fleet/worker.ts",
     "fleet:check": "tsc -p fleet/tsconfig.json --noEmit",
     "stripe:setup": "tsx scripts/stripe-setup.ts",
+    "supabase:emails": "tsx scripts/supabase-email-templates.ts",
     "test:db": "bash supabase/test/run.sh",
     "test:e2e": "playwright test",
     "db:types": "echo 'Types are hand-maintained in lib/db/types.ts; keep migrations in sync.'",
