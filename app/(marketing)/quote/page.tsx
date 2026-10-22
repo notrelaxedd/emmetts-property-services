@@ -38,8 +38,9 @@ export default async function QuotePage({ searchParams }: { searchParams: { serv
           <Headline as="h1" id="quote-title" lines={quote.headline} />
           <p className="mt-6 max-w-md text-lead text-ink-body">{quote.body}</p>
 
-          <h2 className="mt-10 font-display text-xl uppercase text-ink">{quote.steps.heading}</h2>
-          <ol className="mt-4 space-y-3">
+          {/* On phones this would push the form below the fold; the thanks page repeats it anyway. */}
+          <h2 className="mt-10 hidden font-display text-xl uppercase text-ink lg:block">{quote.steps.heading}</h2>
+          <ol className="mt-4 hidden space-y-3 lg:block">
             {quote.steps.items.map((item, i) => (
               <li key={item} className="flex items-start gap-3 font-medium text-ink-body">
                 <span

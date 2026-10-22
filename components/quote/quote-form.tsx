@@ -1,10 +1,11 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useFormState, useFormStatus } from "react-dom";
-import { AlertCircle, ArrowRight, Loader2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Check, Loader2, Plus } from "lucide-react";
 
 import { submitQuote } from "@/app/actions/quote";
+import { ServiceGlyph } from "@/components/site/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,9 +20,11 @@ import {
   photoError,
   quoteSchema,
   type PhotoType,
+  type QuoteField,
   type QuoteFieldErrors,
   type QuoteFormValues,
 } from "@/lib/quote-schema";
+import type { ServiceIcon } from "@/lib/services";
 import { siteConfig } from "@/lib/site-config";
 import { cn } from "@/lib/utils";
 import type { QuoteServiceOption } from "./services-data";
@@ -63,6 +66,32 @@ type PhotoRow = {
   path?: string;
   error?: string;
 };
+
+/**
+ * The form is split into short steps; these are the fields on each, so a validation error can send
+ * the customer back to the step it belongs to. Without JavaScript every step shows at once.
+ */
+const STEP_FIELDS: ReadonlyArray<readonly QuoteField[]> = [
+  ["services", "customRequest", "photos"],
+  ["street", "city", "state", "zip", "preferredDays"],
+  ["name", "phone", "email"],
+];
+const LAST_STEP = STEP_FIELDS.length - 1;
+
+/** With JavaScript off: hide the step chrome (progress, Back/Next) and show every step and the submit button. */
+const NO_JS_CSS =
+  "<style>[data-quote-js]{display:none!important}[data-quote-step]{display:grid!important}[data-quote-submit]{display:inline-flex!important}</style>";
+
+function firstStepWithError(errors: QuoteFieldErrors): number | null {
+  const i = STEP_FIELDS.findIndex((fields) => fields.some((f) => errors[f]));
+  return i === -1 ? null : i;
+}
+
+function pickErrors(errors: QuoteFieldErrors, fields: readonly QuoteField[]): QuoteFieldErrors {
+  const out: QuoteFieldErrors = {};
+  for (const f of fields) if (errors[f]) out[f] = errors[f];
+  return out;
+}
 
 /* ---------- small building blocks ---------- */
 
@@ -124,6 +153,8 @@ function CheckRow({
   invalid,
   describedBy,
   pill,
+  icon,
+  descriptionFrom,
 }: {
   name: string;
   value: string;
@@ -133,12 +164,16 @@ function CheckRow({
   invalid?: boolean;
   describedBy?: string;
   pill?: boolean;
+  icon?: ServiceIcon;
+  /** Hide the description on phones, where it would make the list long. */
+  descriptionFrom?: "sm";
 }) {
   return (
     <label
       className={cn(
         "flex cursor-pointer items-start gap-3 border bg-white text-ink transition-colors has-[:checked]:border-ink has-[:checked]:bg-brand-green/10 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-green-dark has-[:focus-visible]:ring-offset-2",
         pill ? "min-h-11 items-center rounded-full px-4 py-2" : "min-h-12 rounded-xl p-3.5",
+        descriptionFrom === "sm" && "items-center sm:items-start",
         invalid ? "border-destructive" : "border-input",
       )}
     >
@@ -149,12 +184,26 @@ function CheckRow({
         defaultChecked={defaultChecked}
         aria-invalid={invalid || undefined}
         aria-describedby={describedBy}
-        className={cn("size-5 shrink-0 accent-[#327213]", !pill && "mt-0.5")}
+        className={cn("size-5 shrink-0 accent-[#327213]", !pill && (descriptionFrom === "sm" ? "sm:mt-0.5" : "mt-0.5"))}
       />
       <span className="min-w-0">
         <span className="block font-semibold leading-snug">{title}</span>
-        {description && <span className="mt-0.5 block text-sm font-normal leading-snug text-ink-muted">{description}</span>}
+        {description && (
+          <span
+            className={cn(
+              "mt-0.5 text-sm font-normal leading-snug text-ink-muted",
+              descriptionFrom === "sm" ? "hidden sm:block" : "block",
+            )}
+          >
+            {description}
+          </span>
+        )}
       </span>
+      {icon && (
+        <span className="ml-auto flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-green/20 text-brand-green-dark">
+          <ServiceGlyph icon={icon} className="size-[1.125rem]" />
+        </span>
+      )}
     </label>
   );
 }
@@ -164,18 +213,23 @@ function Group({
   legend,
   hint,
   error,
+  sub,
   children,
 }: {
   id: string;
   legend: string;
   hint?: string;
   error?: string;
+  /** A secondary group within a step: smaller legend. */
+  sub?: boolean;
   children: ReactNode;
 }) {
   const describedBy = [hint ? `${id}-hint` : null, error ? `${id}-error` : null].filter(Boolean).join(" ") || undefined;
   return (
     <fieldset aria-describedby={describedBy} className="min-w-0">
-      <legend className="font-display text-xl uppercase leading-none text-ink">{legend}</legend>
+      <legend className={cn("font-display uppercase leading-none text-ink", sub ? "text-lg" : "text-2xl sm:text-[1.75rem]")}>
+        {legend}
+      </legend>
       {hint && (
         <p id={`${id}-hint`} className="mt-2 text-sm text-ink-muted">
           {hint}
@@ -187,11 +241,19 @@ function Group({
   );
 }
 
-function SubmitButton({ busy }: { busy: boolean }) {
+function SubmitButton({ busy, hidden }: { busy: boolean; hidden: boolean }) {
   const { pending } = useFormStatus();
   const working = pending || busy;
   return (
-    <Button type="submit" variant="cta" size="cta" className="w-full sm:w-auto" disabled={working} aria-disabled={working}>
+    <Button
+      type="submit"
+      variant="cta"
+      size="cta"
+      data-quote-submit
+      className={cn("w-full sm:w-auto", hidden && "hidden")}
+      disabled={working}
+      aria-disabled={working}
+    >
       {working ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
       {working ? copy.submitting : copy.submit}
       {working ? null : <ArrowRight aria-hidden="true" />}
@@ -207,8 +269,12 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
   const [photoMsg, setPhotoMsg] = useState<string | null>(null);
   const [photos, setPhotos] = useState<PhotoRow[]>([]);
   const [processing, setProcessing] = useState(false);
+  const [step, setStep] = useState(0);
+  // Focus moves after the render that shows the right step, so it's requested here and applied in an effect.
+  const [focusReq, setFocusReq] = useState<{ target: "step" | "invalid" | "banner"; n: number } | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
+  const progressRef = useRef<HTMLParagraphElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pickRef = useRef(0);
   const rowIdRef = useRef(0);
@@ -239,6 +305,15 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
   const errors: QuoteFieldErrors = { ...(clientErrors ?? serverState?.fieldErrors ?? {}) };
   if (photoMsg) errors.photos = photoMsg;
 
+  const requestFocus = (target: "step" | "invalid" | "banner") => setFocusReq((prev) => ({ target, n: (prev?.n ?? 0) + 1 }));
+
+  /** Shows the step holding the first error, if any, and focuses that field (or the banner). */
+  function showErrors(fieldErrors: QuoteFieldErrors, fallback: "invalid" | "banner") {
+    const s = firstStepWithError(fieldErrors);
+    if (s !== null) setStep(s);
+    requestFocus(fallback);
+  }
+
   // A fresh server response replaces any client-side errors and puts focus where the user needs it.
   useEffect(() => {
     if (!serverState) return;
@@ -247,17 +322,68 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
     // Photos already in storage stay valid after a failed submit; ones that travelled with the form
     // were wiped along with the remounted file input, so the banner asks for those again.
     setPhotos((prev) => prev.filter((p) => p.status === "done"));
-    const firstInvalid = formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]');
-    (firstInvalid ?? bannerRef.current)?.focus();
+    showErrors(serverState.fieldErrors, "banner");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nonce]);
 
   useEffect(() => {
-    if (!clientErrors) return;
-    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
-  }, [clientErrors]);
+    if (!focusReq) return;
+    const form = formRef.current;
+    if (focusReq.target === "step") {
+      progressRef.current?.focus({ preventScroll: true });
+      // Next sits at the bottom of the step; bring the top of the new one into view (clear of the sticky header).
+      const headerOffset = Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+      if (form && form.getBoundingClientRect().top < headerOffset) {
+        const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        form.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+      }
+      return;
+    }
+    const invalid = form?.querySelector<HTMLElement>('[data-quote-step]:not(.hidden) [aria-invalid="true"]');
+    (invalid ?? (focusReq.target === "banner" ? bannerRef.current : null))?.focus();
+  }, [focusReq]);
+
+  /** Validates the fields on this step and moves on, or shows what needs fixing. */
+  function goNext() {
+    const form = formRef.current;
+    if (!form || step === LAST_STEP) return;
+    const { raw } = parseQuoteFormData(new FormData(form));
+    const result = quoteSchema.safeParse(raw);
+    const all = result.success ? {} : fieldErrorsFrom(result.error);
+    const here = pickErrors(all, STEP_FIELDS[step]);
+    // Errors further on that are already showing (from the server) stay until they're fixed.
+    const later = STEP_FIELDS.slice(step + 1).flat().filter((f) => errors[f]);
+    const keep = pickErrors(all, later);
+    if (Object.keys(here).length > 0) {
+      setClientErrors({ ...keep, ...here });
+      requestFocus("invalid");
+      return;
+    }
+    setClientErrors(keep);
+    setStep(step + 1);
+    requestFocus("step");
+  }
+
+  function goBack() {
+    if (step === 0) return;
+    setStep(step - 1);
+    requestFocus("step");
+  }
+
+  // Enter in a field on an earlier step moves on rather than submitting.
+  function onKeyDown(e: KeyboardEvent<HTMLFormElement>) {
+    if (e.key !== "Enter" || e.defaultPrevented || e.nativeEvent.isComposing || step === LAST_STEP) return;
+    if (!(e.target instanceof HTMLInputElement)) return;
+    e.preventDefault();
+    goNext();
+  }
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
+    if (step < LAST_STEP) {
+      e.preventDefault();
+      goNext();
+      return;
+    }
     if (processing) {
       e.preventDefault();
       return;
@@ -277,7 +403,9 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
     const result = quoteSchema.safeParse(raw);
     if (!result.success) {
       e.preventDefault();
-      setClientErrors(fieldErrorsFrom(result.error));
+      const fieldErrors = fieldErrorsFrom(result.error);
+      setClientErrors(fieldErrors);
+      showErrors(fieldErrors, "invalid");
       return;
     }
     setClientErrors(null);
@@ -389,15 +517,45 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
       : serverState.message
     : null;
 
+  const steps = copy.steps;
+  const stepProps = (i: number) => ({
+    "data-quote-step": true,
+    className: cn("gap-8", i === step ? "grid" : "hidden"),
+  });
+
   return (
     <form
       ref={formRef}
       action={formAction}
       onSubmit={onSubmit}
+      onKeyDown={onKeyDown}
       noValidate
       aria-label="Quote request"
       className="relative grid gap-8"
     >
+      <noscript dangerouslySetInnerHTML={{ __html: NO_JS_CSS }} />
+
+      <div data-quote-js className="grid gap-3">
+        <p ref={progressRef} tabIndex={-1} className="text-sm font-semibold uppercase tracking-wide text-brand-green-dark outline-none">
+          {copy.progress(step + 1, steps.length)}
+          <span className="sr-only">: {steps[step].title}</span>
+        </p>
+        <ol aria-label="Progress" className="grid grid-cols-3 gap-2">
+          {steps.map((s, i) => (
+            <li key={s.label} aria-current={i === step ? "step" : undefined} className="grid gap-2">
+              <span
+                aria-hidden="true"
+                className={cn("h-1.5 rounded-full transition-colors duration-300", i <= step ? "bg-brand-green" : "bg-gray-light")}
+              />
+              <span className={cn("flex items-center gap-1 text-xs font-semibold sm:text-sm", i <= step ? "text-ink" : "text-ink-muted")}>
+                {i < step && <Check className="size-3.5 text-brand-green-dark" aria-hidden="true" strokeWidth={3} />}
+                {s.label}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </div>
+
       {bannerMessage && (
         <div
           ref={bannerRef}
@@ -426,245 +584,284 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
         <input key={path} type="hidden" name="photo_paths" value={path} />
       ))}
 
-      {/* Remounting on each server response re-seeds the defaults from what the user typed. */}
+      {/* Remounting on each server response re-seeds the defaults from what the user typed. Inactive
+          steps are only hidden, so their fields are still submitted. */}
       <div key={nonce} className="grid gap-8">
-        <Group id="q-details" legend={copy.legend}>
-          <div className="grid gap-5 sm:grid-cols-2">
-            <Field id="q-name" label={copy.name.label} error={errors.name} className="sm:col-span-2">
-              {(a) => (
-                <Input
-                  {...a}
-                  name="name"
-                  autoComplete="name"
-                  enterKeyHint="next"
-                  required
-                  defaultValue={values.name}
-                  placeholder={copy.name.placeholder}
-                  className={inputClass}
+        <div {...stepProps(0)}>
+          <Group id="q-services" legend={steps[0].title} hint={copy.services.hint} error={errors.services}>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {services.map((s) => (
+                <CheckRow
+                  key={s.slug}
+                  name="services"
+                  value={s.slug}
+                  defaultChecked={values.services.includes(s.slug)}
+                  title={s.name}
+                  description={s.blurb}
+                  descriptionFrom="sm"
+                  icon={s.icon}
+                  invalid={Boolean(errors.services)}
+                  describedBy={errors.services ? "q-services-error" : undefined}
                 />
+              ))}
+            </div>
+
+            <div className="mt-5 grid gap-5">
+              {/* Collapsed until wanted; opens itself when there's something in it or the list needs it. */}
+              <details
+                open={Boolean(values.customRequest || errors.customRequest || errors.services)}
+                className="group rounded-xl border border-dashed border-input open:border-solid open:p-4"
+              >
+                <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 rounded-xl px-4 font-semibold text-ink group-open:mb-3 group-open:min-h-0 group-open:px-0 [&::-webkit-details-marker]:hidden">
+                  <Plus className="size-5 text-brand-green-dark transition-transform group-open:rotate-45" aria-hidden="true" strokeWidth={2.5} />
+                  {copy.custom.toggle}
+                </summary>
+                <Field id="q-custom" label={copy.custom.label} hint={copy.custom.hint} error={errors.customRequest}>
+                  {(a) => (
+                    <Textarea
+                      {...a}
+                      name="customRequest"
+                      rows={3}
+                      maxLength={1500}
+                      defaultValue={values.customRequest}
+                      placeholder={copy.custom.placeholder}
+                      className="min-h-24 rounded-xl px-4 py-3 text-base"
+                    />
+                  )}
+                </Field>
+              </details>
+
+              {PHOTOS_ENABLED && (
+              <Field id="q-photos" label={copy.photos.label} hint={copy.photos.hint} error={errors.photos}>
+                {(a) => (
+                  <>
+                    <Input
+                      {...a}
+                      ref={fileRef}
+                      name={sendingDirect ? undefined : "photos"}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      capture="environment"
+                      onChange={onPhotosChange}
+                      className="h-auto cursor-pointer rounded-xl px-4 py-3 text-base file:mr-3 file:rounded-full file:bg-ink file:px-4 file:py-1.5 file:text-sm file:font-semibold file:text-white"
+                    />
+                    {photos.length > 0 && (
+                      <div className="mt-2 text-sm" aria-live="polite">
+                        <p className="font-medium text-ink">{copy.photos.count(Math.min(photos.length, MAX_PHOTOS))}</p>
+                        <ul className="mt-1 grid gap-1">
+                          {photos.map((p) => (
+                            <li key={p.id} className="flex flex-wrap gap-x-2 text-ink-muted">
+                              <span className="min-w-0 break-all">{p.name}</span>
+                              <span className={cn("font-medium", p.status === "error" ? "text-destructive" : "text-ink")}>
+                                {photoStatusText(p)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        {photos.some((p) => p.status === "local") && photos.every((p) => p.type !== null) && (
+                          <p className="mt-1.5 text-ink-muted">{copy.photos.fallbackNote}</p>
+                        )}
+                        {canRetry && (
+                          <Button type="button" variant="outline" size="sm" className="mt-2" disabled={processing} onClick={retryPhotos}>
+                            {copy.photos.retry}
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </Field>
               )}
-            </Field>
-            <Field id="q-phone" label={copy.phone.label} error={errors.phone}>
-              {(a) => (
-                <Input
-                  {...a}
-                  name="phone"
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="tel"
-                  enterKeyHint="next"
-                  required
-                  defaultValue={values.phone}
-                  placeholder={copy.phone.placeholder}
-                  className={inputClass}
+            </div>
+          </Group>
+        </div>
+
+        <div {...stepProps(1)}>
+          <Group id="q-address" legend={steps[1].title}>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field
+                id="q-street"
+                label={copy.street.label}
+                hint={verifyAddress ? `${copy.address.hint} ${copy.address.verifyHint}` : copy.address.hint}
+                error={errors.street}
+                className="sm:col-span-2"
+              >
+                {(a) => (
+                  // Plain text box without NEXT_PUBLIC_GOOGLE_MAPS_API_KEY; with it, Google Places
+                  // suggestions on the street line fill city/state/ZIP plus hidden lat/lng. Every
+                  // address part is always submitted as free text.
+                  <AddressAutocomplete
+                    {...a}
+                    autoComplete="address-line1"
+                    enterKeyHint="next"
+                    required
+                    defaultValue={values.street}
+                    placeholder={copy.street.placeholder}
+                    className={inputClass}
+                    cityRef={cityRef}
+                    stateRef={stateRef}
+                    zipRef={zipRef}
+                  />
+                )}
+              </Field>
+              <div className="grid grid-cols-6 gap-x-3 gap-y-5 sm:col-span-2 sm:gap-x-5">
+                <Field id="q-city" label={copy.city.label} error={errors.city} className="col-span-6 sm:col-span-3">
+                  {(a) => (
+                    <Input
+                      {...a}
+                      ref={cityRef}
+                      name="city"
+                      autoComplete="address-level2"
+                      enterKeyHint="next"
+                      required
+                      defaultValue={values.city}
+                      placeholder={copy.city.placeholder}
+                      className={inputClass}
+                    />
+                  )}
+                </Field>
+                <Field id="q-state" label={copy.state.label} error={errors.state} className="col-span-2 sm:col-span-1">
+                  {(a) => (
+                    <Input
+                      {...a}
+                      ref={stateRef}
+                      name="state"
+                      autoComplete="address-level1"
+                      autoCapitalize="characters"
+                      enterKeyHint="next"
+                      maxLength={2}
+                      required
+                      defaultValue={values.state}
+                      placeholder={copy.state.placeholder}
+                      className={cn(inputClass, "uppercase")}
+                    />
+                  )}
+                </Field>
+                <Field id="q-zip" label={copy.zip.label} error={errors.zip} className="col-span-4 sm:col-span-2">
+                  {(a) => (
+                    <Input
+                      {...a}
+                      ref={zipRef}
+                      name="zip"
+                      inputMode="numeric"
+                      autoComplete="postal-code"
+                      enterKeyHint="next"
+                      maxLength={10}
+                      required
+                      defaultValue={values.zip}
+                      placeholder={copy.zip.placeholder}
+                      className={inputClass}
+                    />
+                  )}
+                </Field>
+              </div>
+            </div>
+          </Group>
+
+          <Group id="q-days" sub legend={copy.days.legend} hint={copy.days.hint} error={errors.preferredDays}>
+            <div className="flex flex-wrap gap-2.5">
+              {WEEKDAY_OPTIONS.map((d) => (
+                <CheckRow
+                  key={d.value}
+                  pill
+                  name="preferredDays"
+                  value={String(d.value)}
+                  defaultChecked={values.preferredDays.includes(d.value)}
+                  title={d.short}
                 />
-              )}
-            </Field>
-            <Field id="q-email" label={copy.email.label} error={errors.email}>
-              {(a) => (
-                <Input
-                  {...a}
-                  name="email"
-                  type="email"
-                  inputMode="email"
-                  autoComplete="email"
-                  enterKeyHint="next"
-                  autoCapitalize="none"
-                  required
-                  defaultValue={values.email}
-                  placeholder={copy.email.placeholder}
-                  className={inputClass}
-                />
-              )}
-            </Field>
-            <Field
-              id="q-street"
-              label={copy.street.label}
-              hint={verifyAddress ? `${copy.address.hint} ${copy.address.verifyHint}` : copy.address.hint}
-              error={errors.street}
-              className="sm:col-span-2"
-            >
-              {(a) => (
-                // Plain text box without NEXT_PUBLIC_GOOGLE_MAPS_API_KEY; with it, Google Places
-                // suggestions on the street line fill city/state/ZIP plus hidden lat/lng. Every
-                // address part is always submitted as free text.
-                <AddressAutocomplete
-                  {...a}
-                  autoComplete="address-line1"
-                  enterKeyHint="next"
-                  required
-                  defaultValue={values.street}
-                  placeholder={copy.street.placeholder}
-                  className={inputClass}
-                  cityRef={cityRef}
-                  stateRef={stateRef}
-                  zipRef={zipRef}
-                />
-              )}
-            </Field>
-            <div className="grid grid-cols-6 gap-x-3 gap-y-5 sm:col-span-2 sm:gap-x-5">
-              <Field id="q-city" label={copy.city.label} error={errors.city} className="col-span-6 sm:col-span-3">
+              ))}
+            </div>
+          </Group>
+        </div>
+
+        <div {...stepProps(2)}>
+          <Group id="q-details" legend={steps[2].title}>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field id="q-name" label={copy.name.label} error={errors.name} className="sm:col-span-2">
                 {(a) => (
                   <Input
                     {...a}
-                    ref={cityRef}
-                    name="city"
-                    autoComplete="address-level2"
+                    name="name"
+                    autoComplete="name"
                     enterKeyHint="next"
                     required
-                    defaultValue={values.city}
-                    placeholder={copy.city.placeholder}
+                    defaultValue={values.name}
+                    placeholder={copy.name.placeholder}
                     className={inputClass}
                   />
                 )}
               </Field>
-              <Field id="q-state" label={copy.state.label} error={errors.state} className="col-span-2 sm:col-span-1">
+              <Field id="q-phone" label={copy.phone.label} error={errors.phone}>
                 {(a) => (
                   <Input
                     {...a}
-                    ref={stateRef}
-                    name="state"
-                    autoComplete="address-level1"
-                    autoCapitalize="characters"
+                    name="phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
                     enterKeyHint="next"
-                    maxLength={2}
                     required
-                    defaultValue={values.state}
-                    placeholder={copy.state.placeholder}
-                    className={cn(inputClass, "uppercase")}
+                    defaultValue={values.phone}
+                    placeholder={copy.phone.placeholder}
+                    className={inputClass}
                   />
                 )}
               </Field>
-              <Field id="q-zip" label={copy.zip.label} error={errors.zip} className="col-span-4 sm:col-span-2">
+              <Field id="q-email" label={copy.email.label} error={errors.email}>
                 {(a) => (
                   <Input
                     {...a}
-                    ref={zipRef}
-                    name="zip"
-                    inputMode="numeric"
-                    autoComplete="postal-code"
+                    name="email"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
                     enterKeyHint="next"
-                    maxLength={10}
+                    autoCapitalize="none"
                     required
-                    defaultValue={values.zip}
-                    placeholder={copy.zip.placeholder}
+                    defaultValue={values.email}
+                    placeholder={copy.email.placeholder}
                     className={inputClass}
                   />
                 )}
               </Field>
             </div>
-          </div>
-        </Group>
+          </Group>
 
-        <Group id="q-services" legend={copy.services.legend} hint={copy.services.hint} error={errors.services}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {services.map((s) => (
-              <CheckRow
-                key={s.slug}
-                name="services"
-                value={s.slug}
-                defaultChecked={values.services.includes(s.slug)}
-                title={s.name}
-                description={s.blurb}
-                invalid={Boolean(errors.services)}
-                describedBy={errors.services ? "q-services-error" : undefined}
-              />
-            ))}
-          </div>
+          <Group id="q-consent" sub legend={copy.consent.legend} hint={copy.consent.note}>
+            <div className="grid gap-3">
+              <CheckRow name="emailOptIn" value="on" defaultChecked={values.emailOptIn} title={copy.consent.email} />
+              <CheckRow name="smsOptIn" value="on" defaultChecked={values.smsOptIn} title={copy.consent.sms} />
+              <CheckRow name="snowList" value="on" defaultChecked={values.snowList} title={copy.consent.snow} />
+            </div>
+          </Group>
 
-          <div className="mt-6 grid gap-5">
-            <Field id="q-custom" label={copy.custom.label} hint={copy.custom.hint} error={errors.customRequest}>
-              {(a) => (
-                <Textarea
-                  {...a}
-                  name="customRequest"
-                  rows={4}
-                  maxLength={1500}
-                  defaultValue={values.customRequest}
-                  placeholder={copy.custom.placeholder}
-                  className="min-h-28 rounded-xl px-4 py-3 text-base"
-                />
-              )}
-            </Field>
-
-            {PHOTOS_ENABLED && (
-            <Field id="q-photos" label={copy.photos.label} hint={copy.photos.hint} error={errors.photos}>
-              {(a) => (
-                <>
-                  <Input
-                    {...a}
-                    ref={fileRef}
-                    name={sendingDirect ? undefined : "photos"}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    capture="environment"
-                    onChange={onPhotosChange}
-                    className="h-auto cursor-pointer rounded-xl px-4 py-3 text-base file:mr-3 file:rounded-full file:bg-ink file:px-4 file:py-1.5 file:text-sm file:font-semibold file:text-white"
-                  />
-                  {photos.length > 0 && (
-                    <div className="mt-2 text-sm" aria-live="polite">
-                      <p className="font-medium text-ink">{copy.photos.count(Math.min(photos.length, MAX_PHOTOS))}</p>
-                      <ul className="mt-1 grid gap-1">
-                        {photos.map((p) => (
-                          <li key={p.id} className="flex flex-wrap gap-x-2 text-ink-muted">
-                            <span className="min-w-0 break-all">{p.name}</span>
-                            <span className={cn("font-medium", p.status === "error" ? "text-destructive" : "text-ink")}>
-                              {photoStatusText(p)}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                      {photos.some((p) => p.status === "local") && photos.every((p) => p.type !== null) && (
-                        <p className="mt-1.5 text-ink-muted">{copy.photos.fallbackNote}</p>
-                      )}
-                      {canRetry && (
-                        <Button type="button" variant="outline" size="sm" className="mt-2" disabled={processing} onClick={retryPhotos}>
-                          {copy.photos.retry}
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </Field>
-            )}
-          </div>
-        </Group>
-
-        <Group id="q-days" legend={copy.days.legend} hint={copy.days.hint} error={errors.preferredDays}>
-          <div className="flex flex-wrap gap-2.5">
-            {WEEKDAY_OPTIONS.map((d) => (
-              <CheckRow
-                key={d.value}
-                pill
-                name="preferredDays"
-                value={String(d.value)}
-                defaultChecked={values.preferredDays.includes(d.value)}
-                title={d.short}
-              />
-            ))}
-          </div>
-        </Group>
-
-        <Group id="q-consent" legend={copy.consent.legend} hint={copy.consent.note}>
-          <div className="grid gap-3">
-            <CheckRow name="emailOptIn" value="on" defaultChecked={values.emailOptIn} title={copy.consent.email} />
-            <CheckRow name="smsOptIn" value="on" defaultChecked={values.smsOptIn} title={copy.consent.sms} />
-            <CheckRow name="snowList" value="on" defaultChecked={values.snowList} title={copy.consent.snow} />
-          </div>
-        </Group>
+          {/* Stays mounted on every step: Turnstile renders implicitly when its script first loads. */}
+          {turnstileSiteKey && (
+            <div>
+              <p className="mb-2 text-sm text-ink-muted">{copy.turnstile}</p>
+              <Turnstile siteKey={turnstileSiteKey} resetKey={nonce} />
+            </div>
+          )}
+        </div>
       </div>
 
-      {turnstileSiteKey && (
-        <div>
-          <p className="mb-2 text-sm text-ink-muted">{copy.turnstile}</p>
-          <Turnstile siteKey={turnstileSiteKey} resetKey={nonce} />
+      <div className="grid gap-4">
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
+          {step > 0 && (
+            <Button type="button" variant="cta-outline" size="cta" data-quote-js className="w-full px-8 sm:w-auto" onClick={goBack}>
+              <ArrowLeft aria-hidden="true" />
+              {copy.back}
+            </Button>
+          )}
+          {step < LAST_STEP && (
+            <Button type="button" variant="cta" size="cta" data-quote-js className="w-full sm:w-auto" onClick={goNext}>
+              {copy.next}
+              <ArrowRight aria-hidden="true" />
+            </Button>
+          )}
+          <SubmitButton busy={processing} hidden={step < LAST_STEP} />
         </div>
-      )}
-
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-        <SubmitButton busy={processing} />
         <p className="text-sm text-ink-muted">
           {copy.callInstead}{" "}
           <a href={siteConfig.phone.href} className="font-semibold text-brand-green-dark underline underline-offset-4">
