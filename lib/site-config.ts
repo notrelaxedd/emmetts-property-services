@@ -48,7 +48,7 @@ export const siteConfig = {
   },
 
   serviceArea: {
-    primary: "Northeast Ohio",
+    primary: "Rocky River",
     region: "OH",
     regionName: "Ohio",
     summary: "Northeast Ohio and surrounding west-side Cleveland suburbs",
