@@ -92,7 +92,7 @@ export type MonthSummary = {
 
 /**
  * The month's headline numbers.
- * - revenue / fees: quotes accepted (paid via Stripe) in the month
+ * - revenue / fees: quotes accepted (paid via Stripe, or by cash / check with no fee) in the month
  * - labor: jobs completed in the month (payouts, or estimated labor when no payouts yet)
  * - profit = revenue − fees − labor − expenses − AI spend
  */

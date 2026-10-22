@@ -155,7 +155,7 @@ export default async function MoneyPage({ searchParams }: { searchParams: { mont
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-            <Stat label="Stripe revenue" value={usd(data.summary.revenue)} hint="quotes paid this month" />
+            <Stat label="Revenue" value={usd(data.summary.revenue)} hint="quotes paid this month (Stripe, cash, check)" />
             <Stat label="Card fees" value={usd(data.summary.fees)} />
             <Stat
               label="Labor"

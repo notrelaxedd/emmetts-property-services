@@ -82,6 +82,25 @@ again. Different lines or terms void it and create a new one. A leftover draft f
 **Refunds** work the same as Checkout (refund via the PaymentIntent). Stripe leaves the invoice marked `paid`;
 issue a credit note in the Dashboard if the customer needs the paperwork.
 
+## 2b. Cash and check
+
+Every quote email tells the customer they can pay by cash or check instead ("reply or give us a call").
+When they pay in person, open the quote and use **Record cash / check**: pick cash or check, add the check
+number if you like, and confirm the amount received. This (`lib/ops/payments.ts`):
+
+- expires the open Checkout link and voids the open Stripe invoice first, so the customer can't also pay
+  online. It refuses if they already paid one of them (refund that instead);
+- accepts the quote with `payment_method` `cash` / `check`, **no card fee** (`fee_total` 0, profit recomputed),
+  and a note like `Paid by check #1042: $80.00, recorded by …`. A different amount is accepted but noted with
+  a WARNING (collect or return the difference);
+- wins the lead and creates the job + `schedule` task, the same as a Stripe payment.
+
+Works on a draft, sent or expired quote (no customer email needed). Cash and check revenue shows on the Money
+page with the rest. A Stripe payment that still lands afterwards is not attached: the owner gets the usual
+"second payment, refund manually" note and inbox card. There is no Refund button for cash / check: hand the
+money back yourself. **Sales tax is not collected** on these payments; account for it yourself if Stripe Tax
+is on.
+
 ## 3. Sales tax (Stripe Tax, Ohio)
 
 Ohio taxes landscaping and lawn care services, and Emmett's works in Rocky River (Cuyahoga County), so sales tax
