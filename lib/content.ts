@@ -24,7 +24,7 @@ export const content = {
   },
 
   hero: {
-    kicker: { name: siteConfig.altName, place: "Rocky River, Ohio" },
+    kicker: { name: siteConfig.altName, place: "Northeast Ohio" },
     // The business's main offer. Swap seasonally (e.g. ["Snow", "removal"] in December).
     headline: ["Fall lawn", "cleanup"],
     body: "Leaf removal, edging, and gutter cleaning in one visit. We get your lawn ready to survive the winter so it bounces back stronger in spring.",
@@ -259,8 +259,8 @@ export const content = {
   },
 
   seo: {
-    title: `${siteConfig.name} | Lawn Care, Fall Cleanup & Snow Removal in Rocky River, OH`,
+    title: `${siteConfig.name} | Lawn Care, Fall Cleanup & Snow Removal in Northeast Ohio`,
     description:
-      "Lawn mowing, fall leaf cleanup, gutter cleaning, and snow removal in Rocky River and Cleveland's west-side suburbs. Three-person local crew, fair prices, great neighborhood reviews.",
+      "Lawn mowing, fall leaf cleanup, gutter cleaning, and snow removal in Northeast Ohio and Cleveland's west-side suburbs. Three-person local crew, fair prices, great neighborhood reviews.",
   },
 } as const;

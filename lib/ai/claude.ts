@@ -57,7 +57,7 @@ export { AiConfigError } from "./client";
 
 export const defaultBusiness: BusinessContext = {
   name: "Emmett's Property Services",
-  area: "Rocky River, Ohio and the nearby west-side Cleveland suburbs",
+  area: "Northeast Ohio and the nearby west-side Cleveland suburbs",
   phone: "(440) 823-5545",
   services: ["Lawn mowing", "Edging", "Fall leaf cleanup", "Gutter cleaning", "Snow removal"],
   voice:

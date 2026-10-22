@@ -4,7 +4,7 @@ import { siteConfig } from "@/lib/site-config";
 
 // Edge runtime: Next 14's Node build of @vercel/og fails to prerender on Windows + newer Node.
 export const runtime = "edge";
-export const alt = `${siteConfig.name}: lawn care, fall cleanup, and snow removal in Rocky River, Ohio`;
+export const alt = `${siteConfig.name}: lawn care, fall cleanup, and snow removal in Northeast Ohio`;
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -38,7 +38,7 @@ export default async function OpenGraphImage() {
         <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 72px", width: 720 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 28, color: "#0B0B0B", fontWeight: 600 }}>
             <div style={{ width: 40, height: 5, borderRadius: 4, background: "#65C435" }} />
-            {siteConfig.altName} · Rocky River, OH
+            {siteConfig.altName} · Northeast Ohio
           </div>
           <div style={{ display: "flex", flexDirection: "column", marginTop: 20, fontFamily: "Anton", fontSize: 132, lineHeight: 0.88, color: "#0B0B0B", textTransform: "uppercase" }}>
             {content.hero.headline.map((line) => (
