@@ -31,7 +31,8 @@ export function Headline({ lines, as = "h2", size = "section", animated, accentL
         </span>
       );
       return animated ? (
-        <span key={i} className="hero-line" style={{ "--i": i } as CSSProperties}>
+        // `block` here too: .hero-line's own styles only exist when motion is allowed.
+        <span key={i} className="hero-line block" style={{ "--i": i } as CSSProperties}>
           <span>{inner}</span>
         </span>
       ) : (

@@ -3,7 +3,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Check, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ContactLink } from "@/components/site/contact-link";
 import { Diagonal } from "@/components/site/diagonal";
 import { Headline } from "@/components/site/headline";
 import { OvalPhoto } from "@/components/site/oval-photo";
@@ -51,22 +50,32 @@ export function Hero() {
             {hero.body}
           </p>
 
-          <div className="hero-fade mt-9 flex flex-col gap-3 sm:flex-row sm:flex-wrap" style={delay(520)}>
+          {/* One loud action: the quote form. Calling stays available, just quieter. */}
+          <div className="hero-fade mt-9 flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6" style={delay(520)}>
             <Button asChild variant="cta" size="cta">
-              <a href={siteConfig.phone.href}>
-                <Phone aria-hidden="true" />
-                {content.cta.call}
-              </a>
-            </Button>
-            <Button asChild variant="cta-outline" size="cta" className="bg-paper/70">
-              <ContactLink>{content.cta.contact}</ContactLink>
-            </Button>
-            <Button asChild variant="link" size="cta" className="px-4 font-semibold text-ink underline decoration-brand-green decoration-2 underline-offset-[6px] hover:decoration-brand-green-dark">
               <Link href="/quote">
-                {content.quote.cta}
+                {content.cta.quote}
                 <ArrowRight aria-hidden="true" />
               </Link>
             </Button>
+            <p className="text-[0.9375rem] font-medium text-ink-body">{hero.quoteNote}</p>
+          </div>
+
+          <div className="hero-fade mt-7" style={delay(580)}>
+            <p className="text-[0.9375rem] font-semibold text-ink">{hero.quickStartLabel}</p>
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {hero.quickStart.map((item) => (
+                <li key={item.slug}>
+                  <Link
+                    href={`/quote?service=${item.slug}`}
+                    className="inline-flex min-h-11 items-center rounded-full border-2 border-ink bg-paper/70 px-4 font-semibold text-ink transition-colors hover:border-brand-green-dark hover:bg-brand-green"
+                  >
+                    {item.label}
+                    <span className="sr-only">: {content.quote.cta.toLowerCase()}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </div>
 
           <ul
@@ -81,6 +90,17 @@ export function Hero() {
               </li>
             ))}
           </ul>
+
+          <p className="hero-fade mt-6 text-[0.9375rem] text-ink-body" style={delay(700)}>
+            {content.cta.callAlt}{" "}
+            <a
+              href={siteConfig.phone.href}
+              className="inline-flex items-center gap-1.5 font-semibold text-ink underline decoration-brand-green decoration-2 underline-offset-[6px] hover:text-brand-green-dark"
+            >
+              <Phone className="size-4" aria-hidden="true" strokeWidth={2.5} />
+              {siteConfig.phone.display}
+            </a>
+          </p>
         </div>
 
         <div className="md:col-span-5 lg:col-span-5">

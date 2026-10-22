@@ -1,5 +1,5 @@
+import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { ContactLink } from "@/components/site/contact-link";
 import { Diagonal } from "@/components/site/diagonal";
 import { Headline } from "@/components/site/headline";
 import { ServiceGlyph } from "@/components/site/icons";
@@ -28,10 +28,10 @@ export function Seasons() {
               <p className="mt-4 text-[0.9375rem] font-semibold text-brand-green">{item.season}</p>
               <h3 className="display mt-1.5 text-[2rem] text-white">{item.title}</h3>
               <p className="mt-3 text-white/75">{item.body}</p>
-              <ContactLink className="mt-5 inline-flex items-center gap-2 font-semibold text-white underline decoration-brand-green decoration-2 underline-offset-[6px] transition-colors hover:text-brand-green">
-                Ask about {item.title.toLowerCase()}
+              <Link href={`/quote?service=${item.serviceSlug}`} className="mt-5 inline-flex items-center gap-2 font-semibold text-white underline decoration-brand-green decoration-2 underline-offset-[6px] transition-colors hover:text-brand-green">
+                Get a {item.title.toLowerCase()} quote
                 <ArrowRight className="size-4" aria-hidden="true" />
-              </ContactLink>
+              </Link>
             </Reveal>
           ))}
         </ul>

@@ -1,5 +1,5 @@
+import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { ContactLink } from "@/components/site/contact-link";
 import { Diagonal } from "@/components/site/diagonal";
 import { Headline } from "@/components/site/headline";
 import { OvalPhoto } from "@/components/site/oval-photo";
@@ -27,10 +27,10 @@ export function Benefits() {
         <div className="md:col-span-7 lg:col-span-6">
           <Headline id="benefits-title" lines={benefits.headline} />
           <p className="mt-6 max-w-lg text-lead text-ink-body">{benefits.body}</p>
-          <ContactLink className="mt-5 inline-flex items-center gap-2 font-semibold text-ink underline decoration-brand-green decoration-2 underline-offset-[6px] transition-colors hover:text-brand-green-dark">
+          <Link href="/quote" className="mt-5 inline-flex items-center gap-2 font-semibold text-ink underline decoration-brand-green decoration-2 underline-offset-[6px] transition-colors hover:text-brand-green-dark">
             Get a price on your yard
             <ArrowRight className="size-4" aria-hidden="true" />
-          </ContactLink>
+          </Link>
           <div className="mt-10">
             <PillList items={benefits.pills} />
           </div>
