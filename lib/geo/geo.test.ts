@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   _resetNominatimThrottle,
   arcgisQueryUrl,
+  bboxAround,
   censusUrl,
   geocode,
   haversineMiles,
@@ -9,6 +10,7 @@ import {
   lookupParcel,
   nominatimUrl,
   parcelFromAttributes,
+  propertyMapUrls,
 } from "./index";
 
 const ROCKY_RIVER = { lat: 41.4756, lng: -81.8396 }; // opsConfig.defaultBase
@@ -248,5 +250,26 @@ describe("parcelFromAttributes", () => {
   it("returns nulls when nothing usable is present, and drops absurd sizes", () => {
     expect(parcelFromAttributes({ OWNER: "x" }, {})).toEqual({ parcel_id: null, lot_acres: null, source: "cuyahoga_gis" });
     expect(parcelFromAttributes({ acres: 5000 }, {}).lot_acres).toBeNull();
+  });
+});
+
+describe("property map", () => {
+  it("builds a box around the point whose Web Mercator aspect matches the image (4:3)", () => {
+    const [xmin, ymin, xmax, ymax] = bboxAround(41.4756, -81.8396);
+    expect((xmin + xmax) / 2).toBeCloseTo(-81.8396, 5);
+    expect((ymin + ymax) / 2).toBeCloseTo(41.4756, 5);
+    const aspect = ((xmax - xmin) * Math.cos((41.4756 * Math.PI) / 180)) / (ymax - ymin);
+    expect(aspect).toBeCloseTo(4 / 3, 2);
+  });
+  it("asks both county services for the same extent, projection and size", () => {
+    const u = propertyMapUrls(41.4668, -81.8538);
+    const img = new URL(u.imagery);
+    const par = new URL(u.parcels);
+    expect(img.pathname).toMatch(/\/IMAGERY\/.+\/MapServer\/export$/);
+    expect(par.pathname).toMatch(/\/Parcel_Fabric_Taxparcels\/MapServer\/export$/);
+    for (const k of ["bbox", "bboxSR", "imageSR", "size", "f"]) expect(par.searchParams.get(k)).toBe(img.searchParams.get(k));
+    expect(img.searchParams.get("imageSR")).toBe("3857");
+    expect(par.searchParams.get("transparent")).toBe("true");
+    expect(u.google).toBe("https://www.google.com/maps/search/?api=1&query=41.4668,-81.8538");
   });
 });
