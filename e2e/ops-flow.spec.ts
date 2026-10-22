@@ -243,12 +243,17 @@ test.describe("ops flow (real Supabase + Stripe test mode)", () => {
 
     await test.step("customer submits /quote with a standard service and a custom note", async () => {
       await page.goto(`/quote?service=${service!.slug}`);
+      await expect(page.locator(`input[name="services"][value="${service!.slug}"]`)).toBeChecked();
+      await page.getByText(/something not listed/i).click();
+      await page.locator('textarea[name="customRequest"]').fill(CUSTOM_NOTE);
+      await page.getByRole("button", { name: /next/i }).click();
+      await page.locator('input[name="street"]').fill("123 Lake Rd");
+      await page.locator('input[name="city"]').fill("Rocky River");
+      await page.locator('input[name="zip"]').fill("44116");
+      await page.getByRole("button", { name: /next/i }).click();
       await page.locator('input[name="name"]').fill(CUSTOMER_NAME);
       await page.locator('input[name="phone"]').fill("4405550142");
       await page.locator('input[name="email"]').fill(CUSTOMER_EMAIL);
-      await page.locator('input[name="address"]').fill("123 Lake Rd, Rocky River, OH 44116");
-      await expect(page.locator(`input[name="services"][value="${service!.slug}"]`)).toBeChecked();
-      await page.locator('textarea[name="customRequest"]').fill(CUSTOM_NOTE);
       await page.locator('input[name="emailOptIn"]').check(); // review requests are marketing: opt-in only
       await page.getByRole("button", { name: /quote/i }).last().click();
       await expect(page).toHaveURL(/\/quote\/thanks/, { timeout: 30_000 });

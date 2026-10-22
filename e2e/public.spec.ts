@@ -17,15 +17,31 @@ test.describe("public site", () => {
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 
-  test("/quote renders the form with services and consent boxes", async ({ page }) => {
+  test("/quote walks through the form in steps", async ({ page }) => {
     await page.goto("/quote?service=lawn-mowing");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(page.locator('input[name="name"]')).toBeVisible();
+    await expect(page.getByText(/step 1 of 3/i)).toBeVisible();
     await expect(page.locator('input[name="services"]').first()).toBeVisible();
     await expect(page.locator('input[name="services"][value="lawn-mowing"]')).toBeChecked();
+    await expect(page.locator('input[name="name"]')).toBeHidden();
+    await page.getByText(/something not listed/i).click();
     await expect(page.locator('textarea[name="customRequest"]')).toBeVisible();
+
+    // Step 2 won't open until the address is filled in.
+    await page.getByRole("button", { name: /next/i }).click();
+    await expect(page.locator('input[name="street"]')).toBeVisible();
+    await page.getByRole("button", { name: /next/i }).click();
+    await expect(page.locator('input[name="street"]')).toHaveAttribute("aria-invalid", "true");
+    await page.locator('input[name="street"]').fill("123 Lake Rd");
+    await page.locator('input[name="city"]').fill("Rocky River");
+    await page.locator('input[name="zip"]').fill("44116");
+    await page.getByRole("button", { name: /next/i }).click();
+
+    await expect(page.locator('input[name="name"]')).toBeVisible();
     await expect(page.locator('input[name="emailOptIn"]')).toBeVisible();
     await expect(page.locator('input[name="snowList"]')).toBeVisible();
+    await page.getByRole("button", { name: /back/i }).click();
+    await expect(page.locator('input[name="street"]')).toHaveValue("123 Lake Rd");
     // Honeypot is present but off-screen, hidden from assistive tech and out of the tab order.
     const honeypot = page.locator('input[name="company"]');
     await expect(honeypot).toHaveAttribute("tabindex", "-1");
@@ -35,9 +51,22 @@ test.describe("public site", () => {
 
   test("/quote validates required fields client-side without a backend", async ({ page }) => {
     await page.goto("/quote");
-    await page.getByRole("button", { name: /quote/i }).last().click();
+    await page.getByRole("button", { name: /next/i }).click();
     await expect(page.locator('[aria-invalid="true"]').first()).toBeVisible();
+    await expect(page.getByText(/step 1 of 3/i)).toBeVisible();
     await expect(page).toHaveURL(/\/quote/);
+  });
+
+  test.describe("without JavaScript", () => {
+    test.use({ javaScriptEnabled: false });
+    test("/quote shows every field on one page", async ({ page }) => {
+      await page.goto("/quote");
+      for (const name of ["services", "street", "name", "emailOptIn"]) {
+        await expect(page.locator(`input[name="${name}"]`).first()).toBeVisible();
+      }
+      await expect(page.getByRole("button", { name: /send my quote/i })).toBeVisible();
+      await expect(page.getByRole("button", { name: /next/i })).toBeHidden();
+    });
   });
 
   test("/quote/thanks, /quote/paid, /quote/expired and /unsubscribe render", async ({ page }) => {

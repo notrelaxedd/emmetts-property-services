@@ -121,7 +121,15 @@ export const content = {
       ],
     },
     form: {
-      legend: "Your details",
+      /** The form is split into these steps (all shown at once without JavaScript). */
+      steps: [
+        { label: "Services", title: "What do you need?" },
+        { label: "Address", title: "Where's the job?" },
+        { label: "Contact", title: "How do we reach you?" },
+      ],
+      progress: (step: number, total: number) => `Step ${step} of ${total}`,
+      next: "Next",
+      back: "Back",
       name: { label: "Your name", placeholder: "Jamie Smith" },
       phone: { label: "Phone", placeholder: "(440) 555-0123" },
       email: { label: "Email", placeholder: "you@example.com" },
@@ -136,10 +144,10 @@ export const content = {
         verifyHint: "We'll verify the address.",
       },
       services: {
-        legend: "What do you need?",
         hint: "Pick as many as you like.",
       },
       custom: {
+        toggle: "Something not listed?",
         label: "Something else?",
         hint: "Tell us about anything that isn't on the list, and roughly how big it is.",
         placeholder: "A hedge that needs trimming, a pile of branches, a patio to sweep...",
@@ -157,8 +165,8 @@ export const content = {
         partialFail: "Some photos didn't upload. Please try again, or choose your photos again, before sending.",
       },
       days: {
-        legend: "Days that work for you",
-        hint: "Optional. Pick any that suit you.",
+        legend: "Days that work for you (optional)",
+        hint: "Pick any that suit you.",
       },
       consent: {
         legend: "Stay in touch (optional)",
