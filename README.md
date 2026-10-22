@@ -1,7 +1,8 @@
 # Emmett's Property Services: website
 
 Marketing site for Emmett's Property Services (Emmett's Lawn Care), Rocky River, OH.
-Every section pushes toward one action: **call (440) 823-5545**.
+Every section pushes toward one action: **the free quote form at `/quote`**. The phone number
+(440) 823-5545 is still on every page, just never louder than the quote button.
 
 Next.js 14 (App Router) · TypeScript · Tailwind CSS · shadcn/ui · Vercel · Supabase · Stripe · Anthropic
 
@@ -66,12 +67,14 @@ deploy with "Edge Function size is 1.48 MB". The site's own pages always use the
 
 ## What's in here
 
-- **Sections** (`components/sections/`): hero, services grid, benefits pills, why us, seasons band,
-  contact. `/contact` reuses the contact section with an `<h1>`, and `/book` redirects there.
+- **Sections** (`components/sections/`): hero (quote button + service shortcuts that pre-tick the form),
+  how it works, services grid, benefits pills, why us, seasons band, and a closing quote section
+  (`quote-cta.tsx`, keeps `id="contact"`). `/contact` is still the call-first page (`contact.tsx`), and
+  `/book` redirects there.
   (A booking form and a customer reviews section were removed; both are in the git history.)
 - **Brand shapes** (`components/site/`): `Diagonal` (clip-path panels), `OvalPhoto` (3:4 ellipse
   frame), `PillList` (the flyer's black pills), `Headline` (condensed caps).
-- **Phones:** a sticky bottom bar keeps *Call now* one tap away at any scroll position.
+- **Phones:** a sticky bottom bar keeps *Free quote* (and *Call*) one tap away at any scroll position.
 - **SEO:** metadata + Open Graph (`app/opengraph-image.tsx` generates the share card), a
   `LocalBusiness` JSON-LD block (`components/site/json-ld.tsx`), `robots.txt`, and `sitemap.xml`.
 - **Accessibility:** semantic headings, skip link, visible focus rings, alt text on every image,
