@@ -34,6 +34,8 @@ echo "    node $(node -v), npm $(npm -v)"
 echo "==> user + checkout"
 id fleet >/dev/null 2>&1 || useradd --system --home-dir "$ROOT" --shell /usr/sbin/nologin fleet
 if [ -d "$ROOT/.git" ]; then
+  # Root owns the checkout (git refuses a repo owned by another user). Older installs chowned it to fleet.
+  chown -R root:root "$ROOT"
   git -C "$ROOT" fetch -q origin "$BRANCH"
   git -C "$ROOT" reset -q --hard "origin/$BRANCH"
 else
@@ -45,7 +47,8 @@ echo "==> dependencies (production only; tsx is a runtime dependency)"
 cd "$ROOT"
 npm ci --omit=dev --no-audit --no-fund --loglevel=error
 npm cache clean --force >/dev/null 2>&1 || true
-chown -R fleet:fleet "$ROOT"
+# The worker only reads the code (ReadOnlyPaths in the unit); it never needs to own it.
+chmod -R a+rX "$ROOT"
 
 echo "==> environment file"
 mkdir -p "$ENV_DIR"
