@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { jobRow, settingsRow } from "../../lib/ops/test-utils";
 import { fleetDb, makeCtx } from "../test-helpers";
-import { enqueueReminders, enqueueReviews, expireQuotes, hostTick, markOfflineWorkers } from "./host";
+import { enqueueReminders, enqueueReviews, expireQuotes, hostTick, removeOfflineWorkers } from "./host";
 
 const NOW = new Date("2026-10-12T14:00:00.000Z");
 const inH = (h: number) => new Date(NOW.getTime() + h * 3_600_000).toISOString();
@@ -41,22 +41,22 @@ describe("host", () => {
     expect(db.tables.fleet_tasks[0]).toMatchObject({ type: "followup_review", dedupe_key: "review:yesterday" });
   });
 
-  it("marks silent workers offline once and expires old quotes", async () => {
+  it("removes silent workers (never itself) and expires old quotes", async () => {
     const w = (name: string, hb: string | null, over = {}) => ({
       id: name, created_at: T0, updated_at: T0, name, role: "quotes" as const, last_heartbeat: hb, cpu: 1, ram: 1, temp_c: null,
       current_task: "quote:1234", last_error: null, version: null, ...over,
     });
     const db = fleetDb({
-      fleet_workers: [w("W1", inH(-0.01)), w("W2", inH(-1)), w("W3", inH(-1), { current_task: null, last_error: "no heartbeat" }), w("host", inH(-1))],
+      fleet_workers: [w("W1", inH(-0.01)), w("W2", inH(-1)), w("W3", null), w("host", inH(-1))],
       quotes: [
         { id: "q1", status: "sent", expires_at: inH(-1) } as never,
         { id: "q2", status: "sent", expires_at: inH(5) } as never,
         { id: "q3", status: "accepted", expires_at: inH(-1) } as never,
       ],
     });
-    expect(await markOfflineWorkers(db, NOW, "host")).toEqual(["W2"]);
-    expect(db.tables.fleet_workers.find((r) => r.name === "W2")).toMatchObject({ current_task: null, last_error: "no heartbeat" });
-    expect(db.tables.fleet_workers.find((r) => r.name === "W1")).toMatchObject({ current_task: "quote:1234", last_error: null });
+    expect(await removeOfflineWorkers(db, NOW, "host")).toEqual(["W2", "W3"]);
+    expect(db.tables.fleet_workers.map((r) => r.name)).toEqual(["W1", "host"]);
+    expect(await removeOfflineWorkers(db, NOW, "host")).toEqual([]);
     expect(await expireQuotes(db, NOW)).toBe(1);
     expect(db.tables.quotes.map((q) => q.status)).toEqual(["expired", "sent", "accepted"]);
   });

@@ -11,7 +11,7 @@ just waits for a box to come back.
 | W2   | `quotes`    | Geocode → parcel lookup → estimate hours → price standard items → quote + `quote` approval. Custom requests get a Claude summary and a `custom_item` approval; never auto-priced. |
 | W3   | `scheduler` | Runs `lib/scheduler` on events and every 15 min: proposals, crew offers, cover for declines/drops. |
 | W4   | `followup`  | Review requests, day-before reminders, NWS weather watch (snow-plan email, rain holds), message sending. |
-| Host | `host`      | The cron: enqueues timed tasks, requeues stale tasks, marks silent workers offline, expires old quotes. Claims nothing. |
+| Host | `host`      | The cron: enqueues timed tasks, requeues stale tasks, removes silent workers from the Fleet panel, expires old quotes. Claims nothing. |
 
 Anything customer-facing goes through `approvals` unless the owner turned that kind's autopilot on
 (`/admin/autopilot`). Emails get an unsubscribe link from `lib/email`; texts go only to `sms_opt_in` customers.
@@ -191,8 +191,8 @@ W1–W4 / Host:
 - Two boxes can share a role (e.g. a spare `quotes` box); claiming is safe. Run only **one** `host`.
 - If a box dies, enable its role on another box: work waits in the queue; nothing is lost.
 - Keys per role: `ANTHROPIC_API_KEY` for ads / quotes / followup; the email provider vars for followup (and for
-  quotes if quote autopilot is on, plus `STRIPE_SECRET_KEY`, test mode only); `GEOCODER` / `PARCEL_SOURCE` on
-  quotes; `NWS_USER_AGENT` on followup. See `docs/ENV.md`.
+  quotes if quote autopilot is on, plus `STRIPE_SECRET_KEY`, test mode only); `GEOCODER` / `PARCEL_SOURCE` /
+  `PARCEL_GIS_URL` on quotes; `NWS_USER_AGENT` on followup. See `docs/ENV.md`.
 
 ### Updating
 
@@ -217,9 +217,10 @@ The service-role key bypasses RLS, so treat a leak as urgent.
 
 ### Checking on the fleet
 
-- **`/admin/fleet`**: each worker's last heartbeat, CPU / RAM / temperature, current task, last error and version,
-  plus recent tasks with retry buttons and this month's AI spend. The host marks a worker that has been silent for
-  3 minutes with `last_error = "no heartbeat"`; the worker clears it on its next heartbeat.
+- **`/admin/fleet`**: each live worker's last heartbeat, CPU / RAM / temperature, current task, last error and version,
+  plus recent tasks with retry buttons and this month's AI spend. Only workers that heartbeated in the last 2 minutes
+  are listed; the host also deletes rows silent for 3 minutes. A worker that comes back reappears on its next
+  heartbeat. A box that is missing from the list is down: check it with `systemctl status` below.
 - Stuck work: tasks `running` for more than 10 minutes (box died mid-task) are requeued by the host.
 - On a box: `systemctl status fleet-worker@quotes`, `journalctl -u fleet-worker@quotes --since "1 hour ago"`.
 - In SQL: `select type, status, attempts, error, run_after from fleet_tasks order by created_at desc limit 20;`

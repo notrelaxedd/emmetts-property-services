@@ -1,7 +1,7 @@
 /**
  * Host role: no claiming. Every minute it keeps the fleet honest and acts as the cron:
  *  - requeue_stale_tasks('10 minutes')
- *  - workers silent for > 3 min → current_task = null, last_error = 'no heartbeat'
+ *  - workers silent for > 3 min → row deleted (it comes back on the worker's next heartbeat)
  *  - weather_watch every 6 h            (dedupe `weather:<yyyy-mm-dd>-<0..3>`)
  *  - schedule sweep every 15 min        (dedupe via enqueueSchedule's 15-minute bucket)
  *  - followup_reminder for booked jobs starting in 20–28 h (dedupe `reminder:<job_id>`)
@@ -13,13 +13,11 @@ import { enqueueSchedule, enqueueTask } from "../../lib/ops/tasks";
 import { check } from "../../lib/ops/types";
 import type { Db } from "../../lib/ops/types";
 import type { TaskContext } from "../context";
-import { OFFLINE_ERROR } from "../heartbeat";
 import { errorMessage } from "../log";
 import { HOUR_MS, MINUTE_MS, weatherDedupeKey } from "../time";
 
 export const STALE_TASK_INTERVAL = "10 minutes";
 export const OFFLINE_AFTER_MS = 3 * MINUTE_MS;
-export { OFFLINE_ERROR };
 export const REMINDER_WINDOW_HOURS = { from: 20, to: 28 } as const;
 export const REVIEW_WINDOW_HOURS = { from: 24, to: 72 } as const;
 
@@ -27,23 +25,23 @@ export async function requeueStale(db: Db): Promise<number> {
   return Number(check(await db.rpc("requeue_stale_tasks", { p_stale: STALE_TASK_INTERVAL }), "requeue_stale_tasks") ?? 0);
 }
 
-/** Mark silent workers offline (only rows that are not already marked). Returns their names. */
-export async function markOfflineWorkers(db: Db, now: Date, self: string): Promise<string[]> {
+/**
+ * Delete silent workers so the Fleet panel lists only live ones. A worker that comes back re-creates its row on
+ * its next heartbeat (upsert by name). The delete is conditional on the heartbeat we read, so a worker that
+ * heartbeats in between keeps its row. Returns the removed names.
+ */
+export async function removeOfflineWorkers(db: Db, now: Date, self: string): Promise<string[]> {
   const cutoff = new Date(now.getTime() - OFFLINE_AFTER_MS).toISOString();
   const workers = check(await db.from("fleet_workers").select("*"), "fleet_workers") ?? [];
-  const marked: string[] = [];
+  const removed: string[] = [];
   for (const w of workers) {
     if (w.name === self) continue;
-    const silent = !w.last_heartbeat || w.last_heartbeat < cutoff;
-    if (!silent) continue;
-    if (w.current_task === null && w.last_error === OFFLINE_ERROR) continue;
-    check(
-      await db.from("fleet_workers").update({ current_task: null, last_error: OFFLINE_ERROR }).eq("id", w.id),
-      "fleet_workers(offline)",
-    );
-    marked.push(w.name);
+    if (w.last_heartbeat && Date.parse(w.last_heartbeat) >= Date.parse(cutoff)) continue;
+    const del = db.from("fleet_workers").delete().eq("id", w.id);
+    check(await (w.last_heartbeat ? del.eq("last_heartbeat", w.last_heartbeat) : del.is("last_heartbeat", null)), "fleet_workers(offline)");
+    removed.push(w.name);
   }
-  return marked;
+  return removed;
 }
 
 export async function enqueueWeatherWatch(db: Db, now: Date): Promise<string> {
@@ -104,7 +102,7 @@ export async function hostTick(ctx: TaskContext): Promise<HostTickResult> {
     }
   };
   await step("requeued", () => requeueStale(db));
-  await step("offline", () => markOfflineWorkers(db, now, ctx.worker));
+  await step("offline", () => removeOfflineWorkers(db, now, ctx.worker));
   await step("weather", () => enqueueWeatherWatch(db, now));
   await step("schedule", () => enqueueSchedule(db, "sweep", undefined, now));
   await step("reminders", () => enqueueReminders(db, now));

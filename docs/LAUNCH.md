@@ -58,8 +58,8 @@ Everything below is on branch `claude/peaceful-brahmagupta-l7zdmt`; Vercel build
    STRIPE_SECRET_KEY=                    # Stripe → Developers → API keys → sk_test_… (test mode)
    STRIPE_WEBHOOK_SECRET=                # after step 4 below: whsec_…
    EMAIL_PROVIDER=log
-   GEOCODER=none
-   PARCEL_SOURCE=none
+   GEOCODER=census
+   PARCEL_SOURCE=none                    # parcel lookup runs on the fleet (cuyahoga_gis + PARCEL_GIS_URL there)
    ```
 
    Also add `NEXT_PUBLIC_SITE_URL=https://www.eodlawns.com` (Production only). It is used for the pay links in
@@ -102,7 +102,7 @@ Everything below is on branch `claude/peaceful-brahmagupta-l7zdmt`; Vercel build
 | --- | --- | --- |
 | 1 | Email provider + sending domain | `EMAIL_PROVIDER`, `EMAIL_FROM` |
 | 2 | Address autocomplete / geocoder | `GEOCODER` (+ key) |
-| 3 | Parcel / lot-size source for Rocky River | `PARCEL_SOURCE`; until then lot acres are editable on the quote page |
+| 3 | Parcel / lot-size source for Rocky River | `PARCEL_SOURCE=cuyahoga_gis` + `PARCEL_GIS_URL` on the quotes box; lot acres stay editable on the quote page |
 | 4 | Minimum job price; drop-notice window (24 h default) | `/admin/autopilot` → Business settings |
 | 5 | Partner tree service (name/email) | same page |
 | 6 | Crew login by email or phone | both work; invite form has both |

@@ -7,7 +7,7 @@ import { check } from "../lib/ops/types";
 import type { Db } from "../lib/ops/types";
 
 export const THERMAL_PATH = "/sys/class/thermal/thermal_zone0/temp";
-/** Written by the host when a worker goes quiet; cleared by the worker's next heartbeat. */
+/** Written by older hosts when a worker went quiet (hosts now delete the row); cleared by the next heartbeat. */
 export const OFFLINE_ERROR = "no heartbeat";
 
 export type Metrics = { cpu: number; ram: number; temp_c: number | null };

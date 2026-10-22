@@ -1,5 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { _resetNominatimThrottle, geocode, haversineMiles, isInServiceArea, lookupParcel, nominatimUrl } from "./index";
+import {
+  _resetNominatimThrottle,
+  arcgisQueryUrl,
+  censusUrl,
+  geocode,
+  haversineMiles,
+  isInServiceArea,
+  lookupParcel,
+  nominatimUrl,
+  parcelFromAttributes,
+} from "./index";
 
 const ROCKY_RIVER = { lat: 41.4756, lng: -81.8396 }; // opsConfig.defaultBase
 const DOWNTOWN_CLEVELAND = { lat: 41.4993, lng: -81.6944 }; // Public Square
@@ -110,18 +120,133 @@ describe("geocode", () => {
   });
 });
 
-describe("lookupParcel", () => {
+describe("census geocoder", () => {
   const saved = { ...process.env };
   afterEach(() => {
     process.env = { ...saved };
   });
-  it("returns null for none and for the TODO stubs", async () => {
-    const q = { lat: 41.4756, lng: -81.8396, address: "x" };
+
+  it("builds the one-line-address URL and parses x/y as lng/lat", async () => {
+    process.env.GEOCODER = "census";
+    const f = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            result: {
+              addressMatches: [{ matchedAddress: "19000 DETROIT RD, ROCKY RIVER, OH, 44116", coordinates: { x: -81.8396, y: 41.4756 } }],
+            },
+          }),
+        ),
+    );
+    const r = await geocode("19000 Detroit Rd, Rocky River, OH 44116", { fetchImpl: f as unknown as typeof fetch });
+    expect(r).toEqual({ lat: 41.4756, lng: -81.8396, formatted: "19000 DETROIT RD, ROCKY RIVER, OH, 44116" });
+    const url = (f.mock.calls[0] as unknown as [string])[0];
+    expect(url).toBe(censusUrl("19000 Detroit Rd, Rocky River, OH 44116"));
+    expect(url).toMatch(/^https:\/\/geocoding\.geo\.census\.gov\/geocoder\/locations\/onelineaddress\?address=19000\+Detroit/);
+    expect(url).toContain("benchmark=Public_AR_Current");
+  });
+
+  it("returns null when nothing matches", async () => {
+    process.env.GEOCODER = "census";
+    const f = vi.fn(async () => new Response(JSON.stringify({ result: { addressMatches: [] } })));
+    expect(await geocode("nowhere", { fetchImpl: f as unknown as typeof fetch })).toBeNull();
+  });
+});
+
+describe("lookupParcel", () => {
+  const saved = { ...process.env };
+  const q = { lat: 41.4756, lng: -81.8396, address: "x" };
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+  const features = (...attrs: Record<string, unknown>[]) =>
+    new Response(JSON.stringify({ features: attrs.map((attributes) => ({ attributes })) }));
+
+  it("returns null for none and for the regrid stub", async () => {
     delete process.env.PARCEL_SOURCE;
-    expect(await lookupParcel(q)).toBeNull();
-    process.env.PARCEL_SOURCE = "cuyahoga_gis";
     expect(await lookupParcel(q)).toBeNull();
     process.env.PARCEL_SOURCE = "regrid";
     expect(await lookupParcel(q)).toBeNull();
+  });
+
+  it("cuyahoga_gis requires PARCEL_GIS_URL", async () => {
+    process.env.PARCEL_SOURCE = "cuyahoga_gis";
+    delete process.env.PARCEL_GIS_URL;
+    await expect(lookupParcel(q)).rejects.toThrow(/PARCEL_GIS_URL/);
+  });
+
+  it("queries the layer with the point in WGS84 and reads PIN + acres", async () => {
+    process.env.PARCEL_SOURCE = "cuyahoga_gis";
+    process.env.PARCEL_GIS_URL = "https://gis.example/arcgis/rest/services/Parcels/FeatureServer/0/";
+    const f = vi.fn(async () => features({ PARCELPIN: "301-04-011", CALC_ACRES: 0.2154, OWNER: "x" }));
+    expect(await lookupParcel(q, { fetchImpl: f as unknown as typeof fetch })).toEqual({
+      parcel_id: "301-04-011",
+      lot_acres: 0.215,
+      source: "cuyahoga_gis",
+    });
+    expect(f).toHaveBeenCalledTimes(1);
+    const url = new URL((f.mock.calls[0] as unknown as [string])[0]);
+    expect(url.origin + url.pathname).toBe("https://gis.example/arcgis/rest/services/Parcels/FeatureServer/0/query");
+    expect(url.searchParams.get("geometry")).toBe("-81.8396,41.4756");
+    expect(url.searchParams.get("inSR")).toBe("4326");
+    expect(url.searchParams.get("spatialRel")).toBe("esriSpatialRelIntersects");
+    expect(url.searchParams.get("returnGeometry")).toBe("false");
+    expect(url.searchParams.has("distance")).toBe(false);
+  });
+
+  it("falls back to a 20 m search only when exactly one parcel is nearby", async () => {
+    process.env.PARCEL_SOURCE = "cuyahoga_gis";
+    process.env.PARCEL_GIS_URL = "https://gis.example/FeatureServer/0";
+    const one = vi.fn().mockResolvedValueOnce(features()).mockResolvedValueOnce(features({ parcel_id: "A", acres: "0.3" }));
+    expect(await lookupParcel(q, { fetchImpl: one as unknown as typeof fetch })).toMatchObject({ parcel_id: "A", lot_acres: 0.3 });
+    const near = new URL((one.mock.calls[1] as unknown as [string])[0]);
+    expect(near.searchParams.get("distance")).toBe("20");
+    expect(near.searchParams.get("units")).toBe("esriSRUnit_Meter");
+
+    const two = vi.fn().mockResolvedValueOnce(features()).mockResolvedValueOnce(features({ parcel_id: "A" }, { parcel_id: "B" }));
+    expect(await lookupParcel(q, { fetchImpl: two as unknown as typeof fetch })).toBeNull();
+  });
+
+  it("throws on an ArcGIS error body (HTTP 200) and on HTTP errors", async () => {
+    process.env.PARCEL_SOURCE = "cuyahoga_gis";
+    process.env.PARCEL_GIS_URL = "https://gis.example/FeatureServer/0";
+    const err = vi.fn(async () => new Response(JSON.stringify({ error: { code: 400, message: "Invalid query" } })));
+    await expect(lookupParcel(q, { fetchImpl: err as unknown as typeof fetch })).rejects.toThrow(/400: Invalid query/);
+    const down = vi.fn(async () => new Response("bad gateway", { status: 502 }));
+    await expect(lookupParcel(q, { fetchImpl: down as unknown as typeof fetch })).rejects.toThrow(/parcel GIS 502/);
+  });
+
+  it("arcgisQueryUrl trims trailing slashes", () => {
+    expect(arcgisQueryUrl("https://g/x/MapServer/2//", q)).toMatch(/^https:\/\/g\/x\/MapServer\/2\/query\?/);
+  });
+});
+
+describe("parcelFromAttributes", () => {
+  it("reads the Cuyahoga Parcel Fabric Taxparcels fields (parcel_id, parcel_acreage)", () => {
+    const attrs = { ObjectID: 7, parcel_id: "30104011", parentpin: "301-04-011", parcel_lot_size: "60X150", parcel_acreage: 0.2066, Shape__Area: 9000 };
+    expect(parcelFromAttributes(attrs, {})).toEqual({ parcel_id: "30104011", lot_acres: 0.207, source: "cuyahoga_gis" });
+  });
+  it("auto-detects fields case-insensitively and converts square feet", () => {
+    expect(parcelFromAttributes({ ParcelPin: " 301-01-001 ", Land_SqFt: 8712 }, {})).toEqual({
+      parcel_id: "301-01-001",
+      lot_acres: 0.2,
+      source: "cuyahoga_gis",
+    });
+  });
+  it("prefers acres over square feet and skips empty / zero values", () => {
+    expect(parcelFromAttributes({ pin: "1", calc_acres: 0, acres: "", deeded_acres: 0.5, sqft: 43560 }, {}).lot_acres).toBe(0.5);
+  });
+  it("honors explicit field overrides", () => {
+    const env = { PARCEL_GIS_ID_FIELD: "TAXNUM", PARCEL_GIS_SQFT_FIELD: "SHAPE_AREA_FT" };
+    expect(parcelFromAttributes({ TAXNUM: 42, PARCELPIN: "no", ACRES: 9, SHAPE_AREA_FT: 21780 }, env)).toEqual({
+      parcel_id: "42",
+      lot_acres: 0.5,
+      source: "cuyahoga_gis",
+    });
+    expect(parcelFromAttributes({ MY_AC: 0.25, ACRES: 9 }, { PARCEL_GIS_ACRES_FIELD: "my_ac" }).lot_acres).toBe(0.25);
+  });
+  it("returns nulls when nothing usable is present, and drops absurd sizes", () => {
+    expect(parcelFromAttributes({ OWNER: "x" }, {})).toEqual({ parcel_id: null, lot_acres: null, source: "cuyahoga_gis" });
+    expect(parcelFromAttributes({ acres: 5000 }, {}).lot_acres).toBeNull();
   });
 });
