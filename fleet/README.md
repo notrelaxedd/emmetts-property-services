@@ -191,8 +191,8 @@ W1–W4 / Host:
 - Two boxes can share a role (e.g. a spare `quotes` box); claiming is safe. Run only **one** `host`.
 - If a box dies, enable its role on another box: work waits in the queue; nothing is lost.
 - Keys per role: `ANTHROPIC_API_KEY` for ads / quotes / followup; the email provider vars for followup (and for
-  quotes if quote autopilot is on, plus `STRIPE_SECRET_KEY`, test mode only); `GEOCODER` / `PARCEL_SOURCE` on
-  quotes; `NWS_USER_AGENT` on followup. See `docs/ENV.md`.
+  quotes if quote autopilot is on, plus `STRIPE_SECRET_KEY`, test mode only); `GEOCODER` / `PARCEL_SOURCE` /
+  `PARCEL_GIS_URL` on quotes; `NWS_USER_AGENT` on followup. See `docs/ENV.md`.
 
 ### Updating
 

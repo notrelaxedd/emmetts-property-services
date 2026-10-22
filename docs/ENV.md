@@ -22,10 +22,12 @@ with `NEXT_PUBLIC_`; never commit one.
 | `EMAIL_FROM` | ✓ | ✓ | with provider | Sending address, e.g. `Emmett's Property Services <hello@…>`. **[sending domain — ask owner]** |
 | `RESEND_API_KEY` / `POSTMARK_SERVER_TOKEN` | ✓ | ✓ | with provider | Provider credential. |
 | `SMS_PROVIDER` | ✓ | ✓ | — | `log` only in v1. **[SMS provider — ask owner]** Texts go only to `sms_opt_in` customers. |
-| `GEOCODER` | ✓ | ✓ | — | `none` (default) · `nominatim` · `google` · `mapbox`. **[GEOCODER — ask owner]** |
+| `GEOCODER` | ✓ | ✓ | — | `none` (default) · `census` (US Census Bureau: free, no key, US addresses) · `nominatim` · `google` · `mapbox`. |
 | `GEOCODER_API_KEY` | ✓ | ✓ | google/mapbox | Geocoder credential. |
 | `GEOCODER_USER_AGENT` | — | ✓ | — | Nominatim requires a contact string. |
-| `PARCEL_SOURCE` | — | ✓ | — | `none` (default). `cuyahoga_gis` / `regrid` are stubs. **[PARCEL DATA SOURCE — ask owner]** |
+| `PARCEL_SOURCE` | — | ✓ | — | `none` (default) · `cuyahoga_gis` (county tax-parcel layer at `PARCEL_GIS_URL`; fills `parcel_id` + `lot_acres` from the customer's coordinates). `regrid` is a stub. |
+| `PARCEL_GIS_URL` | — | ✓ | cuyahoga_gis | ArcGIS layer URL ending in `/FeatureServer/<n>` or `/MapServer/<n>`. See "Finding the parcel layer" below. |
+| `PARCEL_GIS_ID_FIELD` / `PARCEL_GIS_ACRES_FIELD` / `PARCEL_GIS_SQFT_FIELD` | — | ✓ | — | Override the auto-detected attribute names (PIN; acres; or square feet, divided by 43,560). |
 | `NWS_USER_AGENT` | — | ✓ | — | api.weather.gov requires an identifying User-Agent with a contact email. |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | ✓ | — | — | Cloudflare Turnstile on the quote form (widget renders only when set). |
 | `TURNSTILE_SECRET_KEY` | ✓ | — | with site key | Server-side Turnstile verification. Honeypot + rate limit are always on. |
@@ -35,6 +37,29 @@ with `NEXT_PUBLIC_`; never commit one.
 | `FLEET_ROLE` | — | ✓ | ✓ | `ads` · `quotes` · `scheduler` · `followup` · `host`. One per box. |
 | `FLEET_NAME` | — | ✓ | — | Worker display name on the Fleet panel. Defaults to `<role>-<hostname>`. |
 | `FLEET_ROOT` | — | ✓ | — | Install directory (default `/opt/fleet`), used for the version stamp. |
+
+## Finding the parcel layer
+
+The lookup is an ArcGIS point-in-polygon query: the customer's lat/lng (from `GEOCODER`, or the address
+autocomplete) against the county's tax-parcel polygons. If the point misses every parcel (a street-side geocode),
+it retries within 20 m and accepts the result only when exactly one parcel is that close. Anything else leaves the
+lot size for the owner. Failures are logged as `parcel lookup failed` and never block a quote.
+
+Cuyahoga County publishes its parcels on its GIS hub (`geospatial.gis.cuyahogacounty.gov`, Data → "Parcel Fabric
+Taxparcels"; the dataset's "View API resources" link shows the GeoService URL). Check a candidate from any machine
+with internet, using a Rocky River point:
+
+```bash
+URL='https://…/FeatureServer/0'
+curl -s "$URL?f=json" | grep -o '"name":"[^"]*"' | head -60          # field names
+curl -s "$URL/query?f=json&geometry=-81.8396,41.4756&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=false"
+```
+
+The second command should return one feature whose attributes include a PIN and an acreage or square-footage
+field. Auto-detected names: PIN `parcelpin` / `parcel_id` / `pin` / `parcelnumb`; acres `calc_acres` / `gis_acres` /
+`acres` / `acreage` / `total_acres` / `deeded_acres` / `land_acres`; square feet `calc_sqft` / `land_sqft` / `sqft` /
+`square_feet` / `area_sqft`. Set the `PARCEL_GIS_*_FIELD` overrides if the layer uses something else. Do not use a
+`Shape__Area` field: its units depend on the layer's projection.
 
 ## Business settings that are not env vars
 

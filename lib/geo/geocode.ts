@@ -1,6 +1,7 @@
 /**
- * Address geocoding. Provider chosen by GEOCODER env: none (default) | nominatim | google | mapbox.
- * TODO [GEOCODER — ask owner]: which provider to use. "none" returns null (address stays free text).
+ * Address geocoding. Provider chosen by GEOCODER env: none (default) | census | nominatim | google | mapbox.
+ * "census" (US Census Bureau) is free and needs no key: the default pick for US street addresses.
+ * "none" returns null (address stays free text).
  * Plain Node: global fetch, no next/* imports.
  */
 
@@ -16,6 +17,14 @@ export function nominatimUrl(address: string): string {
   u.searchParams.set("q", address);
   u.searchParams.set("limit", "1");
   u.searchParams.set("addressdetails", "1");
+  return u.toString();
+}
+
+export function censusUrl(address: string): string {
+  const u = new URL("https://geocoding.geo.census.gov/geocoder/locations/onelineaddress");
+  u.searchParams.set("address", address);
+  u.searchParams.set("benchmark", "Public_AR_Current");
+  u.searchParams.set("format", "json");
   return u.toString();
 }
 
@@ -73,6 +82,16 @@ export async function geocode(address: string, opts: Opts = {}): Promise<Geocode
   const f = opts.fetchImpl ?? fetch;
 
   switch (provider) {
+    case "census": {
+      const json = (await getJson(f, censusUrl(q))) as {
+        result?: { addressMatches?: Array<{ matchedAddress?: string; coordinates?: { x?: number; y?: number } }> };
+      };
+      const hit = json.result?.addressMatches?.[0];
+      const lat = num(hit?.coordinates?.y);
+      const lng = num(hit?.coordinates?.x);
+      if (!hit || lat === null || lng === null) return null;
+      return { lat, lng, formatted: hit.matchedAddress ?? q };
+    }
     case "nominatim": {
       await throttleNominatim();
       const json = (await getJson(f, nominatimUrl(q), {
@@ -120,6 +139,6 @@ export async function geocode(address: string, opts: Opts = {}): Promise<Geocode
       };
     }
     default:
-      throw new Error(`Unknown GEOCODER "${provider}" (expected none | nominatim | google | mapbox)`);
+      throw new Error(`Unknown GEOCODER "${provider}" (expected none | census | nominatim | google | mapbox)`);
   }
 }
