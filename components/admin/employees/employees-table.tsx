@@ -2,11 +2,12 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { removeEmployee, restoreEmployee, updateEmployee } from "@/app/admin/actions/employees"
+import { removeEmployee, restoreEmployee, setTemporaryPassword, updateEmployee } from "@/app/admin/actions/employees"
 import { usd } from "@/app/admin/money/math"
 import { ConfirmDialog } from "@/components/admin/inbox/confirm-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -52,6 +53,13 @@ function Row({ e }: { e: EmployeeRow }) {
     startTransition(async () => {
       result(await restoreEmployee(e.id), "Couldn't restore")
     })
+  const [temp, setTemp] = React.useState<{ password: string; email: string } | null>(null)
+  const setPassword = async () => {
+    const r = await setTemporaryPassword(e.id)
+    if (r.ok) setTemp({ password: r.password, email: r.email })
+    else toast({ title: "Couldn't set a password", description: r.reason, variant: "destructive" })
+    return r.ok
+  }
 
   return (
     <TableRow>
@@ -115,6 +123,16 @@ function Row({ e }: { e: EmployeeRow }) {
               >
                 Save
               </Button>
+              {e.role === "owner" || !e.email ? null : (
+                <ConfirmDialog
+                  trigger="Set password"
+                  triggerVariant="ghost"
+                  title={`Set a temporary password for ${e.name || "this team member"}?`}
+                  description={`They sign in at /login with ${e.email} and the password shown next. It replaces any password they had; they can change it any time from the crew app.`}
+                  confirmLabel="Set password"
+                  onConfirm={setPassword}
+                />
+              )}
               {e.role === "owner" ? null : (
                 <ConfirmDialog
                   trigger="Remove"
@@ -129,6 +147,39 @@ function Row({ e }: { e: EmployeeRow }) {
             </>
           )}
         </div>
+        <Dialog open={temp !== null} onOpenChange={(open) => (open ? null : setTemp(null))}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Temporary password for {e.name || "this team member"}</DialogTitle>
+              <DialogDescription>
+                Text it to them now. It is shown only once; set another if it gets lost.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 text-left text-sm">
+              <p>
+                Email: <span className="font-medium text-ink">{temp?.email}</span>
+              </p>
+              <p className="rounded-md border border-ink/10 bg-paper px-3 py-2 font-mono text-lg tracking-wide text-ink" data-testid="temp-password">
+                {temp?.password}
+              </p>
+              <p className="text-ink-muted">
+                Sign in at <span className="font-medium text-ink">eodlawns.com/login</span> with the password tab.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => temp && navigator.clipboard?.writeText(`Sign in at https://www.eodlawns.com/login\nEmail: ${temp.email}\nPassword: ${temp.password}`).then(() => toast({ title: "Copied", variant: "success" }))}
+              >
+                Copy
+              </Button>
+              <Button type="button" onClick={() => setTemp(null)}>
+                Done
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </TableCell>
     </TableRow>
   )
