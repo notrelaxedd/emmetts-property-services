@@ -59,8 +59,6 @@ export const siteConfig = {
 
   /** Timezone used to decide what "today" means for the preferred-date field. */
   timezone: "America/New_York",
-
-  team: ["Emmett", "Kevin", "Chase"],
 } as const;
 
 export type SiteConfig = typeof siteConfig;
