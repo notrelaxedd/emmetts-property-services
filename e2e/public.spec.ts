@@ -2,13 +2,16 @@ import { expect, test } from "@playwright/test";
 
 /** The marketing site must keep working unchanged, and the new public pages must render with no backend. */
 test.describe("public site", () => {
-  test("home page still renders the marketing sections and phone CTA", async ({ page }) => {
+  test("home page funnels to the quote form and still offers a phone number", async ({ page }) => {
     await page.goto("/");
     await expect(page).toHaveTitle(/Emmett/i);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    // Desktop shows the number in the header; phones show the round call button + the sticky call bar.
+    // The hero's main button goes to the quote form; service shortcuts pre-tick a service.
+    await expect(page.locator("#main").getByRole("link", { name: /get my free quote/i }).first()).toHaveAttribute("href", "/quote");
+    await expect(page.locator('#main a[href="/quote?service=lawn-mowing"]').first()).toBeVisible();
+    // Calling is quieter now, but a number is always visible.
     await expect(page.locator('a[href^="tel:+14408235545"]:visible').first()).toBeVisible();
-    for (const id of ["services", "why-us", "contact"]) await expect(page.locator(`#${id}`)).toBeVisible();
+    for (const id of ["how-it-works", "services", "why-us", "contact"]) await expect(page.locator(`#${id}`)).toBeVisible();
   });
 
   test("/contact renders with an h1 and /book still redirects there", async ({ page }) => {

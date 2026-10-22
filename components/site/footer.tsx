@@ -32,6 +32,11 @@ export function SiteFooter() {
         <div className="md:col-span-3 lg:col-span-3">
           <h2 className="font-display text-xl uppercase text-white">{content.footer.linksHeading}</h2>
           <ul className="mt-4 space-y-2">
+            <li>
+              <Link href="/quote" className="font-semibold text-brand-green transition-colors hover:text-white">
+                {content.cta.quote}
+              </Link>
+            </li>
             {content.nav
               .filter((item) => item.href !== "/#contact")
               .map((item) => (

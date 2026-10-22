@@ -3,7 +3,6 @@ import { Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { content } from "@/lib/content";
 import { siteConfig } from "@/lib/site-config";
-import { ContactLink } from "./contact-link";
 import { IconBadge } from "./icons";
 import { LogoLockup } from "./logo";
 import { MobileNav } from "./mobile-nav";
@@ -38,17 +37,13 @@ export function SiteHeader() {
             {siteConfig.phone.display}
           </a>
           <Button asChild variant="cta-green" size="cta-sm" className="hidden md:inline-flex">
-            <ContactLink>{content.cta.contact}</ContactLink>
+            <Link href="/quote">{content.cta.quoteShort}</Link>
           </Button>
 
-          {/* Phones: one-tap call + menu. The sticky bottom bar keeps calling in thumb reach too. */}
-          <a
-            href={siteConfig.phone.href}
-            aria-label={`Call ${siteConfig.phone.display}`}
-            className="inline-flex size-12 items-center justify-center rounded-full bg-brand-green text-ink md:hidden"
-          >
-            <Phone className="size-5" aria-hidden="true" strokeWidth={2.5} />
-          </a>
+          {/* Phones: free quote + menu. The sticky bottom bar keeps the quote (and a call) in thumb reach too. */}
+          <Button asChild variant="cta-green" size="cta-sm" className="h-12 px-5 md:hidden">
+            <Link href="/quote">{content.cta.quoteShort}</Link>
+          </Button>
           <div className="md:hidden">
             <MobileNav />
           </div>

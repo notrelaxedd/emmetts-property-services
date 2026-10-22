@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Menu, Phone } from "lucide-react";
+import { ArrowRight, Menu, Phone } from "lucide-react";
 import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { content } from "@/lib/content";
 import { siteConfig } from "@/lib/site-config";
-import { ContactLink } from "./contact-link";
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
@@ -49,17 +48,20 @@ export function MobileNav() {
         </nav>
 
         <div className="mt-auto flex flex-col gap-3">
-          <Button asChild variant="cta" size="cta" className="w-full">
+          <SheetClose asChild>
+            <Button asChild variant="cta" size="cta" className="w-full">
+              <Link href="/quote">
+                {content.cta.quote}
+                <ArrowRight aria-hidden="true" />
+              </Link>
+            </Button>
+          </SheetClose>
+          <Button asChild variant="cta-outline" size="cta" className="w-full">
             <a href={siteConfig.phone.href}>
               <Phone aria-hidden="true" />
               {siteConfig.phone.display}
             </a>
           </Button>
-          <SheetClose asChild>
-            <Button asChild variant="cta-outline" size="cta" className="w-full">
-              <ContactLink>{content.cta.contact}</ContactLink>
-            </Button>
-          </SheetClose>
         </div>
       </SheetContent>
     </Sheet>

@@ -8,8 +8,8 @@ import { siteConfig } from "./site-config";
 export const content = {
   nav: [
     { label: "Services", href: "/#services" },
+    { label: "How it works", href: "/#how-it-works" },
     { label: "Why Us", href: "/#why-us" },
-    { label: "Get a quote", href: "/quote" },
     { label: "Contact", href: "/#contact" },
   ],
 
@@ -17,6 +17,10 @@ export const content = {
     call: `Call ${siteConfig.phone.display}`,
     callShort: "Call now",
     contact: "Contact us",
+    // The site's main action. Calling is still offered everywhere, just never louder than this.
+    quote: "Get my free quote",
+    quoteShort: "Free quote",
+    callAlt: "Rather talk?",
   },
 
   hero: {
@@ -24,11 +28,30 @@ export const content = {
     // The business's main offer. Swap seasonally (e.g. ["Snow", "removal"] in December).
     headline: ["Fall lawn", "cleanup"],
     body: "Leaf removal, edging, and gutter cleaning in one visit. We get your lawn ready to survive the winter so it bounces back stronger in spring.",
+    quoteNote: "Free, no obligation. Takes about two minutes.",
+    quickStartLabel: "Or start with what you need",
+    // Shortcuts into the quote form with that service already ticked.
+    quickStart: [
+      { label: "Fall cleanup", slug: "fall-cleanup" },
+      { label: "Mowing", slug: "lawn-mowing" },
+      { label: "Leaves", slug: "leaf-removal" },
+      { label: "Gutters", slug: "gutter-cleaning" },
+      { label: "Snow", slug: "snow-removal" },
+    ],
     trust: ["Three-person local crew", "Fair prices", "Great reviews around the neighborhood"],
     image: {
       src: "/images/hero-leaf-blowing.jpg",
       alt: "A crew member with a backpack blower sending a wave of red fall leaves across a lawn",
     },
+  },
+
+  howItWorks: {
+    headline: ["Your price", "in three steps"],
+    steps: [
+      { title: "Tell us what you need", body: "Pick your services and add your address. It takes about two minutes." },
+      { title: "Get your price", body: "We look it over and send you a fair price by text or email. No pressure." },
+      { title: "Pick a day", body: "Say yes, choose a day that works, and we show up and get it done." },
+    ],
   },
 
   services: {
@@ -37,12 +60,12 @@ export const content = {
       "Pick what you need and we'll take care of it. Every job is done by the same three of us, start to finish.",
     featuredSlug: "fall-cleanup",
     featuredLabel: "In season now",
-    linkLabel: "Ask about this",
+    linkLabel: "Get a price",
   },
 
   benefits: {
-    headline: ["One call", "covers it"],
-    body: "From the first mow in spring to the last snowfall, one crew handles the whole yard. Tell us what you need and we'll take it from there.",
+    headline: ["One crew", "covers it"],
+    body: "From the first mow in spring to the last snowfall, one crew handles the whole yard. Tell us what you need and we'll send you one price for all of it.",
     pills: ["Leaf Cleanup", "Edging", "Gutter Cleaning", "Snow Removal", "And More"],
     image: {
       src: "/images/fall-leaves-lawn.jpg",
@@ -100,6 +123,16 @@ export const content = {
     callPrompt: "Call the crew",
     handyHeading: "Handy to have when you call",
     handy: ["Your address", "Which service you need", "A day or two that works for you"],
+    areaHeading: "Where we work",
+  },
+
+  // Closing section on the home page. Keeps id="contact" so "Contact" links still land here.
+  finalCta: {
+    headline: ["Ready for", "your price?"],
+    body: "Tell us about your yard and we'll send you a fair price by text or email. Free, and no obligation.",
+    cardHeading: "Get your free quote",
+    points: ["Takes about two minutes", "Price by text or email", "Pick a day that works for you"],
+    callPrompt: "Rather talk it through? Call the crew.",
     areaHeading: "Where we work",
   },
 
@@ -205,8 +238,9 @@ export const content = {
   },
 
   mobileBar: {
-    call: "Call now",
-    contact: "Contact",
+    quote: "Free quote",
+    call: "Call",
+    callNow: "Call now",
   },
 
   footer: {

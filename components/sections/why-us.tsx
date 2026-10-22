@@ -1,6 +1,6 @@
-import { Phone } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ContactLink } from "@/components/site/contact-link";
 import { Diagonal } from "@/components/site/diagonal";
 import { Headline } from "@/components/site/headline";
 import { OvalPhoto } from "@/components/site/oval-photo";
@@ -70,16 +70,20 @@ export function WhyUs() {
             ))}
           </ul>
 
-          <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+          <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-6">
             <Button asChild variant="cta" size="cta">
-              <a href={siteConfig.phone.href}>
-                <Phone aria-hidden="true" />
-                {content.cta.call}
-              </a>
+              <Link href="/quote">
+                {content.cta.quote}
+                <ArrowRight aria-hidden="true" />
+              </Link>
             </Button>
-            <Button asChild variant="cta-outline" size="cta">
-              <ContactLink>{content.cta.contact}</ContactLink>
-            </Button>
+            <a
+              href={siteConfig.phone.href}
+              className="inline-flex items-center gap-2 font-semibold text-ink underline decoration-brand-green decoration-2 underline-offset-[6px] hover:text-brand-green-dark"
+            >
+              <Phone className="size-4" aria-hidden="true" strokeWidth={2.5} />
+              {content.cta.callAlt} {siteConfig.phone.display}
+            </a>
           </div>
         </div>
       </div>
