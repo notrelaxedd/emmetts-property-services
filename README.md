@@ -1,6 +1,6 @@
 # Emmett's Property Services: website
 
-Marketing site for Emmett's Property Services (Emmett's Lawn Care), Rocky River, OH.
+Marketing site for Emmett's Property Services (Emmett's Lawn Care), Northeast Ohio.
 Every section pushes toward one action: **the free quote form at `/quote`**. The phone number
 (440) 823-5545 is still on every page, just never louder than the quote button.
 

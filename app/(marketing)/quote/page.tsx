@@ -11,7 +11,7 @@ import { siteConfig } from "@/lib/site-config";
 export const metadata: Metadata = {
   title: "Get a Quote",
   description:
-    "Get a free quote from Emmett's Property Services for lawn mowing, fall cleanup, leaf removal, gutter cleaning, and snow removal in Rocky River, OH and the west-side Cleveland suburbs.",
+    "Get a free quote from Emmett's Property Services for lawn mowing, fall cleanup, leaf removal, gutter cleaning, and snow removal in Northeast Ohio and the west-side Cleveland suburbs.",
   alternates: { canonical: "/quote" },
   openGraph: { url: "/quote" },
 };
