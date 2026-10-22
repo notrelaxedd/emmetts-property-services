@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/notrelaxedd/emmetts-property-services/main/fleet/install.sh | sudo bash
 #
 # Re-running it updates the code and restarts the service. Idempotent.
-#   - installs git, curl and Node 20 (NodeSource) if missing
+#   - installs git, curl and Node 22 (NodeSource) if missing or older (supabase-js needs native WebSocket)
 #   - creates the `fleet` system user, clones/updates /opt/fleet (branch: main)
 #   - installs the systemd unit; /etc/fleet/all.env holds FLEET_ROLE=all + the keys
 #   - caps journald at 50 MB (small flash drives), no local logs or DB
@@ -24,9 +24,9 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq git curl ca-certificates >/dev/null
 
-if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]; then
-  echo "==> node 20 (NodeSource)"
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null
+if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 22 ]; then
+  echo "==> node 22 (NodeSource)"
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null
   apt-get install -y -qq nodejs >/dev/null
 fi
 echo "    node $(node -v), npm $(npm -v)"
@@ -34,6 +34,8 @@ echo "    node $(node -v), npm $(npm -v)"
 echo "==> user + checkout"
 id fleet >/dev/null 2>&1 || useradd --system --home-dir "$ROOT" --shell /usr/sbin/nologin fleet
 if [ -d "$ROOT/.git" ]; then
+  # Root owns the checkout (git refuses a repo owned by another user). Older installs chowned it to fleet.
+  chown -R root:root "$ROOT"
   git -C "$ROOT" fetch -q origin "$BRANCH"
   git -C "$ROOT" reset -q --hard "origin/$BRANCH"
 else
@@ -45,7 +47,8 @@ echo "==> dependencies (production only; tsx is a runtime dependency)"
 cd "$ROOT"
 npm ci --omit=dev --no-audit --no-fund --loglevel=error
 npm cache clean --force >/dev/null 2>&1 || true
-chown -R fleet:fleet "$ROOT"
+# The worker only reads the code (ReadOnlyPaths in the unit); it never needs to own it.
+chmod -R a+rX "$ROOT"
 
 echo "==> environment file"
 mkdir -p "$ENV_DIR"

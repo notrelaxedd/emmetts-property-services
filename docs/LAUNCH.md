@@ -78,7 +78,7 @@ Everything below is on branch `claude/peaceful-brahmagupta-l7zdmt`; Vercel build
    Details and the manual Dashboard steps: `docs/STRIPE.md`.
    - Test it: on the endpoint page use **Send test event** → `checkout.session.completed`. Expect HTTP 200 and a
      row in `stripe_events` (it will say "no quote_id metadata" and be marked processed, which is correct).
-5. **Fleet boxes** → follow `fleet/README.md` (Node 20, `/etc/fleet/<role>.env`, `systemctl enable --now fleet-worker@quotes`, …).
+5. **Fleet boxes** → follow `fleet/README.md` (Node 22, `/etc/fleet/<role>.env`, `systemctl enable --now fleet-worker@quotes`, …).
 
 ## 2. What to try on the preview
 
