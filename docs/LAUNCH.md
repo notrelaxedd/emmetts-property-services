@@ -15,7 +15,9 @@
    your email + a password, tick **Auto Confirm User**). Then SQL editor → the promote statement from
    `supabase/README.md`. Sign in at `/login` with email + password. (Magic links also work once the user exists,
    but Supabase's built-in mailer is rate-limited to a few per hour and often lands in spam; crew can set a
-   password at `/account/password` after their first magic-link sign-in.)
+   password at `/account/password` after their first magic-link sign-in. If a crew member's invite email never
+   arrives or the welcome page can't save their password, use **Set password** on their row in `/admin/employees`
+   and text them the temporary password; they sign in with the password tab and can change it any time.)
 5. **Workers from your laptop** (no Debian boxes needed tonight):
    ```bash
    git clone https://github.com/notrelaxedd/emmetts-property-services && cd emmetts-property-services

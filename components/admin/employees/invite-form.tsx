@@ -52,7 +52,9 @@ export function InviteForm({ defaultRate }: { defaultRate: number }) {
         <UserPlus /> {pending ? "Inviting…" : "Invite crew"}
       </Button>
       <p className="text-xs text-ink-muted sm:col-span-2 lg:col-span-4">
-        Email gets a magic link to the crew app. A phone number signs in with a text code at the login page.
+        Email gets an invite link that asks them to choose a password. If it doesn’t arrive or won’t open, use
+        <span className="font-medium"> Set password</span> on their row and text them the password instead. A phone
+        number signs in with a text code at the login page.
       </p>
     </form>
   )

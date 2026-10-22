@@ -53,7 +53,7 @@ export const content = {
   whyUs: {
     headline: ["Local students.", "Real work."],
     paragraphs: [
-      `We're ${siteConfig.team[0]}, ${siteConfig.team[1]}, and ${siteConfig.team[2]}, three local high school students who take yard work seriously. We show up, do the job right, and charge a fair price for it.`,
+      "We're three local high school students who take yard work seriously. We show up, do the job right, and charge a fair price for it.",
       "There's a good chance you've already seen our work. Plenty of the neighborhood has, and they keep telling their neighbors about us.",
     ],
     points: [

@@ -1,6 +1,6 @@
 "use server"
 
-import { headers } from "next/headers"
+import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { homeForCurrentUser, safeNext } from "./redirects"
@@ -99,16 +99,50 @@ export async function signInWithPassword(formData: FormData) {
   redirect(next ?? home)
 }
 
-/** Signed-in users set or change their password at /account/password. */
-export async function updatePassword(formData: FormData): Promise<{ ok: boolean; error?: string }> {
+const NO_SESSION_MESSAGE = "Your sign-in from the link has expired, so the password couldn’t be saved."
+
+export type UpdatePasswordResult =
+  | { ok: true }
+  | { ok: false; error: string; code?: "no-session" | "weak" | "other" }
+
+function isSessionMissing(error: { message?: string; name?: string; status?: number }): boolean {
+  return error.name === "AuthSessionMissingError" || /session missing|not logged in|JWT|invalid claim/i.test(error.message ?? "")
+}
+
+/**
+ * Signed-in users set or change their password at /account/password. Reads the session from the
+ * cookie the browser sent with the form; the form falls back to the browser client when there is
+ * no session on this side, and failures are logged so Vercel's function log shows what happened.
+ */
+export async function updatePassword(formData: FormData): Promise<UpdatePasswordResult> {
   const password = typeof formData.get("password") === "string" ? (formData.get("password") as string) : ""
   const confirm = typeof formData.get("confirm") === "string" ? (formData.get("confirm") as string) : ""
-  if (password.length < 8) return { ok: false, error: "Use at least 8 characters." }
-  if (password !== confirm) return { ok: false, error: "The two passwords don’t match." }
+  if (password.length < 8) return { ok: false, error: "Use at least 8 characters.", code: "weak" }
+  if (password !== confirm) return { ok: false, error: "The two passwords don’t match.", code: "weak" }
   const supabase = createSupabaseServerClient()
-  if (!supabase) return { ok: false, error: "Sign-in isn’t available right now." }
+  if (!supabase) return { ok: false, error: "Sign-in isn’t available right now.", code: "other" }
+
+  const hasAuthCookie = cookies().getAll().some((c) => /-auth-token/.test(c.name))
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+  if (!user) {
+    console.warn("[account] password update: no server session", {
+      hasAuthCookie,
+      code: userError?.code,
+      status: userError?.status,
+      message: userError?.message,
+    })
+    return { ok: false, code: "no-session", error: NO_SESSION_MESSAGE }
+  }
+
   const { error } = await supabase.auth.updateUser({ password })
-  if (error) return { ok: false, error: error.message }
+  if (error) {
+    console.warn("[account] password update failed", { userId: user.id, code: error.code, status: error.status, message: error.message })
+    if (isSessionMissing(error)) return { ok: false, code: "no-session", error: NO_SESSION_MESSAGE }
+    return { ok: false, code: "other", error: error.message }
+  }
   return { ok: true }
 }
 

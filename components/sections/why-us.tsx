@@ -42,19 +42,7 @@ export function WhyUs() {
         <div className="md:col-span-7 lg:col-span-6 lg:col-start-7">
           <Headline id="why-us-title" lines={whyUs.headline} accentLine={1} />
 
-          <ul className="mt-9 flex flex-wrap gap-2" aria-label="The crew">
-            {siteConfig.team.map((name) => (
-              <li
-                key={name}
-                className="flex items-center gap-2 rounded-full border-2 border-ink bg-white px-4 py-1.5 font-display text-lg uppercase leading-none tracking-[0.03em] text-ink"
-              >
-                <span aria-hidden="true" className="size-2 rounded-full bg-brand-green" />
-                {name}
-              </li>
-            ))}
-          </ul>
-
-          <div className="mt-7 max-w-[38rem] space-y-4 text-lead text-ink-body">
+          <div className="mt-9 max-w-[38rem] space-y-4 text-lead text-ink-body">
             {whyUs.paragraphs.map((p) => (
               <p key={p}>{p}</p>
             ))}

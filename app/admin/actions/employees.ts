@@ -7,8 +7,10 @@ import { requireOwner } from "@/lib/auth/session"
 import { check, enqueueSchedule, markForResolve, releaseCrewFromJob } from "@/lib/ops"
 import type { AssignmentStatus, JobStatus } from "@/lib/db/types"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
+import { generateTempPassword } from "@/lib/auth/temp-password"
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; reason: string }
+export type PasswordResult = { ok: true; password: string; email: string } | { ok: false; reason: string }
 
 const idSchema = z.string().regex(/^[0-9a-f-]{36}$/i, "Bad id")
 
@@ -107,6 +109,30 @@ export async function inviteCrew(input: { name: string; contact: string; rate: n
     }
   } catch (e) {
     return fail(e)
+  }
+}
+
+/**
+ * Give a crew member a temporary password so they can sign in with email + password right away,
+ * without depending on an invite or magic-link email (which can land in spam or expire). The owner
+ * sees the password once and texts it to them; they can change it at /account/password.
+ */
+export async function setTemporaryPassword(profileId: string): Promise<PasswordResult> {
+  const session = await requireOwner()
+  if (!idSchema.safeParse(profileId).success) return { ok: false, reason: "Invalid employee." }
+  try {
+    const db = requireSupabaseAdmin()
+    const profile = check(await db.from("profiles").select("id,user_id,name,email,role,removed_at").eq("id", profileId).maybeSingle(), "load employee")
+    if (!profile) return { ok: false, reason: "Employee not found." }
+    if (profile.removed_at) return { ok: false, reason: "Restore them first." }
+    if (profile.role === "owner" && profile.id !== session.profile.id) return { ok: false, reason: "Owners set their own password at /account/password." }
+    if (!profile.email) return { ok: false, reason: "They sign in with a text code: there is no email on this account to use with a password." }
+    const password = generateTempPassword()
+    const { error } = await db.auth.admin.updateUserById(profile.user_id, { password, email_confirm: true })
+    if (error) return { ok: false, reason: error.message }
+    return { ok: true, password, email: profile.email }
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) }
   }
 }
 
