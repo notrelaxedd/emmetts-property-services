@@ -123,9 +123,10 @@ the "password changed" notification. **Or by hand:** Dashboard → Authenticatio
 template, paste the subject from the table and the whole HTML file, and save; for the password-changed email,
 also switch the notification on.
 
-The built-in Supabase mailer is rate-limited and often lands in spam. Once the sending domain is decided, set
-up custom SMTP (Authentication → Emails → SMTP Settings) with the same provider as `EMAIL_PROVIDER`; the
-templates don't change. Turn off click tracking at that provider: it rewrites the links and breaks them.
+Auth emails go out through Resend's SMTP (Authentication → Emails → SMTP Settings); the templates don't
+depend on it. Keep **click tracking off** for the sending domain in Resend (Domains → the domain →
+Configuration): it rewrites the sign-in links and breaks them. Supabase still caps auth emails per hour under
+Authentication → Rate Limits; raise it there if invites or sign-in links stop arriving.
 
 ## Local test harness
 
