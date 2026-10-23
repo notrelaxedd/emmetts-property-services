@@ -31,12 +31,15 @@ function template(): Promise<Buffer> {
   return templateCache;
 }
 
-/** "CODE K7M2" in Anton, about `height` px tall. Null if text rendering isn't available. */
+/**
+ * The worker's code in small light-gray Anton under the QR, like a reference number: easy to read
+ * out on the phone if asked, easy to overlook otherwise. Null if text rendering isn't available.
+ */
 async function codeLabel(code: string, height: number): Promise<Buffer | null> {
   try {
     return await sharp({
       text: {
-        text: `<span foreground="#1a1a1a">CODE  ${code}</span>`,
+        text: `<span foreground="#9a9a9a">${code}</span>`,
         fontfile: path.join(process.cwd(), FONT_FILE),
         font: "Anton",
         dpi: Math.round(height * 6.8),
@@ -70,7 +73,7 @@ async function compose(url: string, code: string, scale: number): Promise<Buffer
     height: Math.round(qrBox.height * scale),
   };
   const pad = Math.round(8 * scale);
-  const label = await codeLabel(code, Math.round(30 * scale));
+  const label = await codeLabel(code, Math.round(15 * scale));
   const labelMeta = label ? await sharp(label).metadata() : null;
   const labelHeight = labelMeta?.height ?? 0;
   const qr = await qrPng(url, Math.min(box.width - pad * 2, box.height - pad * 2 - (labelHeight ? labelHeight + pad : 0)));
