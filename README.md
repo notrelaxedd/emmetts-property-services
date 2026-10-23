@@ -12,9 +12,10 @@ The marketing site is still static and phone-first. On top of it sits an **opera
 | Where | What |
 | --- | --- |
 | `/quote` | Public quote form: services, "something else?" + photos, preferred days, consent. Creates a customer + lead and queues a quote task. |
-| `/admin` | Owner console. **Approval inbox** (every outbound action: ads, quotes, custom requests, bookings, follow-ups, crew changes, drops, weather holds, AI cap), Ads, Leads, Quotes (live pricing + Send via Stripe), Schedule (drag to move), Availability, Employees + cash payouts, flyer workers (per-worker QR flyers, conversion, pay per flyer), Customers, Money, Autopilot rules, Fleet status. |
+| `/admin` | Owner console. **Approval inbox** (every outbound action: ads, quotes, custom requests, bookings, follow-ups, crew changes, drops, weather holds, AI cap), Ads, Leads, Quotes (live pricing + Send via Stripe), Schedule (drag to move), Availability, Employees + cash payouts, flyer workers (per-worker QR flyers, conversion, pay per flyer, and a flyer map to check off streets), Customers, Money, Autopilot rules, Fleet status. |
 | `/crew` | Mobile crew app (installable PWA): today's jobs, offers (accept / can't), swap / drop, start / complete with hours + photos, weekly hours with multiple blocks per day, time off & extra days, pay. |
 | `/f/<code>` | A flyer worker's QR code: logs the scan, remembers the code for 60 days, lands on `/quote` so the lead is credited to them (`lib/flyers/`). |
+| `/admin/employees/flyers/map` | Flyer map: tap streets to check them off (green 30 days, then due again). Streets load from OpenStreetMap (Overpass API) per area on first view and are stored (`lib/flyers/streets.ts`). |
 | `/api/stripe/webhook` | Stripe Checkout (test mode) → paid quote becomes an unscheduled job and the scheduler runs. |
 | `lib/pricing.ts`, `lib/scheduler/` | Pure, unit-tested pricing and greedy scheduling. |
 | `lib/ai/claude.ts` | The only place that calls the Anthropic API: ad drafts, customer messages, custom-request summaries, tree-cover estimates. Every call is logged to `ai_usage` and capped monthly. |

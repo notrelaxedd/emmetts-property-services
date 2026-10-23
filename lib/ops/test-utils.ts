@@ -9,10 +9,13 @@
  * Supported chain (everything else throws "fakeDb: unsupported ..."):
  *   from(t).select(cols?)                      cols ignored: always returns whole rows
  *     .eq(col, v) .neq(col, v) .in(col, vs) .is(col, v)      filters (AND-ed, strict equality)
- *     .order(col, { ascending? }) .limit(n)
+ *     .lte(col, v) .gte(col, v)                              range filters
+ *     .not(col, "is", v)                                     negated .is()
+ *     .order(col, { ascending? }) .limit(n) .range(from, to)
  *     .maybeSingle()  -> row | null (error if > 1)   .single() -> row (error PGRST116 if 0 or > 1)
  *     or await it directly -> { data: rows[], error }
  *   from(t).insert(rowOrRows)[.select()[.single()]]   fills id / created_at / updated_at if absent
+ *   from(t).upsert(rowOrRows, { onConflict: col })     insert, or merge into the row with the same `col`
  *   from(t).update(patch).eq(...)...[.select()[.single()|.maybeSingle()]]   merges patch, bumps updated_at
  *   from(t).delete().eq(...)...
  *   rpc(fn, args)                              handler from opts.rpc, else built-in `enqueue_task`
@@ -77,8 +80,10 @@ export function fakeDb(
     private filters: ((r: Record<string, unknown>) => boolean)[] = [];
     private orderBy: { col: string; asc: boolean }[] = [];
     private max: number | null = null;
-    private mode: "select" | "insert" | "update" | "delete" = "select";
+    private skip = 0;
+    private mode: "select" | "insert" | "upsert" | "update" | "delete" = "select";
     private payload: unknown;
+    private conflict: string | null = null;
     private returning = false; // .select() after a write
     private one: "single" | "maybe" | null = null;
 
@@ -91,6 +96,12 @@ export function fakeDb(
     insert(rows: unknown) {
       this.mode = "insert";
       this.payload = rows;
+      return this;
+    }
+    upsert(rows: unknown, o?: { onConflict?: string }) {
+      this.mode = "upsert";
+      this.payload = rows;
+      this.conflict = o?.onConflict ?? "id";
       return this;
     }
     update(patch: unknown) {
@@ -114,6 +125,19 @@ export function fakeDb(
       this.filters.push((r) => vs.includes(r[col]));
       return this;
     }
+    lte(col: string, v: number | string) {
+      this.filters.push((r) => (r[col] as number | string) <= v);
+      return this;
+    }
+    gte(col: string, v: number | string) {
+      this.filters.push((r) => (r[col] as number | string) >= v);
+      return this;
+    }
+    not(col: string, op: string, v: unknown) {
+      if (op !== "is") throw new Error(`fakeDb: unsupported not(${op})`);
+      this.filters.push((r) => (r[col] ?? null) !== v);
+      return this;
+    }
     is(col: string, v: unknown) {
       this.filters.push((r) => (r[col] ?? null) === v);
       return this;
@@ -124,6 +148,11 @@ export function fakeDb(
     }
     limit(n: number) {
       this.max = n;
+      return this;
+    }
+    range(from: number, to: number) {
+      this.skip = from;
+      this.max = to - from + 1;
       return this;
     }
     single() {
@@ -144,6 +173,17 @@ export function fakeDb(
         hit = incoming.map((r) => ({ id: randomUUID(), created_at: now(), updated_at: now(), ...copy(r) }));
         rows.push(...hit);
         returned = this.returning;
+      } else if (this.mode === "upsert") {
+        const key = this.conflict!;
+        const incoming = (Array.isArray(this.payload) ? this.payload : [this.payload]) as Record<string, unknown>[];
+        hit = incoming.map((r) => {
+          const existing = rows.find((x) => x[key] === r[key]);
+          if (existing) return Object.assign(existing, copy(r), { updated_at: now() });
+          const row = { id: randomUUID(), created_at: now(), updated_at: now(), ...copy(r) };
+          rows.push(row);
+          return row;
+        });
+        returned = this.returning;
       } else {
         hit = rows.filter((r) => this.filters.every((f) => f(r)));
         if (this.mode === "update") {
@@ -162,6 +202,7 @@ export function fakeDb(
             return (x < y ? -1 : x > y ? 1 : 0) * (asc ? 1 : -1);
           });
         }
+        if (this.skip) hit = hit.slice(this.skip);
         if (this.max !== null) hit = hit.slice(0, this.max);
       }
       if (!returned) return { data: null, error: null };

@@ -386,6 +386,31 @@ export type FlyerScan = Base & {
   visitor: string;
 };
 
+/** A street segment (one OpenStreetMap way) on the flyer map. `path` is [[lat, lng], ...]. */
+export type FlyerStreet = Base & {
+  osm_id: number;
+  name: string;
+  kind: string;
+  path: [number, number][];
+  min_lat: number;
+  max_lat: number;
+  min_lng: number;
+  max_lng: number;
+};
+
+/** A 0.02° grid cell whose streets have been loaded from OpenStreetMap. */
+export type FlyerStreetArea = Base & {
+  cell: string;
+  street_count: number;
+};
+
+/** A street marked as flyered on a date (history kept; the newest mark wins). */
+export type FlyerStreetMark = Base & {
+  street_id: string;
+  flyer_worker_id: string | null;
+  covered_on: string;
+};
+
 export type Expense = Base & {
   date: string;
   category: string;
@@ -489,6 +514,9 @@ export type Database = {
       flyer_workers: Table<FlyerWorker>;
       flyer_batches: Table<FlyerBatch>;
       flyer_scans: Table<FlyerScan>;
+      flyer_streets: Table<FlyerStreet>;
+      flyer_street_areas: Table<FlyerStreetArea>;
+      flyer_street_marks: Table<FlyerStreetMark>;
       expenses: Table<Expense>;
       ai_usage: Table<AiUsage>;
       settings: Table<Settings>;

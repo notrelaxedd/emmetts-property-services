@@ -167,6 +167,16 @@ insert into public.flyer_batches (flyer_worker_id, flyer_count, rate) values (te
 insert into public.flyer_scans (flyer_worker_id, visitor) values (tests.id('flyer_worker'), 'v1');
 update public.leads set flyer_worker_id = tests.id('flyer_worker') where id = tests.id('lead');
 
+-- 1500: one street on the flyer map, its loaded area, and a mark.
+with st as (
+  insert into public.flyer_streets (osm_id, name, kind, path, min_lat, max_lat, min_lng, max_lng)
+  values (101, 'Elm St', 'residential', '[[41.481,-81.84],[41.482,-81.838]]', 41.481, 41.482, -81.84, -81.838)
+  returning id
+) insert into tests.fx select 'street', id from st;
+insert into public.flyer_street_areas (cell, street_count) values ('2074:-4093', 1);
+insert into public.flyer_street_marks (street_id, flyer_worker_id, covered_on)
+values (tests.id('street'), tests.id('flyer_worker'), '2026-10-20');
+
 -- ---------------------------------------------------------------------------
 \echo '# seed + auth hook'
 -- ---------------------------------------------------------------------------
@@ -218,7 +228,8 @@ begin
     'settings', 'profiles', 'services', 'customers', 'leads', 'quotes', 'quote_items',
     'jobs', 'job_assignments', 'owner_windows', 'owner_exceptions', 'crew_availability',
     'crew_exceptions', 'approvals', 'ads', 'messages', 'payouts', 'expenses', 'ai_usage',
-    'fleet_workers', 'fleet_tasks', 'stripe_events', 'flyer_workers', 'flyer_batches', 'flyer_scans', 'crew_jobs'
+    'fleet_workers', 'fleet_tasks', 'stripe_events', 'flyer_workers', 'flyer_batches', 'flyer_scans',
+    'flyer_streets', 'flyer_street_areas', 'flyer_street_marks', 'crew_jobs'
   ] loop
     n := tests.count_rows(format('select * from public.%I', t));
     perform tests.check(n <= 0, format('anon reads nothing from %s', t),
@@ -283,7 +294,8 @@ begin
   foreach t in array array[
     'quotes', 'quote_items', 'customers', 'leads', 'settings', 'jobs', 'approvals', 'ads',
     'messages', 'expenses', 'ai_usage', 'fleet_workers', 'fleet_tasks', 'stripe_events',
-    'owner_windows', 'owner_exceptions', 'flyer_workers', 'flyer_batches', 'flyer_scans'
+    'owner_windows', 'owner_exceptions', 'flyer_workers', 'flyer_batches', 'flyer_scans',
+    'flyer_streets', 'flyer_street_areas', 'flyer_street_marks'
   ] loop
     n := tests.count_rows(format('select * from public.%I', t));
     perform tests.check(n <= 0, format('crew reads nothing from %s', t),
@@ -436,7 +448,8 @@ begin
     'settings', 'profiles', 'services', 'customers', 'leads', 'quotes', 'quote_items',
     'jobs', 'job_assignments', 'owner_windows', 'owner_exceptions', 'crew_availability',
     'crew_exceptions', 'approvals', 'ads', 'messages', 'payouts', 'expenses', 'ai_usage',
-    'fleet_workers', 'stripe_events', 'flyer_workers', 'flyer_batches', 'flyer_scans', 'crew_jobs'
+    'fleet_workers', 'stripe_events', 'flyer_workers', 'flyer_batches', 'flyer_scans',
+    'flyer_streets', 'flyer_street_areas', 'flyer_street_marks', 'crew_jobs'
   ] loop
     n := tests.count_rows(format('select * from public.%I', t));
     perform tests.check(n > 0, format('owner reads %s', t), n || ' rows');
@@ -558,8 +571,8 @@ select tests.check(
   'set_updated_at bumps updated_at on update');
 select tests.check(
   (select count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = 'public' and t.tgname = 'set_updated_at') = 25,
-  'set_updated_at is attached to all 25 tables');
+    where n.nspname = 'public' and t.tgname = 'set_updated_at') = 28,
+  'set_updated_at is attached to all 28 tables');
 select tests.check(
   (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity) = 0,
@@ -629,6 +642,28 @@ select tests.check(
 select tests.check(
   tests.run(format($$delete from public.flyer_workers where id = %L$$, tests.id('flyer_worker'))) like 'err:23503:%',
   'a flyer worker with batches cannot be deleted (pay history is kept)');
+-- 1500 flyer map
+select tests.check(
+  tests.run($$insert into public.flyer_streets (osm_id, name, kind, path, min_lat, max_lat, min_lng, max_lng)
+              values (101, 'Dup', 'residential', '[[41,-81],[41.1,-81]]', 41, 41.1, -81, -81)$$) like 'err:23505:%',
+  'flyer_streets.osm_id is unique (re-loading an area updates, never duplicates)');
+select tests.check(
+  tests.run($$insert into public.flyer_streets (osm_id, name, kind, path, min_lat, max_lat, min_lng, max_lng)
+              values (999, 'Dot', 'residential', '[[41,-81]]', 41, 41, -81, -81)$$) like 'err:23514:%',
+  'flyer_streets.path needs at least two points');
+select tests.check(
+  tests.run($$insert into public.flyer_street_areas (cell) values ('north-west')$$) like 'err:23514:%',
+  'flyer_street_areas.cell must look like "<lat idx>:<lng idx>"');
+with w as (insert into public.flyer_workers (name, code) values ('Temp Tom', 'TMP9') returning id)
+insert into public.flyer_street_marks (street_id, flyer_worker_id) select tests.id('street'), id from w;
+delete from public.flyer_workers where code = 'TMP9';
+select tests.check(
+  (select count(*) from public.flyer_street_marks where street_id = tests.id('street') and flyer_worker_id is null) = 1,
+  'deleting a flyer worker keeps their street marks (worker cleared)');
+delete from public.flyer_streets where id = tests.id('street');
+select tests.check(
+  (select count(*) from public.flyer_street_marks where street_id = tests.id('street')) = 0,
+  'deleting a street deletes its marks');
 
 -- ---------------------------------------------------------------------------
 \echo '# 0800 guards: assignment status edges, invite-only auth hook'

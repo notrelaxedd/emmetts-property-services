@@ -1,6 +1,6 @@
 import "server-only";
-import { check } from "@/lib/ops/types";
 import type { AdminClient } from "@/lib/supabase/admin";
+import { allPages } from "./paged";
 import { flyerFunnels, type FlyerFunnel } from "./stats";
 
 /** Ids per `.in()` filter, keeping PostgREST URLs short. */
@@ -22,30 +22,37 @@ export async function loadFlyerFunnels(
   db: AdminClient,
   workerId?: string,
 ): Promise<{ funnels: Map<string, FlyerFunnel>; leads: FlyerLead[] }> {
-  let batchQ = db.from("flyer_batches").select("flyer_worker_id,flyer_count,amount,paid_at");
-  let scanQ = db.from("flyer_scans").select("flyer_worker_id,visitor");
-  let leadQ = db.from("leads").select("id,flyer_worker_id,status,created_at,customer_id").not("flyer_worker_id", "is", null);
-  if (workerId) {
-    batchQ = batchQ.eq("flyer_worker_id", workerId);
-    scanQ = scanQ.eq("flyer_worker_id", workerId);
-    leadQ = leadQ.eq("flyer_worker_id", workerId);
-  }
-  const [batches, scans, leadRows] = await Promise.all([batchQ, scanQ, leadQ.order("created_at", { ascending: false })]);
-  check(batches, "flyer batches");
-  check(scans, "flyer scans");
-  const leads = (check(leadRows, "flyer leads") ?? []).filter(
-    (l): l is typeof l & { flyer_worker_id: string } => l.flyer_worker_id !== null,
-  );
+  const batchQ = () => {
+    const q = db.from("flyer_batches").select("flyer_worker_id,flyer_count,amount,paid_at");
+    return workerId ? q.eq("flyer_worker_id", workerId) : q;
+  };
+  const scanQ = () => {
+    const q = db.from("flyer_scans").select("flyer_worker_id,visitor");
+    return workerId ? q.eq("flyer_worker_id", workerId) : q;
+  };
+  const leadQ = () => {
+    const q = db.from("leads").select("id,flyer_worker_id,status,created_at,customer_id").not("flyer_worker_id", "is", null);
+    return workerId ? q.eq("flyer_worker_id", workerId) : q;
+  };
+  const [batches, scans, leadRows] = await Promise.all([
+    allPages((a, b) => batchQ().order("id").range(a, b), "flyer batches"),
+    allPages((a, b) => scanQ().order("id").range(a, b), "flyer scans"),
+    allPages((a, b) => leadQ().order("created_at", { ascending: false }).order("id").range(a, b), "flyer leads"),
+  ]);
+  const leads = leadRows.filter((l): l is typeof l & { flyer_worker_id: string } => l.flyer_worker_id !== null);
 
   const quotes = await inChunks(
     leads.map((l) => l.id),
-    async (ids) => check(await db.from("quotes").select("id,lead_id").in("lead_id", ids), "flyer quotes") ?? [],
+    (ids) => allPages((a, b) => db.from("quotes").select("id,lead_id").in("lead_id", ids).order("id").range(a, b), "flyer quotes"),
   );
   const leadByQuote = new Map(quotes.map((q) => [q.id, q.lead_id]));
   const jobs = await inChunks(
     Array.from(leadByQuote.keys()),
-    async (ids) =>
-      check(await db.from("jobs").select("quote_id").in("quote_id", ids).neq("status", "cancelled"), "flyer jobs") ?? [],
+    (ids) =>
+      allPages(
+        (a, b) => db.from("jobs").select("id,quote_id").in("quote_id", ids).neq("status", "cancelled").order("id").range(a, b),
+        "flyer jobs",
+      ),
   );
   const bookedLeadIds = new Set<string>();
   for (const j of jobs) {
@@ -54,8 +61,8 @@ export async function loadFlyerFunnels(
   }
 
   const funnels = flyerFunnels({
-    batches: (batches.data ?? []).map((b) => ({ ...b, flyer_count: Number(b.flyer_count), amount: Number(b.amount) })),
-    scans: scans.data ?? [],
+    batches: batches.map((b) => ({ ...b, flyer_count: Number(b.flyer_count), amount: Number(b.amount) })),
+    scans,
     leads,
     bookedLeadIds,
   });

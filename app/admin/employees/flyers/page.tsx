@@ -1,9 +1,10 @@
 import Link from "next/link"
-import { Megaphone } from "lucide-react"
+import { Map as MapIcon, Megaphone } from "lucide-react"
 import { EmployeesTabs } from "@/components/admin/employees/employees-tabs"
 import { AddFlyerWorkerForm } from "@/components/admin/flyers/add-flyer-worker-form"
 import { FlyerWorkersTable, type FlyerWorkerRow } from "@/components/admin/flyers/flyer-workers-table"
 import { usd } from "@/app/admin/money/math"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageHeader } from "@/components/ui/page-header"
@@ -52,7 +53,17 @@ export default async function FlyerWorkersPage({ searchParams }: { searchParams:
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Employees" description="Flyer workers: flyers handed out, what they bring in, and what they're owed." />
+      <PageHeader
+        title="Employees"
+        description="Flyer workers: flyers handed out, what they bring in, and what they're owed."
+        actions={
+          <Button asChild variant="outline">
+            <Link href="/admin/employees/flyers/map">
+              <MapIcon /> Flyer map
+            </Link>
+          </Button>
+        }
+      />
       <EmployeesTabs active="flyers" />
       {data && (data.rows.length > 0 || data.removed.length > 0) ? (
         <div className="grid gap-3 sm:grid-cols-4">
