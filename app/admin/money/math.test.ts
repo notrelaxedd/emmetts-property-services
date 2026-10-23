@@ -36,13 +36,14 @@ describe("labor", () => {
 })
 
 describe("summarizeMonth", () => {
-  it("computes profit = revenue − fees − labor − expenses − AI", () => {
+  it("computes profit = revenue − fees − labor − expenses − flyer pay − AI", () => {
     const s = summarizeMonth({
       acceptedQuotes: [q1, q2],
       completedJobs: [j1, j2],
       payouts: [{ job_id: "j1", amount: 50 }],
       quotesById: quotes,
       expenses: [{ date: "2026-10-03", amount: 40 }],
+      flyerBatches: [{ date: "2026-10-04", amount: 20 }, { date: "2026-10-18", amount: 12.5 }],
       aiSpend: 1.25,
     })
     expect(s).toEqual({
@@ -51,9 +52,15 @@ describe("summarizeMonth", () => {
       labor: 130,
       laborEstimated: true,
       expenses: 40,
+      flyerPay: 32.5,
       aiSpend: 1.25,
-      profit: 109.74,
+      profit: 77.24,
     })
+  })
+
+  it("treats missing flyer batches as no flyer pay", () => {
+    const s = summarizeMonth({ acceptedQuotes: [q1], completedJobs: [], payouts: [], quotesById: quotes, expenses: [], aiSpend: 0 })
+    expect(s).toMatchObject({ flyerPay: 0, profit: 87.09 })
   })
 
   it("is all zeros with no rows", () => {
@@ -80,10 +87,13 @@ describe("per job / per week", () => {
       payouts: [],
       quotesById: quotes,
       expenses: [{ date: "2026-10-01", amount: 10 }],
+      flyerBatches: [{ date: "2026-10-06", amount: 20 }, { date: "2026-11-02", amount: 99 }],
     })
     expect(weeks.map((w) => w.week)).toEqual(["2026-09-28", "2026-10-05", "2026-10-12", "2026-10-19", "2026-10-26"])
     expect(weeks[0]).toMatchObject({ expenses: 10, profit: -10 })
-    expect(weeks[1]).toMatchObject({ revenue: 90, fees: 2.91, labor: 45, profit: 42.09 })
+    expect(weeks[1]).toMatchObject({ revenue: 90, fees: 2.91, labor: 45, flyerPay: 20, profit: 22.09 })
+    // Nov 2 starts a week after the month's last one, so it isn't counted here.
+    expect(weeks[4]).toMatchObject({ flyerPay: 0 })
     expect(weeks[3]).toMatchObject({ revenue: 200, labor: 80, profit: 113.9 })
   })
 })

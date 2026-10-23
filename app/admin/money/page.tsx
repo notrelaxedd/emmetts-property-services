@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ChevronLeft, ChevronRight, Receipt, Wallet } from "lucide-react"
+import { ChevronLeft, ChevronRight, Megaphone, Receipt, Wallet } from "lucide-react"
 import { ExpenseForm, ExpensesTable } from "@/components/admin/money/expenses"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -18,6 +18,7 @@ import {
   parseMonth,
   profitPerJob,
   profitPerWeek,
+  round2,
   shiftMonth,
   summarizeMonth,
   sum,
@@ -40,15 +41,16 @@ async function load(month: string) {
 
   const quoteCols = "id,customer_id,price_total,fee_total,labor_total,accepted_at"
   const jobCols = "id,quote_id,customer_id,status,start_at,completed_at"
-  const [accepted, completed, expenses, ai] = await Promise.all([
+  const [accepted, completed, expenses, ai, flyerBatches] = await Promise.all([
     db.from("quotes").select(quoteCols).gte("accepted_at", fromIso).lt("accepted_at", toIso),
     db.from("jobs").select(jobCols).eq("status", "done").gte("completed_at", fromIso).lt("completed_at", toIso),
     db.from("expenses").select("id,date,category,amount,note").gte("date", from).lt("date", to).order("date", { ascending: false }),
     isCurrent
       ? db.rpc("ai_spend_this_month")
       : db.from("ai_usage").select("est_cost").gte("created_at", fromIso).lt("created_at", toIso),
+    db.from("flyer_batches").select("flyer_worker_id,handed_out_on,flyer_count,amount,paid_at").gte("handed_out_on", from).lt("handed_out_on", to),
   ])
-  for (const r of [accepted, completed, expenses]) if (r.error) throw new Error(r.error.message)
+  for (const r of [accepted, completed, expenses, flyerBatches]) if (r.error) throw new Error(r.error.message)
 
   const acceptedQuotes = (accepted.data ?? []) as QuoteRow[]
   const acceptedIds = acceptedQuotes.map((q) => q.id)
@@ -88,6 +90,21 @@ async function load(month: string) {
   }
 
   const expenseRows = (expenses.data ?? []).map((e) => ({ ...e, amount: Number(e.amount) }))
+  const batchRows = (flyerBatches.data ?? []).map((b) => ({ ...b, date: b.handed_out_on, amount: Number(b.amount), flyer_count: Number(b.flyer_count) }))
+  const flyerWorkerIds = Array.from(new Set(batchRows.map((b) => b.flyer_worker_id)))
+  const flyerWorkers = flyerWorkerIds.length
+    ? await db.from("flyer_workers").select("id,name").in("id", flyerWorkerIds)
+    : { data: [] as { id: string; name: string }[], error: null }
+  if (flyerWorkers.error) throw new Error(flyerWorkers.error.message)
+  const flyerByWorker = new Map<string, { id: string; name: string; flyers: number; amount: number; owed: number }>()
+  for (const w of flyerWorkers.data ?? []) flyerByWorker.set(w.id, { id: w.id, name: w.name, flyers: 0, amount: 0, owed: 0 })
+  for (const b of batchRows) {
+    const w = flyerByWorker.get(b.flyer_worker_id)
+    if (!w) continue
+    w.flyers += b.flyer_count
+    w.amount += b.amount
+    if (!b.paid_at) w.owed += b.amount
+  }
   const nums = (q: QuoteRow): QuoteRow => ({
     ...q,
     price_total: Number(q.price_total),
@@ -101,12 +118,14 @@ async function load(month: string) {
     payouts: payoutRows,
     quotesById: quotesNum,
     expenses: expenseRows,
+    flyerBatches: batchRows,
   }
   return {
     summary: summarizeMonth({ ...input, aiSpend }),
     weeks: profitPerWeek({ month, ...input }),
     jobs: profitPerJob(Array.from(allJobs.values()).map(toMoneyJob), quotesNum, payoutRows),
     expenses: expenseRows,
+    flyerWorkers: Array.from(flyerByWorker.values()).sort((a, b) => b.amount - a.amount),
     isCurrent,
   }
 }
@@ -154,7 +173,7 @@ export default async function MoneyPage({ searchParams }: { searchParams: { mont
         <EmptyState icon={Wallet} title="Couldn't load the numbers" description={error ?? undefined} />
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
             <Stat label="Revenue" value={usd(data.summary.revenue)} hint="quotes paid this month (Stripe, cash, check)" />
             <Stat label="Card fees" value={usd(data.summary.fees)} />
             <Stat
@@ -163,12 +182,13 @@ export default async function MoneyPage({ searchParams }: { searchParams: { mont
               hint={data.summary.laborEstimated ? "includes estimates" : "jobs completed"}
             />
             <Stat label="Expenses" value={usd(data.summary.expenses)} />
+            <Stat label="Flyer pay" value={usd(data.summary.flyerPay)} hint="flyers handed out this month" />
             <Stat label={data.isCurrent ? "AI spend this month" : "AI spend"} value={usd(data.summary.aiSpend)} />
             <Stat
               label="Profit"
               value={<Money n={data.summary.profit} />}
               deltaTone={data.summary.profit >= 0 ? "up" : "down"}
-              hint="after fees, labor, expenses, AI"
+              hint="after fees, labor, expenses, flyers, AI"
             />
           </div>
 
@@ -230,6 +250,7 @@ export default async function MoneyPage({ searchParams }: { searchParams: { mont
                     <TableHead className="hidden text-right sm:table-cell">Fees</TableHead>
                     <TableHead className="text-right">Labor</TableHead>
                     <TableHead className="hidden text-right sm:table-cell">Expenses</TableHead>
+                    <TableHead className="hidden text-right sm:table-cell">Flyers</TableHead>
                     <TableHead className="text-right">Profit</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -241,6 +262,7 @@ export default async function MoneyPage({ searchParams }: { searchParams: { mont
                       <TableCell className="hidden text-right sm:table-cell"><Money n={w.fees} /></TableCell>
                       <TableCell className="text-right"><Money n={w.labor} /></TableCell>
                       <TableCell className="hidden text-right sm:table-cell"><Money n={w.expenses} /></TableCell>
+                      <TableCell className="hidden text-right sm:table-cell"><Money n={w.flyerPay} /></TableCell>
                       <TableCell className="text-right font-semibold"><Money n={w.profit} /></TableCell>
                     </TableRow>
                   ))}
@@ -252,10 +274,48 @@ export default async function MoneyPage({ searchParams }: { searchParams: { mont
                     <TableCell className="hidden text-right sm:table-cell"><Money n={data.summary.fees} /></TableCell>
                     <TableCell className="text-right"><Money n={data.summary.labor} /></TableCell>
                     <TableCell className="hidden text-right sm:table-cell"><Money n={data.summary.expenses} /></TableCell>
+                    <TableCell className="hidden text-right sm:table-cell"><Money n={data.summary.flyerPay} /></TableCell>
                     <TableCell className="text-right font-semibold"><Money n={data.summary.profit + data.summary.aiSpend} /></TableCell>
                   </TableRow>
                 </TableFooter>
               </Table>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Flyer pay</CardTitle>
+              <CardDescription>Flyers handed out in {monthLabel(month)}, counted when they go out whether or not you’ve paid yet.</CardDescription>
+            </CardHeader>
+            <CardContent className={data.flyerWorkers.length ? "p-0 pb-2" : undefined}>
+              {data.flyerWorkers.length === 0 ? (
+                <EmptyState icon={Megaphone} title="No flyers this month" description="Batches logged on a flyer worker's page show up here." />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Flyer worker</TableHead>
+                      <TableHead className="text-right">Flyers</TableHead>
+                      <TableHead className="text-right">Pay</TableHead>
+                      <TableHead className="text-right">Still owed</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.flyerWorkers.map((w) => (
+                      <TableRow key={w.id}>
+                        <TableCell>
+                          <Link href={`/admin/employees/flyers/${w.id}`} className="font-medium text-ink underline-offset-4 hover:underline">
+                            {w.name}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{w.flyers.toLocaleString()}</TableCell>
+                        <TableCell className="text-right"><Money n={round2(w.amount)} /></TableCell>
+                        <TableCell className="text-right"><Money n={round2(w.owed)} /></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
 

@@ -20,6 +20,7 @@ function fail(e: unknown): ActionResult {
 function revalidate(id?: string) {
   revalidatePath("/admin/employees/flyers")
   if (id) revalidatePath(`/admin/employees/flyers/${id}`)
+  revalidatePath("/admin/money")
 }
 
 const workerSchema = z.object({
