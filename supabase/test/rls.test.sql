@@ -159,6 +159,14 @@ insert into public.fleet_workers (name, role) values ('w2', 'quotes');
 insert into public.stripe_events (stripe_event_id, type) values ('evt_1', 'checkout.session.completed');
 insert into public.owner_exceptions (date, closed) values ('2026-11-26', true);
 
+-- 1400: a flyer worker with one batch, one scan, and the lead credited to them.
+with w as (
+  insert into public.flyer_workers (name, code) values ('Flyer Fran', 'K7M2') returning id
+) insert into tests.fx select 'flyer_worker', id from w;
+insert into public.flyer_batches (flyer_worker_id, flyer_count, rate) values (tests.id('flyer_worker'), 250, 0.125);
+insert into public.flyer_scans (flyer_worker_id, visitor) values (tests.id('flyer_worker'), 'v1');
+update public.leads set flyer_worker_id = tests.id('flyer_worker') where id = tests.id('lead');
+
 -- ---------------------------------------------------------------------------
 \echo '# seed + auth hook'
 -- ---------------------------------------------------------------------------
@@ -210,7 +218,7 @@ begin
     'settings', 'profiles', 'services', 'customers', 'leads', 'quotes', 'quote_items',
     'jobs', 'job_assignments', 'owner_windows', 'owner_exceptions', 'crew_availability',
     'crew_exceptions', 'approvals', 'ads', 'messages', 'payouts', 'expenses', 'ai_usage',
-    'fleet_workers', 'fleet_tasks', 'stripe_events', 'crew_jobs'
+    'fleet_workers', 'fleet_tasks', 'stripe_events', 'flyer_workers', 'flyer_batches', 'flyer_scans', 'crew_jobs'
   ] loop
     n := tests.count_rows(format('select * from public.%I', t));
     perform tests.check(n <= 0, format('anon reads nothing from %s', t),
@@ -275,7 +283,7 @@ begin
   foreach t in array array[
     'quotes', 'quote_items', 'customers', 'leads', 'settings', 'jobs', 'approvals', 'ads',
     'messages', 'expenses', 'ai_usage', 'fleet_workers', 'fleet_tasks', 'stripe_events',
-    'owner_windows', 'owner_exceptions'
+    'owner_windows', 'owner_exceptions', 'flyer_workers', 'flyer_batches', 'flyer_scans'
   ] loop
     n := tests.count_rows(format('select * from public.%I', t));
     perform tests.check(n <= 0, format('crew reads nothing from %s', t),
@@ -428,7 +436,7 @@ begin
     'settings', 'profiles', 'services', 'customers', 'leads', 'quotes', 'quote_items',
     'jobs', 'job_assignments', 'owner_windows', 'owner_exceptions', 'crew_availability',
     'crew_exceptions', 'approvals', 'ads', 'messages', 'payouts', 'expenses', 'ai_usage',
-    'fleet_workers', 'stripe_events', 'crew_jobs'
+    'fleet_workers', 'stripe_events', 'flyer_workers', 'flyer_batches', 'flyer_scans', 'crew_jobs'
   ] loop
     n := tests.count_rows(format('select * from public.%I', t));
     perform tests.check(n > 0, format('owner reads %s', t), n || ' rows');
@@ -550,8 +558,8 @@ select tests.check(
   'set_updated_at bumps updated_at on update');
 select tests.check(
   (select count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = 'public' and t.tgname = 'set_updated_at') = 22,
-  'set_updated_at is attached to all 22 tables');
+    where n.nspname = 'public' and t.tgname = 'set_updated_at') = 25,
+  'set_updated_at is attached to all 25 tables');
 select tests.check(
   (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity) = 0,
@@ -602,6 +610,25 @@ delete from auth.users where id = '00000000-0000-0000-0000-0000000000c1';
 select tests.check(
   (select count(*) from public.profiles where user_id = '00000000-0000-0000-0000-0000000000c1') = 0,
   'deleting an auth user deletes the profile');
+-- 1400 flyer workers
+select tests.check(
+  (select amount = 31.25 from public.flyer_batches where flyer_worker_id = tests.id('flyer_worker')),
+  'flyer_batches.amount is flyer_count × rate (250 × $0.125 = $31.25)');
+select tests.check(
+  (select rate_per_flyer = 0.10 from public.flyer_workers where id = tests.id('flyer_worker')),
+  'flyer_workers.rate_per_flyer defaults to $0.10');
+select tests.check(
+  tests.run($$insert into public.flyer_workers (name, code) values ('Dup', 'K7M2')$$) like 'err:23505:%',
+  'flyer_workers.code is unique');
+select tests.check(
+  tests.run($$insert into public.flyer_workers (name, code) values ('Lower', 'k7m2')$$) like 'err:23514:%',
+  'flyer_workers.code must be 4-8 upper-case letters / digits');
+select tests.check(
+  tests.run(format($$insert into public.flyer_batches (flyer_worker_id, flyer_count, rate) values (%L, 0, 0.1)$$, tests.id('flyer_worker'))) like 'err:23514:%',
+  'flyer_batches needs at least one flyer');
+select tests.check(
+  tests.run(format($$delete from public.flyer_workers where id = %L$$, tests.id('flyer_worker'))) like 'err:23503:%',
+  'a flyer worker with batches cannot be deleted (pay history is kept)');
 
 -- ---------------------------------------------------------------------------
 \echo '# 0800 guards: assignment status edges, invite-only auth hook'

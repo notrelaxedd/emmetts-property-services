@@ -6,7 +6,7 @@ with `NEXT_PUBLIC_`; never commit one.
 
 | Variable | Vercel | Fleet | Required | Purpose |
 | --- | :-: | :-: | :-: | --- |
-| `NEXT_PUBLIC_SITE_URL` | ✓ | — | prod | Canonical site URL (`https://…`). Used for links in emails, Stripe redirects, sitemap. Falls back to `VERCEL_PROJECT_PRODUCTION_URL`. |
+| `NEXT_PUBLIC_SITE_URL` | ✓ | — | prod | Canonical site URL (`https://…`). Used for links in emails, Stripe redirects, sitemap, and the flyer workers' QR codes. Falls back to `VERCEL_PROJECT_PRODUCTION_URL`. |
 | `SITE_URL` | — | ✓ | ✓ | Same value, for the workers (they never read `NEXT_PUBLIC_*`). |
 | `NEXT_PUBLIC_SUPABASE_URL` | ✓ | — | ✓ | Supabase project URL (browser + server cookie client). |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✓ | — | ✓ | Supabase anon key. Safe in the browser; RLS does the gating. |

@@ -65,6 +65,8 @@ export type MoneyJob = {
 }
 export type MoneyPayout = { job_id: string; amount: number }
 export type MoneyExpense = { date: string; amount: number }
+/** A batch of flyers handed out (`date` = handed_out_on); its pay counts in that month, paid or not. */
+export type MoneyFlyerBatch = { date: string; amount: number }
 
 export type JobLabor = { amount: number; estimated: boolean }
 
@@ -86,6 +88,7 @@ export type MonthSummary = {
   labor: number
   laborEstimated: boolean
   expenses: number
+  flyerPay: number
   aiSpend: number
   profit: number
 }
@@ -94,7 +97,8 @@ export type MonthSummary = {
  * The month's headline numbers.
  * - revenue / fees: quotes accepted (paid via Stripe, or by cash / check with no fee) in the month
  * - labor: jobs completed in the month (payouts, or estimated labor when no payouts yet)
- * - profit = revenue − fees − labor − expenses − AI spend
+ * - flyerPay: flyer batches handed out in the month (owed or paid)
+ * - profit = revenue − fees − labor − expenses − flyer pay − AI spend
  */
 export function summarizeMonth(input: {
   acceptedQuotes: readonly MoneyQuote[]
@@ -102,6 +106,7 @@ export function summarizeMonth(input: {
   payouts: readonly MoneyPayout[]
   quotesById: ReadonlyMap<string, Pick<MoneyQuote, "labor_total">>
   expenses: readonly MoneyExpense[]
+  flyerBatches?: readonly MoneyFlyerBatch[]
   aiSpend: number
 }): MonthSummary {
   const revenue = sum(input.acceptedQuotes, (q) => q.price_total)
@@ -109,6 +114,7 @@ export function summarizeMonth(input: {
   const labors = input.completedJobs.map((j) => laborForJob(j, input.payouts, input.quotesById))
   const labor = sum(labors, (l) => l.amount)
   const expenses = sum(input.expenses, (e) => e.amount)
+  const flyerPay = sum(input.flyerBatches ?? [], (b) => b.amount)
   const aiSpend = round2(input.aiSpend || 0)
   return {
     revenue,
@@ -116,8 +122,9 @@ export function summarizeMonth(input: {
     labor,
     laborEstimated: labors.some((l) => l.estimated && l.amount > 0),
     expenses,
+    flyerPay,
     aiSpend,
-    profit: round2(revenue - fees - labor - expenses - aiSpend),
+    profit: round2(revenue - fees - labor - expenses - flyerPay - aiSpend),
   }
 }
 
@@ -161,11 +168,19 @@ export function profitPerJob(
     .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
 }
 
-export type WeekRow = { week: string; revenue: number; fees: number; labor: number; expenses: number; profit: number }
+export type WeekRow = {
+  week: string
+  revenue: number
+  fees: number
+  labor: number
+  expenses: number
+  flyerPay: number
+  profit: number
+}
 
 /**
  * Mon–Sun weeks that touch the month. Revenue/fees by quote `accepted_at`, labor by job
- * `completed_at`, expenses by `date`. AI spend is month-level only and not split by week.
+ * `completed_at`, expenses by `date`, flyer pay by the date the flyers went out. AI spend is month-level only and not split by week.
  */
 export function profitPerWeek(input: {
   month: string
@@ -174,11 +189,12 @@ export function profitPerWeek(input: {
   payouts: readonly MoneyPayout[]
   quotesById: ReadonlyMap<string, Pick<MoneyQuote, "labor_total">>
   expenses: readonly MoneyExpense[]
+  flyerBatches?: readonly MoneyFlyerBatch[]
 }): WeekRow[] {
   const { from, to } = monthRange(input.month)
   const weeks = new Map<string, WeekRow>()
   for (let w = weekStart(from); w < to; w = addDays(w, 7)) {
-    weeks.set(w, { week: w, revenue: 0, fees: 0, labor: 0, expenses: 0, profit: 0 })
+    weeks.set(w, { week: w, revenue: 0, fees: 0, labor: 0, expenses: 0, flyerPay: 0, profit: 0 })
   }
   const bucket = (date: string) => weeks.get(weekStart(date))
   for (const q of input.acceptedQuotes) {
@@ -197,12 +213,17 @@ export function profitPerWeek(input: {
     const row = bucket(e.date.slice(0, 10))
     if (row) row.expenses += Number(e.amount) || 0
   }
+  for (const b of input.flyerBatches ?? []) {
+    const row = bucket(b.date.slice(0, 10))
+    if (row) row.flyerPay += Number(b.amount) || 0
+  }
   return Array.from(weeks.values()).map((r) => ({
     week: r.week,
     revenue: round2(r.revenue),
     fees: round2(r.fees),
     labor: round2(r.labor),
     expenses: round2(r.expenses),
-    profit: round2(r.revenue - r.fees - r.labor - r.expenses),
+    flyerPay: round2(r.flyerPay),
+    profit: round2(r.revenue - r.fees - r.labor - r.expenses - r.flyerPay),
   }))
 }

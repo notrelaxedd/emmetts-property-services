@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react"
 import { dateTime, label, money } from "@/components/admin/inbox/format"
 import { signLeadPhotos } from "@/components/admin/inbox/load-context"
 import { PhotoGallery } from "@/components/admin/inbox/photo-gallery"
+import { FlyerCredit } from "@/components/admin/leads/flyer-credit"
 import { LeadActions } from "@/components/admin/leads/lead-actions"
 import { LeadStatusBadge, QuoteStatusBadge } from "@/components/admin/leads/status-badges"
 import { Button } from "@/components/ui/button"
@@ -35,17 +36,20 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
   const lead = check(await db.from("leads").select("*").eq("id", params.id).maybeSingle(), "lead")
   if (!lead) notFound()
 
-  const [customerRes, servicesRes, quotesRes, photos] = await Promise.all([
+  const [customerRes, servicesRes, quotesRes, photos, flyerRes] = await Promise.all([
     db.from("customers").select("*").eq("id", lead.customer_id).maybeSingle(),
     lead.requested_service_ids.length
       ? db.from("services").select("id,name").in("id", lead.requested_service_ids)
       : Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
     db.from("quotes").select("*").eq("lead_id", lead.id).order("created_at", { ascending: false }),
     signLeadPhotos(db, lead.photo_paths),
+    db.from("flyer_workers").select("id,name,code,removed_at").order("name"),
   ])
   const customer = check(customerRes, "lead customer")
   const services = check(servicesRes, "lead services") ?? []
   const quotes = check(quotesRes, "lead quotes") ?? []
+  // Removed flyer workers stay pickable only if this lead is already theirs.
+  const flyerWorkers = (check(flyerRes, "flyer workers") ?? []).filter((w) => !w.removed_at || w.id === lead.flyer_worker_id)
   const utm = Object.entries(lead.utm ?? {}).filter(([, v]) => !!v)
 
   return (
@@ -77,6 +81,9 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
               />
               <Row k="Source" v={lead.source || "—"} />
               <Row k="UTM" v={utm.length ? utm.map(([k, v]) => `${k}: ${v}`).join(" · ") : "—"} />
+              {flyerWorkers.length ? (
+                <Row k="Flyer worker" v={<FlyerCredit leadId={lead.id} current={lead.flyer_worker_id} workers={flyerWorkers} />} />
+              ) : null}
             </dl>
             <div className="mt-3 space-y-1">
               <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Photos ({photos.length})</p>

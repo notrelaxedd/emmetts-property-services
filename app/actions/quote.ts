@@ -1,10 +1,11 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { content } from "@/lib/content";
 import { opsConfig } from "@/lib/config";
 import type { Lead, Weekday } from "@/lib/db/types";
+import { FLYER_COOKIE, attributedCode } from "@/lib/flyers/codes";
 import { geocode } from "@/lib/geo";
 import { enqueueTask, upsertCustomer } from "@/lib/ops";
 import {
@@ -149,6 +150,23 @@ async function claimPendingPhoto(db: AdminClient, from: string, leadId: string, 
 }
 
 /**
+ * The flyer worker to credit with this lead: the QR redirect's utm tags, else the cookie from an
+ * earlier scan (see app/f/[code]/route.ts). Never blocks the request.
+ */
+async function flyerWorkerIdFor(db: AdminClient, utm: { source?: string; campaign?: string }): Promise<string | null> {
+  const code = attributedCode(utm, cookies().get(FLYER_COOKIE)?.value);
+  if (!code) return null;
+  try {
+    const { data, error } = await db.from("flyer_workers").select("id").eq("code", code).maybeSingle();
+    if (error) throw new Error(error.message);
+    return data?.id ?? null;
+  } catch (e) {
+    console.error("[quote] flyer lookup failed:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/**
  * Public quote request. Honeypot, validation, per-IP rate limit and (optionally) Turnstile come
  * first; then customer -> lead -> photos -> fleet tasks. Redirects to /quote/thanks on success.
  * Needs the Node runtime (service-role Supabase client); do not mark this edge.
@@ -282,6 +300,7 @@ export async function submitQuote(_prev: QuoteFormState, formData: FormData): Pr
       preferred_days: data.preferredDays as Weekday[],
       photo_paths: [],
       status: "new",
+      flyer_worker_id: await flyerWorkerIdFor(db, data.utm),
     };
     const { data: lead, error: leadError } = await db.from("leads").insert(leadRow).select("id").single();
     if (leadError || !lead) throw new Error(`lead insert: ${leadError?.message ?? "no row returned"}`);
