@@ -180,6 +180,8 @@ export type Lead = Base & {
   photo_paths: string[];
   preferred_days: Weekday[];
   status: LeadStatus;
+  /** Flyer worker whose flyer brought this lead in (QR link, or set by the owner). */
+  flyer_worker_id: string | null;
 };
 
 export type Quote = Base & {
@@ -358,6 +360,32 @@ export type Payout = Base & {
   paid_cash_at: string | null;
 };
 
+/** Someone paid per flyer handed out. No sign-in; `code` is their QR link (/f/<code>). */
+export type FlyerWorker = Base & {
+  name: string;
+  phone: string | null;
+  code: string;
+  rate_per_flyer: number;
+  removed_at: string | null;
+};
+
+/** Flyers handed to a flyer worker. `amount` is generated: round(flyer_count * rate, 2). */
+export type FlyerBatch = Base & {
+  flyer_worker_id: string;
+  handed_out_on: string;
+  flyer_count: number;
+  rate: number;
+  amount: number;
+  area: string | null;
+  paid_at: string | null;
+};
+
+/** One QR scan. `visitor` is a truncated hash of ip + user agent. */
+export type FlyerScan = Base & {
+  flyer_worker_id: string;
+  visitor: string;
+};
+
 export type Expense = Base & {
   date: string;
   category: string;
@@ -458,6 +486,9 @@ export type Database = {
       ads: Table<Ad>;
       messages: Table<Message>;
       payouts: Table<Payout>;
+      flyer_workers: Table<FlyerWorker>;
+      flyer_batches: Table<FlyerBatch>;
+      flyer_scans: Table<FlyerScan>;
       expenses: Table<Expense>;
       ai_usage: Table<AiUsage>;
       settings: Table<Settings>;

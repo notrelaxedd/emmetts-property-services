@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { Users } from "lucide-react"
 import { EmployeesTable, type EmployeeRow } from "@/components/admin/employees/employees-table"
+import { EmployeesTabs } from "@/components/admin/employees/employees-tabs"
 import { InviteForm } from "@/components/admin/employees/invite-form"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -70,6 +71,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: { 
   return (
     <div className="space-y-5">
       <PageHeader title="Employees" description="Crew, pay rates, hours this week and cash owed." />
+      <EmployeesTabs active="crew" />
       <Card>
         <CardHeader>
           <CardTitle>Invite crew</CardTitle>
