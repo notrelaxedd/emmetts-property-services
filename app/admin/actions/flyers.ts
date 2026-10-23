@@ -241,3 +241,72 @@ export async function setLeadFlyerWorker(leadId: string, workerId: string | null
     return fail(e)
   }
 }
+
+export type StreetMark = { markId: string; streetId: string; coveredOn: string; workerId: string | null }
+export type MarkResult = { ok: true; marks: StreetMark[] } | { ok: false; reason: string }
+
+const markSchema = z.object({
+  streetIds: z.array(idSchema).min(1, "Pick a street").max(500),
+  workerId: idSchema.nullable(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date"),
+})
+
+/** Flyer map: mark streets as flyered on a date (and by whom, if known). */
+export async function markStreets(input: { streetIds: string[]; workerId: string | null; date: string }): Promise<MarkResult> {
+  await requireOwner()
+  const parsed = markSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, reason: parsed.error.issues[0]?.message ?? "Invalid streets." }
+  const { streetIds, workerId, date } = parsed.data
+  if (date > localDate(new Date())) return { ok: false, reason: "That date is in the future." }
+  try {
+    const db = requireSupabaseAdmin()
+    const rows = check(
+      await db
+        .from("flyer_street_marks")
+        .insert(Array.from(new Set(streetIds)).map((street_id) => ({ street_id, flyer_worker_id: workerId, covered_on: date })))
+        .select("id,street_id,covered_on,flyer_worker_id"),
+      "mark streets",
+    )
+    return {
+      ok: true,
+      marks: (rows ?? []).map((m) => ({ markId: m.id, streetId: m.street_id, coveredOn: m.covered_on, workerId: m.flyer_worker_id })),
+    }
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/**
+ * Flyer map: take back marks (a mis-tap). Returns each affected street's newest remaining mark, so
+ * the map can recolour it (a street with no marks left comes back with `last: null`).
+ */
+export async function undoStreetMarks(
+  markIds: string[],
+): Promise<{ ok: true; streets: { streetId: string; last: StreetMark | null }[] } | { ok: false; reason: string }> {
+  await requireOwner()
+  const parsed = z.array(idSchema).min(1).max(500).safeParse(markIds)
+  if (!parsed.success) return { ok: false, reason: "Nothing to undo." }
+  try {
+    const db = requireSupabaseAdmin()
+    const removed = check(await db.from("flyer_street_marks").delete().in("id", parsed.data).select("street_id"), "undo marks") ?? []
+    const streetIds = Array.from(new Set(removed.map((r) => r.street_id)))
+    const remaining = streetIds.length
+      ? check(
+          await db
+            .from("flyer_street_marks")
+            .select("id,street_id,covered_on,flyer_worker_id")
+            .in("street_id", streetIds)
+            .order("covered_on", { ascending: false })
+            .order("created_at", { ascending: false }),
+          "remaining marks",
+        ) ?? []
+      : []
+    const newest = new Map<string, StreetMark>()
+    for (const m of remaining) {
+      if (!newest.has(m.street_id)) newest.set(m.street_id, { markId: m.id, streetId: m.street_id, coveredOn: m.covered_on, workerId: m.flyer_worker_id })
+    }
+    return { ok: true, streets: streetIds.map((streetId) => ({ streetId, last: newest.get(streetId) ?? null })) }
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
