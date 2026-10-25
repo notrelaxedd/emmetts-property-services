@@ -12,7 +12,7 @@ The marketing site is still static and phone-first. On top of it sits an **opera
 | Where | What |
 | --- | --- |
 | `/quote` | Public quote form: services, "something else?" + photos, preferred days, consent. Creates a customer + lead and queues a quote task. |
-| `/admin` | Owner console. **Approval inbox** (every outbound action: ads, quotes, custom requests, bookings, follow-ups, crew changes, drops, weather holds, AI cap), Ads, Leads, Quotes (live pricing + Send via Stripe), Schedule (drag to move), Availability, Employees + cash payouts, flyer workers (per-worker QR flyers, conversion, pay per flyer), Customers, Money, Autopilot rules, Fleet status. |
+| `/admin` | Owner console. **Approval inbox** (every outbound action: ads, quotes, custom requests, bookings, follow-ups, crew changes, drops, weather holds, AI cap), Ads, Leads, Quotes (live pricing + Send via Stripe), Schedule (drag to move), Availability, Employees + cash payouts, flyer workers (per-worker QR flyers, conversion, pay per flyer), Customers + price log (who you talked to, about what, the price you gave, when to follow up), Money, Autopilot rules, Fleet status. |
 | `/crew` | Mobile crew app (installable PWA): today's jobs, offers (accept / can't), swap / drop, start / complete with hours + photos, weekly hours with multiple blocks per day, time off & extra days, pay. |
 | `/f/<code>` | A flyer worker's QR code: logs the scan, remembers the code for 60 days, lands on `/quote` so the lead is credited to them (`lib/flyers/`). |
 | `/api/stripe/webhook` | Stripe Checkout (test mode) → paid quote becomes an unscheduled job and the scheduler runs. |

@@ -1,5 +1,6 @@
 import Link from "next/link"
-import { Search, UserRound } from "lucide-react"
+import { NotebookPen, Search, UserRound } from "lucide-react"
+import { CustomersTabs } from "@/components/admin/customers/customers-tabs"
 import { day, formatPhone, titleCase } from "@/components/admin/customers/format"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -62,7 +63,18 @@ export default async function CustomersPage({ searchParams }: { searchParams: { 
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Customers" description="Everyone who has asked for a quote." />
+      <PageHeader
+        title="Customers"
+        description="Everyone who has asked for a quote or is in the price log."
+        actions={
+          <Button asChild>
+            <Link href="/admin/customers/log">
+              <NotebookPen /> Log a conversation
+            </Link>
+          </Button>
+        }
+      />
+      <CustomersTabs active="all" />
       <form method="get" className="flex max-w-xl gap-2" role="search">
         <Input name="q" defaultValue={q} placeholder="Search name, address, phone or email" aria-label="Search customers" />
         <Button type="submit" variant="outline">
@@ -81,7 +93,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: { 
         <EmptyState
           icon={UserRound}
           title={q ? "No matches" : "No customers yet"}
-          description={q ? `Nothing matches "${q}".` : "Customers are added when someone fills in the quote form."}
+          description={q ? `Nothing matches "${q}".` : "Customers are added when someone fills in the quote form or you log a conversation in the price log."}
         />
       ) : (
         <Card className="overflow-hidden">
