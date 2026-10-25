@@ -31,6 +31,7 @@ export function LogInteractionForm({
   const [pending, startTransition] = React.useTransition()
   const [name, setName] = React.useState("")
   const [phone, setPhone] = React.useState("")
+  const [address, setAddress] = React.useState("")
   const [category, setCategory] = React.useState("")
   const [price, setPrice] = React.useState("")
   const [talkedOn, setTalkedOn] = React.useState(today)
@@ -38,10 +39,18 @@ export function LogInteractionForm({
   const [notes, setNotes] = React.useState("")
   const [history, setHistory] = React.useState<PriceHistory | null>(null)
 
+  // The address on file for the number typed, so it can be swapped out again if the number changes.
+  const filledAddress = React.useRef<string | null>(null)
+  const fillAddress = (next: string | null) => {
+    setAddress((a) => (a === "" || a === filledAddress.current ? (next ?? "") : a))
+    filledAddress.current = next
+  }
+
   const digits = normalizePhone(phone)
   React.useEffect(() => {
     if (customer || digits.length !== 10) {
       setHistory(null)
+      fillAddress(null)
       return
     }
     let live = true
@@ -50,8 +59,11 @@ export function LogInteractionForm({
         if (!live) return
         setHistory(h)
         if (h.customer) setName((n) => n || h.customer!.name)
+        fillAddress(h.customer?.address ?? null)
       })
-      .catch(() => live && setHistory(null))
+      .catch(() => {
+        if (live) setHistory(null)
+      })
     return () => {
       live = false
     }
@@ -72,6 +84,7 @@ export function LogInteractionForm({
         customerId: customer?.id ?? null,
         name,
         phone,
+        address: address.trim(),
         category,
         price: amount,
         notes: notes.trim() || null,
@@ -82,6 +95,8 @@ export function LogInteractionForm({
         toast({ title: r.message ?? "Saved", variant: "success" })
         setName("")
         setPhone("")
+        setAddress("")
+        filledAddress.current = null
         setCategory("")
         setPrice("")
         setFollowUpOn("")
@@ -112,6 +127,21 @@ export function LogInteractionForm({
           <div className="space-y-1.5">
             <Label htmlFor={id("name")}>Name</Label>
             <Input id={id("name")} value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} autoComplete="off" />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor={id("address")}>Address (optional)</Label>
+            <Input
+              id={id("address")}
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              maxLength={200}
+              placeholder="123 Main St, Rocky River, OH 44116"
+              readOnly={Boolean(history?.customer?.address)}
+              autoComplete="off"
+            />
+            {history?.customer?.address ? (
+              <p className="text-xs text-ink-muted">On file. Change it on their customer page.</p>
+            ) : null}
           </div>
         </div>
       )}
