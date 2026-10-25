@@ -167,6 +167,10 @@ insert into public.flyer_batches (flyer_worker_id, flyer_count, rate) values (te
 insert into public.flyer_scans (flyer_worker_id, visitor) values (tests.id('flyer_worker'), 'v1');
 update public.leads set flyer_worker_id = tests.id('flyer_worker') where id = tests.id('lead');
 
+-- 1500: one price-log entry for Pat.
+insert into public.customer_interactions (customer_id, category, price, follow_up_on)
+values (tests.id('customer'), 'Leaves', 185, '2026-11-01');
+
 -- ---------------------------------------------------------------------------
 \echo '# seed + auth hook'
 -- ---------------------------------------------------------------------------
@@ -218,7 +222,8 @@ begin
     'settings', 'profiles', 'services', 'customers', 'leads', 'quotes', 'quote_items',
     'jobs', 'job_assignments', 'owner_windows', 'owner_exceptions', 'crew_availability',
     'crew_exceptions', 'approvals', 'ads', 'messages', 'payouts', 'expenses', 'ai_usage',
-    'fleet_workers', 'fleet_tasks', 'stripe_events', 'flyer_workers', 'flyer_batches', 'flyer_scans', 'crew_jobs'
+    'fleet_workers', 'fleet_tasks', 'stripe_events', 'flyer_workers', 'flyer_batches', 'flyer_scans',
+    'customer_interactions', 'crew_jobs'
   ] loop
     n := tests.count_rows(format('select * from public.%I', t));
     perform tests.check(n <= 0, format('anon reads nothing from %s', t),
@@ -283,7 +288,7 @@ begin
   foreach t in array array[
     'quotes', 'quote_items', 'customers', 'leads', 'settings', 'jobs', 'approvals', 'ads',
     'messages', 'expenses', 'ai_usage', 'fleet_workers', 'fleet_tasks', 'stripe_events',
-    'owner_windows', 'owner_exceptions', 'flyer_workers', 'flyer_batches', 'flyer_scans'
+    'owner_windows', 'owner_exceptions', 'flyer_workers', 'flyer_batches', 'flyer_scans', 'customer_interactions'
   ] loop
     n := tests.count_rows(format('select * from public.%I', t));
     perform tests.check(n <= 0, format('crew reads nothing from %s', t),
@@ -436,7 +441,8 @@ begin
     'settings', 'profiles', 'services', 'customers', 'leads', 'quotes', 'quote_items',
     'jobs', 'job_assignments', 'owner_windows', 'owner_exceptions', 'crew_availability',
     'crew_exceptions', 'approvals', 'ads', 'messages', 'payouts', 'expenses', 'ai_usage',
-    'fleet_workers', 'stripe_events', 'flyer_workers', 'flyer_batches', 'flyer_scans', 'crew_jobs'
+    'fleet_workers', 'stripe_events', 'flyer_workers', 'flyer_batches', 'flyer_scans',
+    'customer_interactions', 'crew_jobs'
   ] loop
     n := tests.count_rows(format('select * from public.%I', t));
     perform tests.check(n > 0, format('owner reads %s', t), n || ' rows');
@@ -558,8 +564,8 @@ select tests.check(
   'set_updated_at bumps updated_at on update');
 select tests.check(
   (select count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = 'public' and t.tgname = 'set_updated_at') = 25,
-  'set_updated_at is attached to all 25 tables');
+    where n.nspname = 'public' and t.tgname = 'set_updated_at') = 26,
+  'set_updated_at is attached to all 26 tables');
 select tests.check(
   (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity) = 0,
@@ -629,6 +635,19 @@ select tests.check(
 select tests.check(
   tests.run(format($$delete from public.flyer_workers where id = %L$$, tests.id('flyer_worker'))) like 'err:23503:%',
   'a flyer worker with batches cannot be deleted (pay history is kept)');
+-- 1500 price log
+select tests.check(
+  (select status = 'open' and talked_on = current_date from public.customer_interactions where customer_id = tests.id('customer')),
+  'customer_interactions default to open, talked today');
+select tests.check(
+  tests.run(format($$insert into public.customer_interactions (customer_id, category, status) values (%L, 'Snow', 'maybe')$$, tests.id('customer'))) like 'err:23514:%',
+  'customer_interactions.status is open / booked / passed');
+select tests.check(
+  tests.run(format($$insert into public.customer_interactions (customer_id, category, price) values (%L, 'Snow', -5)$$, tests.id('customer'))) like 'err:23514:%',
+  'customer_interactions.price cannot be negative');
+select tests.check(
+  tests.run(format($$insert into public.customer_interactions (customer_id, category) values (%L, '  ')$$, tests.id('customer'))) like 'err:23514:%',
+  'customer_interactions.category is required');
 
 -- ---------------------------------------------------------------------------
 \echo '# 0800 guards: assignment status edges, invite-only auth hook'

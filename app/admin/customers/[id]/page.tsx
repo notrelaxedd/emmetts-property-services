@@ -4,6 +4,8 @@ import { ArrowLeft, UserRound } from "lucide-react"
 import { usd } from "@/app/admin/money/math"
 import { CustomerEditForm } from "@/components/admin/customers/customer-edit-form"
 import { day, formatPhone, titleCase } from "@/components/admin/customers/format"
+import { LogInteractionForm } from "@/components/admin/customers/log-interaction-form"
+import { PriceLogTable } from "@/components/admin/customers/price-log-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,8 +13,8 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { PageHeader } from "@/components/ui/page-header"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { requireOwner } from "@/lib/auth/session"
-import type { Job, Lead, Message, Quote } from "@/lib/db/types"
-import { formatDayLabel, formatTimeRange } from "@/lib/scheduler/time"
+import type { CustomerInteraction, Job, Lead, Message, Quote } from "@/lib/db/types"
+import { formatDayLabel, formatTimeRange, localDate } from "@/lib/scheduler/time"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 export const dynamic = "force-dynamic"
@@ -24,14 +26,20 @@ async function load(id: string) {
   if (customer.error) throw new Error(customer.error.message)
   if (!customer.data) return null
 
-  const [leads, quotes, jobs, messages, services] = await Promise.all([
+  const [leads, quotes, jobs, messages, services, interactions] = await Promise.all([
     db.from("leads").select("*").eq("customer_id", id).order("created_at", { ascending: false }),
     db.from("quotes").select("*").eq("customer_id", id).order("created_at", { ascending: false }),
     db.from("jobs").select("*").eq("customer_id", id).order("created_at", { ascending: false }),
     db.from("messages").select("*").eq("customer_id", id).order("created_at", { ascending: false }).limit(100),
     db.from("services").select("id,name"),
+    db
+      .from("customer_interactions")
+      .select("*")
+      .eq("customer_id", id)
+      .order("talked_on", { ascending: false })
+      .order("created_at", { ascending: false }),
   ])
-  for (const r of [leads, quotes, jobs, messages, services]) if (r.error) throw new Error(r.error.message)
+  for (const r of [leads, quotes, jobs, messages, services, interactions]) if (r.error) throw new Error(r.error.message)
 
   const jobIds = (jobs.data ?? []).map((j) => j.id)
   const assignments = jobIds.length
@@ -53,6 +61,10 @@ async function load(id: string) {
     quotes: (quotes.data ?? []) as Quote[],
     jobs: (jobs.data ?? []) as Job[],
     messages: (messages.data ?? []) as Message[],
+    interactions: ((interactions.data ?? []) as CustomerInteraction[]).map((e) => ({
+      ...e,
+      price: e.price === null ? null : Number(e.price),
+    })),
     serviceName: new Map((services.data ?? []).map((s) => [s.id, s.name])),
     crewByJob,
   }
@@ -92,6 +104,7 @@ export default async function CustomerPage({ params }: { params: { id: string } 
     error = e instanceof Error ? e.message : String(e)
   }
   if (!error && !data) notFound()
+  const today = localDate(new Date())
 
   return (
     <div className="space-y-5">
@@ -150,6 +163,23 @@ export default async function CustomerPage({ params }: { params: { id: string } 
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-base">Price log</CardTitle>
+              <Badge variant="outline">{data.interactions.length}</Badge>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {data.interactions.length ? (
+                <div className="-mx-4 border-b border-ink/10 pb-2">
+                  <PriceLogTable rows={data.interactions} today={today} />
+                </div>
+              ) : (
+                <p className="text-sm text-ink-muted">Nothing logged yet.</p>
+              )}
+              <LogInteractionForm today={today} customer={{ id: data.customer.id, name: data.customer.name }} />
+            </CardContent>
+          </Card>
 
           <Section title="Jobs" count={data.jobs.length}>
             <Table>

@@ -170,6 +170,24 @@ export type Customer = Base & {
   stripe_customer_id: string | null;
 };
 
+/** Price log: where a hand-logged conversation stands. */
+export type InteractionStatus = "open" | "booked" | "passed";
+
+/** A conversation the owner logged by hand (the price log on the Customers page). */
+export type CustomerInteraction = Base & {
+  customer_id: string;
+  /** Local "YYYY-MM-DD" the conversation happened. */
+  talked_on: string;
+  /** What it was about, free text ("Leaves", "Snow plowing"). */
+  category: string;
+  /** The price given, in dollars. Null when no price came up. */
+  price: number | null;
+  notes: string | null;
+  /** Local "YYYY-MM-DD" to follow up by. */
+  follow_up_on: string | null;
+  status: InteractionStatus;
+};
+
 export type Lead = Base & {
   customer_id: string;
   source: string;
@@ -473,6 +491,7 @@ export type Database = {
       profiles: Table<Profile>;
       services: Table<Service>;
       customers: Table<Customer>;
+      customer_interactions: Table<CustomerInteraction>;
       leads: Table<Lead>;
       quotes: Table<Quote>;
       quote_items: Table<QuoteItem>;
