@@ -146,12 +146,13 @@ export default async function CustomerPage({ params }: { params: { id: string } 
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Preferences &amp; property</CardTitle>
+                <CardTitle className="text-base">Address, preferences &amp; property</CardTitle>
               </CardHeader>
               <CardContent>
                 <CustomerEditForm
                   id={data.customer.id}
                   initial={{
+                    address: data.customer.address,
                     notes: data.customer.notes,
                     email_opt_in: data.customer.email_opt_in,
                     sms_opt_in: data.customer.sms_opt_in,

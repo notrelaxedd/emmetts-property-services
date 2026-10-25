@@ -24,7 +24,7 @@ export function CustomerEditForm({ id, initial }: { id: string; initial: Custome
       return
     }
     startTransition(async () => {
-      const r = await updateCustomer(id, { ...v, lot_acres: lot })
+      const r = await updateCustomer(id, { ...v, address: v.address?.trim() || null, lot_acres: lot })
       toast(r.ok ? { title: r.message ?? "Saved", variant: "success" } : { title: "Couldn't save", description: r.reason, variant: "destructive" })
     })
   }
@@ -41,6 +41,17 @@ export function CustomerEditForm({ id, initial }: { id: string; initial: Custome
 
   return (
     <form onSubmit={submit} className="space-y-4">
+      <div className="space-y-1.5">
+        <Label htmlFor="c-address">Address</Label>
+        <Input
+          id="c-address"
+          value={v.address ?? ""}
+          maxLength={200}
+          onChange={(e) => setV((s) => ({ ...s, address: e.target.value }))}
+          placeholder="123 Main St, Rocky River, OH 44116"
+          autoComplete="off"
+        />
+      </div>
       <div className="grid gap-3 sm:grid-cols-3">
         {box("email_opt_in", "Email updates", "Reviews, seasonal offers")}
         {box("sms_opt_in", "Texts", "Reminders by SMS")}
