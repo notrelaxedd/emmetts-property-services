@@ -35,6 +35,12 @@
     scroll-padding-top: calc(var(--header-h) + 1rem);
     -webkit-tap-highlight-color: transparent;
   }
+  /* Phones: keep focused and scrolled-to elements clear of the marketing pages' fixed call bar too. */
+  @media (max-width: 767px) {
+    html:has(.theme-badge) {
+      scroll-padding-bottom: calc(4.25rem + env(safe-area-inset-bottom) + 1rem);
+    }
+  }
 
   @media (prefers-reduced-motion: no-preference) {
     html {
@@ -72,11 +78,12 @@
     color: theme("colors.ink");
   }
 
-  /* Marketing pages wear the badge: forest focus ring and selection on cream, cream on forest. */
-  .theme-badge :focus-visible {
+  /* Marketing pages wear the badge: forest focus ring and selection on cream, cream on forest.
+     :where() keeps these no more specific than the rules they recolor, so outline-none still wins. */
+  :where(.theme-badge) :focus-visible {
     outline-color: theme("colors.forest");
   }
-  .theme-badge .on-dark :focus-visible {
+  :where(.theme-badge) .on-dark :focus-visible {
     outline-color: theme("colors.cream");
   }
   .theme-badge ::selection {

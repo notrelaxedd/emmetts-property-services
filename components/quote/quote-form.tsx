@@ -6,7 +6,7 @@ import { AlertCircle, ArrowLeft, ArrowRight, Check, Loader2, Plus } from "lucide
 
 import { submitQuote } from "@/app/actions/quote";
 import { CallLink } from "@/components/site/call-link";
-import { ServiceGlyph } from "@/components/site/icons";
+import { ServiceBadge } from "@/components/site/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -96,7 +96,7 @@ function pickErrors(errors: QuoteFieldErrors, fields: readonly QuoteField[]): Qu
 /* ---------- small building blocks ---------- */
 
 // Forest over the shared input styles (the owner console's stay gray). /60 keeps the border above 3:1 on white.
-const controlSkin = "border-forest/60 text-forest shadow-none placeholder:text-forest-muted/70";
+const controlSkin = "border-forest/60 text-forest shadow-none placeholder:text-forest-muted";
 const inputClass = `h-12 rounded-xl px-4 text-base ${controlSkin}`;
 
 function FieldError({ id, message }: { id: string; message?: string }) {
@@ -202,12 +202,7 @@ function CheckRow({
           </span>
         )}
       </span>
-      {icon && (
-        // The badge's thin ring at icon scale (IconBadge's look; ServiceGlyph's heavier stroke thinned to match).
-        <span className="ml-auto flex size-9 shrink-0 items-center justify-center rounded-full border-[1.5px] border-forest text-forest">
-          <ServiceGlyph icon={icon} className="size-[1.125rem] [stroke-width:1.5]" />
-        </span>
-      )}
+      {icon && <ServiceBadge icon={icon} size="sm" className="ml-auto size-9 [&_svg]:size-[1.125rem]" />}
     </label>
   );
 }
@@ -234,7 +229,7 @@ function Group({
       {/* Step titles in the badge's heavy caps; secondary groups in the small letterspaced caps /contact uses. */}
       <legend
         className={cn(
-          "font-heading uppercase text-forest",
+          "text-balance font-heading uppercase text-forest",
           sub ? "text-sm font-bold leading-snug tracking-[0.12em]" : "text-[1.375rem] font-extrabold leading-[1.1] sm:text-[1.625rem]",
         )}
       >
@@ -641,7 +636,7 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
                 open={Boolean(values.customRequest || errors.customRequest || errors.services)}
                 className="group rounded-xl border border-dashed border-forest/40 transition-colors hover:border-forest/70 open:border-solid open:border-forest/25 open:p-4 motion-reduce:transition-none"
               >
-                <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 rounded-xl px-4 font-semibold text-forest group-open:mb-3 group-open:min-h-0 group-open:px-0 [&::-webkit-details-marker]:hidden">
+                <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 rounded-xl px-4 font-semibold text-forest group-open:mb-3 group-open:px-0 [&::-webkit-details-marker]:hidden">
                   <Plus
                     className="size-5 text-forest transition-transform group-open:rotate-45 motion-reduce:transition-none"
                     aria-hidden="true"

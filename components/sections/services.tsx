@@ -70,9 +70,9 @@ function ServiceRow({ service, index }: { service: Service; index: number }) {
     <Reveal
       as="li"
       delay={index * 70}
-      className="group relative grid grid-cols-[3rem_1fr] gap-x-5 gap-y-1.5 border-b border-forest/20 py-7 has-[a:focus-visible]:outline has-[a:focus-visible]:outline-[3px] has-[a:focus-visible]:outline-offset-2 has-[a:focus-visible]:outline-forest md:grid-cols-[3rem_minmax(0,17rem)_minmax(0,1fr)_auto] md:items-center md:gap-x-8"
+      className="group relative grid grid-cols-[3rem_1fr] gap-x-5 gap-y-1.5 border-b border-forest/20 py-7 has-[a:focus-visible]:outline has-[a:focus-visible]:outline-[3px] has-[a:focus-visible]:outline-offset-2 has-[a:focus-visible]:outline-forest lg:grid-cols-[3rem_minmax(0,17rem)_minmax(0,1fr)_auto] lg:items-center lg:gap-x-8"
     >
-      <ServiceBadge icon={service.icon} className="row-span-3 md:row-span-1" />
+      <ServiceBadge icon={service.icon} className="row-span-3 lg:row-span-1" />
       <h3 className="font-heading text-[0.9375rem] font-bold uppercase leading-snug tracking-[0.08em] text-forest decoration-1 underline-offset-[5px] group-hover:underline">
         {service.title}
       </h3>
@@ -82,7 +82,7 @@ function ServiceRow({ service, index }: { service: Service; index: number }) {
       </p>
       <Link
         href={`/quote?service=${service.slug}`}
-        className="inline-flex min-h-11 w-fit items-center gap-2 whitespace-nowrap font-heading text-xs font-semibold uppercase tracking-[0.2em] text-forest outline-none after:absolute after:inset-0 after:content-['']"
+        className="inline-flex min-h-11 w-fit items-center gap-2 whitespace-nowrap font-heading text-xs font-semibold uppercase tracking-[0.2em] text-forest focus-visible:outline-none after:absolute after:inset-0 after:content-['']"
       >
         {content.services.linkLabel}
         <span className="sr-only">: {service.title}</span>

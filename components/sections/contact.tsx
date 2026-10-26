@@ -36,7 +36,7 @@ export function ContactSection({
           <p className="font-heading text-xs font-semibold uppercase tracking-[0.26em] text-forest">{contact.callPrompt}</p>
           <a
             href={siteConfig.phone.href}
-            className="mt-4 whitespace-nowrap font-heading text-[1.625rem] font-extrabold leading-none text-forest transition-colors hover:text-pine sm:text-[2rem]"
+            className="mt-2 inline-flex min-h-11 items-center whitespace-nowrap font-heading text-[1.625rem] font-extrabold leading-none text-forest transition-colors hover:text-pine sm:text-[2rem]"
           >
             {siteConfig.phone.display}
           </a>
@@ -73,12 +73,12 @@ export function ContactSection({
             <ul className="mt-5 flex flex-col items-center gap-3 text-forest-body">
               <li className="flex max-w-xs items-start gap-2.5">
                 <MapPin className="mt-1 size-4 shrink-0 text-forest" aria-hidden="true" strokeWidth={1.75} />
-                <span>{siteConfig.serviceArea.summary}</span>
+                <span className="text-left">{siteConfig.serviceArea.summary}</span>
               </li>
               {siteConfig.email && (
                 <li className="flex items-start gap-2.5">
                   <Mail className="mt-1 size-4 shrink-0 text-forest" aria-hidden="true" strokeWidth={1.75} />
-                  <a href={`mailto:${siteConfig.email}`} className="break-all hover:text-forest">
+                  <a href={`mailto:${siteConfig.email}`} className="break-all text-left hover:text-forest">
                     {siteConfig.email}
                   </a>
                 </li>
@@ -86,7 +86,7 @@ export function ContactSection({
               {siteConfig.hours && (
                 <li className="flex items-start gap-2.5">
                   <Clock className="mt-1 size-4 shrink-0 text-forest" aria-hidden="true" strokeWidth={1.75} />
-                  <span>{siteConfig.hours}</span>
+                  <span className="text-left">{siteConfig.hours}</span>
                 </li>
               )}
             </ul>

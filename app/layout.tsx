@@ -7,11 +7,13 @@ import { siteConfig } from "@/lib/site-config";
 import { cn } from "@/lib/utils";
 import "./globals.css";
 
+// The owner console's condensed caps. The marketing pages don't use it, so don't preload it there.
 const display = Anton({
   weight: "400",
   subsets: ["latin"],
   variable: "--font-display",
   display: "swap",
+  preload: false,
 });
 
 const body = Work_Sans({

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowRight, Menu, Phone } from "lucide-react";
 import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,12 @@ const closeButton =
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
+  // Set when a link closes the sheet: the page is navigating or scrolling to a section, so focus
+  // shouldn't jump back to the trigger. Escape and the close button still return focus to it.
+  const followedLink = useRef(false);
+  const onLinkClick = () => {
+    followedLink.current = true;
+  };
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -31,9 +37,12 @@ export function MobileNav() {
         side="right"
         aria-describedby={undefined}
         // theme-badge: the sheet portals outside the marketing layout, so it needs the forest focus ring itself.
-        className={`theme-badge flex w-[88%] flex-col border-l-0 bg-cream px-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-20 sm:max-w-sm ${closeButton}`}
-        // Don't yank focus back to the trigger after tapping a link; the page is scrolling to a section.
-        onCloseAutoFocus={(e) => e.preventDefault()}
+        // It scrolls on landscape phones and at high zoom, and skips the slide-in with reduced motion.
+        className={`theme-badge flex w-[90%] flex-col overflow-y-auto overscroll-contain border-l-0 bg-cream px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-20 motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none sm:max-w-sm sm:px-6 ${closeButton}`}
+        onCloseAutoFocus={(e) => {
+          if (followedLink.current) e.preventDefault();
+          followedLink.current = false;
+        }}
       >
         <SheetTitle className="sr-only">{content.menu.title}</SheetTitle>
         <nav aria-label="Main">
@@ -43,6 +52,7 @@ export function MobileNav() {
                 <SheetClose asChild>
                   <Link
                     href={item.href}
+                    onClick={onLinkClick}
                     className="block py-5 font-heading text-[1.625rem] font-extrabold uppercase leading-none text-forest transition-colors hover:text-pine"
                   >
                     {item.label}
@@ -57,8 +67,9 @@ export function MobileNav() {
 
         <div className="mt-auto flex flex-col gap-3">
           <SheetClose asChild>
-            <Button asChild variant="cta" size="cta" className="w-full">
-              <Link href="/quote">
+            {/* A touch tighter on small phones so the full label fits the narrow sheet. */}
+            <Button asChild variant="cta" size="cta" className="w-full max-sm:px-4 max-sm:text-[0.875rem] max-sm:tracking-[0.1em]">
+              <Link href="/quote" onClick={onLinkClick}>
                 {content.cta.quote}
                 <ArrowRight aria-hidden="true" />
               </Link>

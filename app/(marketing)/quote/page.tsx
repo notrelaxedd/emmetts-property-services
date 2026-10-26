@@ -36,11 +36,14 @@ export default async function QuotePage({ searchParams }: { searchParams: { serv
           {/* On phones this would push the form below the fold; the thanks page repeats it anyway. */}
           <div className="mt-12 hidden border-t border-forest/10 pt-10 lg:block">
             <h2 className="font-heading text-sm font-bold uppercase tracking-[0.12em] text-forest">{quote.steps.heading}</h2>
-            <ol className="relative mt-6 space-y-5">
-              {/* A hairline threading the numbered rings, like the steps on the home page. */}
-              <span aria-hidden="true" className="absolute inset-y-4 left-4 w-px -translate-x-1/2 bg-forest/20" />
+            <ol className="mt-6 space-y-5">
               {quote.steps.items.map((item, i) => (
                 <li key={item} className="relative flex items-start gap-4 text-forest-body">
+                  {/* A hairline from this ring to the next, like the steps on the home page; drawn per gap so
+                      it ends at the last ring however the text wraps. */}
+                  {i < quote.steps.items.length - 1 && (
+                    <span aria-hidden="true" className="absolute -bottom-5 left-4 top-8 w-px -translate-x-1/2 bg-forest/20" />
+                  )}
                   <span
                     aria-hidden="true"
                     className="flex size-8 shrink-0 items-center justify-center rounded-full border-[1.5px] border-forest bg-cream font-heading text-sm font-semibold text-forest"

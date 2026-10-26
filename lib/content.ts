@@ -1,7 +1,7 @@
 /**
  * All site copy lives here so text can be edited without touching components.
  * Headlines are arrays: each entry is one line of the big headline.
- * Eyebrows are the small letterspaced labels between thin rules above each home page section.
+ * Eyebrows are the small letterspaced labels between thin rules above section and page headings.
  */
 
 import { siteConfig } from "./site-config";
@@ -100,7 +100,6 @@ export const content = {
         season: "Spring & Summer",
         title: "Mowing",
         body: "Regular mowing, trimming, and edging from the first cut to the last.",
-        icon: "sprout",
         serviceSlug: "lawn-mowing",
         image: {
           src: "/images/mower-lawn.jpg",
@@ -111,7 +110,6 @@ export const content = {
         season: "Fall",
         title: "Cleanup",
         body: "Leaves out of the lawn, beds, and gutters before the ground freezes.",
-        icon: "leaf",
         serviceSlug: "fall-cleanup",
         image: {
           src: "/images/fall-leaves-lawn.jpg",
@@ -122,7 +120,6 @@ export const content = {
         season: "Winter",
         title: "Snow removal",
         body: "Driveways and walkways cleared with a snowblower.",
-        icon: "snowflake",
         serviceSlug: "snow-removal",
         image: {
           src: "/images/snow-driveway.jpg",
@@ -153,14 +150,14 @@ export const content = {
   },
 
   contactPage: {
-    eyebrow: "Contact",
+    eyebrow: siteConfig.altName,
     headline: ["Contact", "us"],
     body: "One call is all it takes. Tell us what your yard needs and we'll give you a price.",
   },
 
   quote: {
     cta: "Get a quote",
-    eyebrow: "Free quote",
+    eyebrow: "No obligation",
     headline: ["Get your", "free quote"],
     body: "Tell us about your yard and what you need. We'll look it over and send you a price. No pressure, and you can always call us instead.",
     steps: {

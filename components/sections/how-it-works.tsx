@@ -34,7 +34,7 @@ export function HowItWorks() {
               >
                 {i + 1}
               </span>
-              <h3 className="self-end font-heading text-[0.9375rem] font-bold uppercase tracking-[0.08em] text-forest md:mt-7 md:text-[1.0625rem]">
+              <h3 className="self-end md:self-auto font-heading text-[0.9375rem] font-bold uppercase tracking-[0.08em] text-forest md:mt-7 md:text-[1.0625rem]">
                 {step.title}
               </h3>
               <p className="mt-1.5 text-forest-body md:mt-3 md:max-w-[17rem]">{step.body}</p>

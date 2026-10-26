@@ -37,9 +37,7 @@ const config: Config = {
         "maple-ink": "#A9431D", // maple for small text (5.7:1 on cream, 5.1:1 on sage)
         frost: "#4C778B", // winter glyph, exact; icons and large type only
         "frost-ink": "#3F687A", // frost for small text (5.8:1 on cream, 5.2:1 on sage)
-        // Season accents on a forest background (all ≥5.7:1 on forest).
-        "maple-light": "#E08A62",
-        "frost-light": "#8FB6C8",
+        // The grass accent on a forest background: check marks and pins (7.7:1 on forest).
         "grass-light": "#9CC58F",
 
         // shadcn/ui semantic tokens, mapped onto the brand palette in globals.css

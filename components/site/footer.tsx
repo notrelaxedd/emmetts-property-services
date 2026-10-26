@@ -8,8 +8,8 @@ import { Eyebrow } from "./section-heading";
 
 /**
  * A quiet, symmetric colophon: links on one side, contact on the other, and between them the
- * badge's lower half in type (wordmark, ruled line, season marks). The closing section right above
- * already shows the full badge, so it isn't repeated here.
+ * badge's lower half in type (wordmark, ruled line, season marks). The header carries the full badge
+ * everywhere (and the home page's closing section shows it large), so it isn't repeated here.
  */
 export function SiteFooter() {
   const year = new Date().getFullYear();
@@ -66,7 +66,7 @@ export function SiteFooter() {
             {siteConfig.email && (
               <li className="flex items-start gap-2">
                 <Mail className="mt-1 size-4 shrink-0 text-forest" aria-hidden="true" strokeWidth={1.75} />
-                <a href={`mailto:${siteConfig.email}`} className="break-all hover:text-forest">
+                <a href={`mailto:${siteConfig.email}`} className="break-all text-left hover:text-forest">
                   {siteConfig.email}
                 </a>
               </li>
@@ -74,12 +74,12 @@ export function SiteFooter() {
             {siteConfig.hours && (
               <li className="flex items-start gap-2">
                 <Clock className="mt-1 size-4 shrink-0 text-forest" aria-hidden="true" strokeWidth={1.75} />
-                <span>{siteConfig.hours}</span>
+                <span className="text-left">{siteConfig.hours}</span>
               </li>
             )}
             <li className="flex max-w-xs items-start gap-2">
               <MapPin className="mt-1 size-4 shrink-0 text-forest" aria-hidden="true" strokeWidth={1.75} />
-              <span>
+              <span className="text-left">
                 <span className="sr-only">{content.footer.areaHeading}: </span>
                 {siteConfig.serviceArea.summary}
                 {cities.length > 1 && <span className="block text-forest-muted">{cities.join(" · ")}</span>}

@@ -14,7 +14,8 @@ type EyebrowProps = {
 
 /**
  * Small letterspaced caps between two thin rules: the badge's "— PROPERTY SERVICES —" line.
- * Sits above every home page heading. Inherits its color, so it works on forest too.
+ * Sits above section and page headings. Forest by default; on a forest panel pass a text color via
+ * className (SectionHeading's tone="dark" does). The rules follow the text color.
  */
 export function Eyebrow({ children, as: Tag = "p", align = "center", className }: EyebrowProps) {
   const centered = align === "center";

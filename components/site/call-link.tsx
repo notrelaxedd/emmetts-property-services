@@ -16,14 +16,15 @@ export function CallLink({ prompt, tone = "light", className }: CallLinkProps) {
   return (
     <p className={cn("text-[0.9375rem]", dark ? "text-cream/75" : "text-forest-muted", className)}>
       {prompt && <>{prompt} </>}
+      {/* Inline-block, not inline-flex, so the number keeps the prompt's baseline; the padding makes a 44px target. */}
       <a
         href={siteConfig.phone.href}
         className={cn(
-          "inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap font-semibold underline decoration-1 underline-offset-[6px] transition-colors",
+          "inline-block whitespace-nowrap py-2.5 font-semibold underline decoration-1 underline-offset-[6px] transition-colors",
           dark ? "text-cream decoration-cream/40 hover:decoration-cream" : "text-forest decoration-forest/30 hover:decoration-forest",
         )}
       >
-        <Phone className="size-4" aria-hidden="true" strokeWidth={1.75} />
+        <Phone className="mr-1.5 inline-block size-4 align-[-0.1875rem]" aria-hidden="true" strokeWidth={1.75} />
         {siteConfig.phone.display}
       </a>
     </p>

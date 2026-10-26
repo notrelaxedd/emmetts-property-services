@@ -36,7 +36,7 @@ export default async function OpenGraphImage() {
     (
       <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", background: CREAM, fontFamily: "Montserrat" }}>
         <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 0 0 84px", width: 660 }}>
-          {/* The badge's letterspaced PROPERTY SERVICES line, rules and all. */}
+          {/* The site's left-aligned eyebrow: letterspaced caps behind one rule. */}
           <div style={{ display: "flex", alignItems: "center", gap: 18, fontSize: 22, fontWeight: 600, letterSpacing: 7, color: FOREST }}>
             <div style={rule} />
             {content.hero.kicker.place.toUpperCase()}

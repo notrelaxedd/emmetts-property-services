@@ -14,7 +14,7 @@ const delay = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
 /**
  * The letterspaced line, the heavy wordmark-style headline and the one loud action, beside the
  * scene in its ring (season marks at its foot, like the badge). On phones the ring follows the
- * text, so the quote button, shortcuts and trust points all land in the first screen.
+ * text, so the quote button lands in the first screen; the shortcuts and trust points follow on taller phones.
  */
 export function Hero() {
   const { hero } = content;
@@ -27,8 +27,8 @@ export function Hero() {
             <Eyebrow align="start">
               {/* The header already names the business, and the full line won't fit on phones or in the tablet column. */}
               <span className="max-sm:sr-only md:max-lg:sr-only">
-                {hero.kicker.name}
-                <span aria-hidden="true">&nbsp;&middot;&nbsp;</span>
+                {hero.kicker.name}{" "}
+                <span aria-hidden="true">&middot;&nbsp;</span>
               </span>
               {hero.kicker.place}
             </Eyebrow>
@@ -90,9 +90,9 @@ export function Hero() {
             alt={hero.image.alt}
             priority
             draw
-            position="38% 32%"
+            position="38% 8%"
             sizes="(min-width: 1280px) 448px, (min-width: 768px) 38vw, 288px"
-            className="w-72 md:w-full md:max-w-[28rem]"
+            className="w-full max-w-72 md:max-w-[28rem]"
             ornament={<SeasonTrio />}
           />
         </div>

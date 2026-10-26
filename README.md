@@ -40,8 +40,8 @@ npm run test:e2e             # Playwright smoke tests (set PLAYWRIGHT_CHROMIUM_P
 | --- | --- |
 | Phone, email, hours, pricing, service area (TODOs live here) | `lib/site-config.ts` |
 | All the words on the site | `lib/content.ts` |
-| The list of services (cards, seasons band, SEO) | `lib/services.ts` |
-| Photos and logo | `public/images/` and `public/logo.png`; see `public/images/README.md` |
+| The list of services (in-season panel, service rows, quote form, SEO) | `lib/services.ts` |
+| Photos and logo | `public/images/`, `public/logo.png` and `public/logo-light.png`; see `public/images/README.md` |
 | Flyer template + where the QR code goes | `assets/flyer/` and `FLYER_TEMPLATE` in `lib/flyers/render.ts` |
 | Colors, fonts, sizes | `tailwind.config.ts`, `app/globals.css` |
 
@@ -65,7 +65,7 @@ own user to `owner`.
 **If you change the logo**, also refresh `assets/og/logo-og.png` (a ~520px-wide copy) and, if you ever
 swap the headline font, `assets/og/Montserrat-*-Subset.ttf` (ASCII-only static cuts). The share-image function inlines whatever it
 loads, and Vercel rejects an edge function over 1 MB — using the full-size logo there breaks the
-deploy with "Edge Function size is 1.48 MB". The site's own pages always use the full `public/logo.png`.
+deploy with "Edge Function size is 1.48 MB". The site's own pages always use the full-size `public/logo.png` / `public/logo-light.png`.
 
 ## What's in here
 

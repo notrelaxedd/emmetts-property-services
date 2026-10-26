@@ -15,7 +15,8 @@ export function Wordmark({ size = "sm", className }: { size?: "sm" | "lg"; class
       <span
         className={cn(
           "flex items-center whitespace-nowrap font-heading font-semibold uppercase leading-none",
-          lg ? "mt-3 gap-3 text-xs tracking-[0.3em]" : "mt-1.5 gap-1.5 text-[0.5rem] tracking-[0.24em]",
+          // leading-none after the size: text-xs carries its own line height, which would otherwise win.
+          lg ? "mt-3 gap-3 text-xs leading-none tracking-[0.3em]" : "mt-1.5 gap-1.5 text-[0.5rem] leading-none tracking-[0.24em]",
         )}
       >
         <span aria-hidden="true" className={rule} />

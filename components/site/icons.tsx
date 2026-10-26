@@ -10,11 +10,6 @@ const iconMap: Record<ServiceIcon, LucideIcon> = {
   snowflake: Snowflake,
 };
 
-export function ServiceGlyph({ icon, className }: { icon: ServiceIcon; className?: string }) {
-  const Icon = iconMap[icon];
-  return <Icon aria-hidden="true" className={className} strokeWidth={2.25} />;
-}
-
 /** A thin-line icon inside a thin forest ring: the badge's ring at icon scale. */
 export function IconBadge({
   icon: Icon,
