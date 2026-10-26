@@ -95,7 +95,7 @@ export function SiteFooter() {
           <p>
             &copy; {year} {siteConfig.name}
           </p>
-          <p>{siteConfig.altName} · Northeast Ohio</p>
+          <p>{content.footer.servingLine}</p>
         </div>
       </div>
     </footer>

@@ -1,5 +1,7 @@
 /** Pure rendering helpers: no I/O. */
 
+import { siteConfig } from "../site-config";
+
 export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -26,8 +28,10 @@ export function renderEmail({ subject, body, siteUrl, token, business }: RenderE
   html: string;
 } {
   const unsub = unsubscribeUrl(siteUrl, token);
+  // Where we are and how to reach us, under every message.
+  const contact = `Northeast Ohio · ${siteConfig.phone.display}`;
 
-  const text = `${body.trim()}\n\n--\n${business}\nDon't want these emails? Unsubscribe: ${unsub}\n`;
+  const text = `${body.trim()}\n\n--\n${business} · ${contact}\nDon't want these emails? Unsubscribe: ${unsub}\n`;
 
   const paragraphs = body
     .trim()
@@ -45,7 +49,7 @@ export function renderEmail({ subject, body, siteUrl, token, business }: RenderE
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:8px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
 <tr><td style="padding:20px 24px;background:#166534;color:#ffffff;font-size:18px;font-weight:600;border-radius:8px 8px 0 0;">${escapeHtml(business)}</td></tr>
 <tr><td style="padding:24px;">${paragraphs}</td></tr>
-<tr><td style="padding:16px 24px 24px;border-top:1px solid #e5e7eb;font-size:12px;line-height:1.5;color:#6b7280;">${escapeHtml(business)}<br>Don't want these emails? <a href="${escapeHtml(unsub)}" style="color:#166534;">Unsubscribe</a></td></tr>
+<tr><td style="padding:16px 24px 24px;border-top:1px solid #e5e7eb;font-size:12px;line-height:1.5;color:#6b7280;">${escapeHtml(business)} · ${escapeHtml(contact)}<br>Don't want these emails? <a href="${escapeHtml(unsub)}" style="color:#166534;">Unsubscribe</a></td></tr>
 </table></td></tr></table>
 </body></html>`;
 

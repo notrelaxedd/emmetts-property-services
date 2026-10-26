@@ -17,9 +17,9 @@ function jobIdOf(approval: { ref_table: string; ref_id: string; payload: Record<
   throw new Error("bookingHandler: approval has no job_id");
 }
 
-/** "Tue Oct 14, 9:00–10:30am" (business timezone), or "a time we'll confirm" if unscheduled. */
-export function describeSlot(job: Pick<Job, "start_at" | "end_at">): string {
-  if (!job.start_at) return "a time we'll confirm with you";
+/** "Tue Oct 14, 9:00–10:30am" (business timezone), or null if unscheduled. */
+export function describeSlot(job: Pick<Job, "start_at" | "end_at">): string | null {
+  if (!job.start_at) return null;
   const start = new Date(job.start_at);
   const end = job.end_at ? new Date(job.end_at) : start;
   return `${formatDayLabel(start)}, ${formatTimeRange(start, end)}`;
@@ -29,14 +29,16 @@ export function describeSlot(job: Pick<Job, "start_at" | "end_at">): string {
 export function fallbackConfirmationEmail(input: {
   firstName: string;
   services: string[];
-  when: string;
+  when: string | null;
   address: string | null;
 }): { subject: string; body: string } {
   const what = input.services.length ? input.services.join(", ") : "your service";
   const body = [
     `Hi ${input.firstName},`,
     "",
-    `You're booked! Our crew will be there for ${what} on ${input.when}${input.address ? ` at ${input.address}` : ""}.`,
+    input.when
+      ? `You're booked! Our crew will be there for ${what} on ${input.when}${input.address ? ` at ${input.address}` : ""}.`
+      : `You're booked for ${what}${input.address ? ` at ${input.address}` : ""}. We'll confirm the exact day and time with you.`,
     "",
     "We'll send a reminder the day before. If the weather turns, we'll reach out to reschedule.",
     "",
@@ -45,7 +47,7 @@ export function fallbackConfirmationEmail(input: {
     "Thanks,",
     siteConfig.name,
   ].join("\n");
-  return { subject: `You're booked: ${input.when}`, body };
+  return { subject: input.when ? `You're booked: ${input.when}` : "You're booked", body };
 }
 
 async function jobServices(db: Db, job: Job): Promise<string[]> {
@@ -69,7 +71,7 @@ async function draftConfirmation(
     const draft = await draftMessage(db, {
       kind: "confirmation",
       customer: { name: customer.name, first_name: firstName },
-      job: { services, start_at: when, address: customer.address ?? undefined },
+      job: { services, start_at: when ?? undefined, address: customer.address ?? undefined },
     });
     return { subject: draft.subject, body: draft.body };
   } catch (e) {

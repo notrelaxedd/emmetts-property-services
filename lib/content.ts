@@ -10,7 +10,7 @@ export const content = {
   nav: [
     { label: "Services", href: "/#services" },
     { label: "How it works", href: "/#how-it-works" },
-    { label: "Why Us", href: "/#why-us" },
+    { label: "Why us", href: "/#why-us" },
     { label: "Contact", href: "/#contact" },
   ],
 
@@ -25,7 +25,7 @@ export const content = {
   },
 
   hero: {
-    kicker: { name: siteConfig.altName, place: "Northeast Ohio" },
+    kicker: { name: siteConfig.name, place: "Northeast Ohio" },
     // The business's main offer. Swap seasonally (e.g. ["Snow", "removal"] in December).
     headline: ["Fall lawn", "cleanup"],
     body: "Leaf removal, edging, and gutter cleaning in one visit. We get your lawn ready to survive the winter so it bounces back stronger in spring.",
@@ -59,7 +59,7 @@ export const content = {
 
   services: {
     eyebrow: "Services",
-    headline: ["Yard work,", "handled"],
+    headline: ["Property care,", "handled"],
     intro:
       "Pick what you need, from a single service to the whole property, and we'll take care of it. Our own crew handles every job, start to finish.",
     featuredSlug: "fall-cleanup",
@@ -82,7 +82,7 @@ export const content = {
     headline: ["Local crew.", "Real work."],
     paragraphs: [
       "We're a local crew that takes property care seriously. We show up when we say we will, do the job right, and charge a fair price for it.",
-      "There's a good chance you've already seen our work. Our customers keep recommending us to the people around them.",
+      "There's a good chance you've already seen our work. Our customers keep recommending us to friends and neighbors.",
     ],
     points: [
       { title: "Quality work", body: "Crisp edges, clean beds, and no leaves left in the corners." },
@@ -119,7 +119,7 @@ export const content = {
       {
         season: "Winter",
         title: "Snow removal",
-        body: "Driveways and walkways cleared with a snowblower.",
+        body: "Driveways and walkways cleared after the snow.",
         serviceSlug: "snow-removal",
         image: {
           src: "/images/snow-driveway.jpg",
@@ -150,7 +150,7 @@ export const content = {
   },
 
   contactPage: {
-    eyebrow: siteConfig.altName,
+    eyebrow: "Northeast Ohio",
     headline: ["Contact", "us"],
     body: "One call is all it takes. Tell us what your yard needs and we'll give you a price.",
   },
@@ -198,7 +198,7 @@ export const content = {
         toggle: "Something not listed?",
         label: "Something else?",
         hint: "Tell us about anything that isn't on the list, and roughly how big it is.",
-        placeholder: "A hedge that needs trimming, a pile of branches, a patio to sweep...",
+        placeholder: "Hedges to trim, brush or branches to haul away, a bigger one-time cleanup...",
       },
       photos: {
         label: "Photos (optional)",
@@ -248,6 +248,13 @@ export const content = {
       ],
       soonerPrompt: "Need it sooner? Call the crew.",
       back: "Back to home",
+      // Shown instead when someone backs out of Stripe Checkout (?cancelled=1).
+      cancelled: {
+        eyebrow: "Payment not finished",
+        headline: ["No charge", "was made"],
+        body: "You left checkout before paying, so nothing was charged. The link in your quote email works until the quote expires, so you can finish any time, or give us a call.",
+        prompt: "Questions about your quote? Call the crew.",
+      },
     },
     // After Stripe Checkout succeeds (/quote/paid).
     paid: {
@@ -288,6 +295,7 @@ export const content = {
 
   footer: {
     blurb: "Lawn care, fall cleanup, gutters, and snow removal from a local crew that does it right.",
+    servingLine: "Serving Northeast Ohio",
     linksHeading: "Explore",
     contactHeading: "Get in touch",
     areaHeading: "Service area",
@@ -296,6 +304,6 @@ export const content = {
   seo: {
     title: `${siteConfig.name} | Lawn Care, Fall Cleanup & Snow Removal in Northeast Ohio`,
     description:
-      "Lawn mowing, fall leaf cleanup, gutter cleaning, and snow removal in Northeast Ohio and Cleveland's west-side suburbs. Locally owned crew, upfront pricing, and great reviews from local customers.",
+      "Lawn mowing, fall leaf cleanup, gutter cleaning, and snow removal in Northeast Ohio and Cleveland's west-side suburbs. Locally owned, with upfront pricing and great reviews from local customers.",
   },
 } as const;

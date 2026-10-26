@@ -71,6 +71,12 @@ describe("render", () => {
     expect(text).toContain("https://x.test/unsubscribe?token=abc");
     expect(text).toContain("Hello <script>"); // plain text is not escaped
   });
+
+  it("signs off with where we work and the phone number", () => {
+    const { text, html } = renderEmail({ subject: "s", body: "b", siteUrl: "https://x.test", token: "abc", business: "Emmett's" });
+    expect(text).toContain("Emmett's · Northeast Ohio · (440) 823-5545");
+    expect(html).toContain("Northeast Ohio · (440) 823-5545");
+  });
 });
 
 describe("requiresOptIn", () => {
