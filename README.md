@@ -76,8 +76,8 @@ deploy with "Edge Function size is 1.48 MB". The site's own pages always use the
   (A booking form and a customer reviews section were removed; both are in the git history.)
 - **Brand shapes** (`components/site/`), all from the badge: `RingPhoto` (a photo in the thin
   ring), `Eyebrow` / `SectionHeading` (letterspaced label between rules, heavy Montserrat caps),
-  `season-glyphs.tsx` (maple, grass, snowflake), `Wordmark`. `Diagonal` (clip-path panels) is the
-  old flyer shape, still used by the quote, thanks and unsubscribe pages.
+  `season-glyphs.tsx` (maple, grass, snowflake), `Wordmark`. The quote, thanks, paid, expired and
+  unsubscribe pages are built from the same pieces; `/contact` is the reference for a non-home page.
 - **Phones:** a sticky bottom bar keeps *Free quote* (and *Call*) one tap away at any scroll position.
 - **SEO:** metadata + Open Graph (`app/opengraph-image.tsx` generates the share card), a
   `LocalBusiness` JSON-LD block (`components/site/json-ld.tsx`), `robots.txt`, and `sitemap.xml`.
