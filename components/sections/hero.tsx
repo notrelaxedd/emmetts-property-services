@@ -25,8 +25,8 @@ export function Hero() {
         <div className="md:col-span-7">
           <div className="hero-fade" style={delay(0)}>
             <Eyebrow align="start">
-              {/* The header already names the business on phones, and the full line won't fit there. */}
-              <span className="max-sm:sr-only">
+              {/* The header already names the business, and the full line won't fit on phones or in the tablet column. */}
+              <span className="max-sm:sr-only md:max-lg:sr-only">
                 {hero.kicker.name}
                 <span aria-hidden="true">&nbsp;&middot;&nbsp;</span>
               </span>
@@ -41,7 +41,11 @@ export function Hero() {
           </p>
 
           {/* One loud action: the quote form. Calling stays available below, just quieter. */}
-          <div className="hero-fade mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-6" style={delay(520)}>
+          {/* The note sits beside the button, except in the narrow tablet column where it would wrap to four lines. */}
+          <div
+            className="hero-fade mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-6 md:flex-col md:items-start md:gap-3 lg:flex-row lg:items-center lg:gap-6"
+            style={delay(520)}
+          >
             <Button asChild variant="cta" size="cta">
               <Link href="/quote">
                 {content.cta.quote}
