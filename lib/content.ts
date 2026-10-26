@@ -1,6 +1,7 @@
 /**
  * All site copy lives here so text can be edited without touching components.
- * Headlines are arrays: each entry is one line of the big condensed headline.
+ * Headlines are arrays: each entry is one line of the big headline.
+ * Eyebrows are the small letterspaced labels between thin rules above each home page section.
  */
 
 import { siteConfig } from "./site-config";
@@ -39,6 +40,7 @@ export const content = {
       { label: "Snow", slug: "snow-removal" },
     ],
     trust: ["Three-person local crew", "Fair prices", "Great reviews around the neighborhood"],
+    trustLabel: "Why neighbors hire us",
     image: {
       src: "/images/hero-leaf-blowing.jpg",
       alt: "A crew member with a backpack blower sending a wave of red fall leaves across a lawn",
@@ -46,6 +48,7 @@ export const content = {
   },
 
   howItWorks: {
+    eyebrow: "How it works",
     headline: ["Your price", "in three steps"],
     steps: [
       { title: "Tell us what you need", body: "Pick your services and add your address. It takes about two minutes." },
@@ -55,25 +58,25 @@ export const content = {
   },
 
   services: {
+    eyebrow: "Services",
     headline: ["Yard work,", "handled"],
     intro:
       "Pick what you need and we'll take care of it. Every job is done by the same three of us, start to finish.",
     featuredSlug: "fall-cleanup",
     featuredLabel: "In season now",
+    includesLabel: "Includes",
     linkLabel: "Get a price",
   },
 
+  // On the home page this shares a section with `seasons`: the body is its intro, the pills a line under it.
   benefits: {
     headline: ["One crew", "covers it"],
     body: "From the first mow in spring to the last snowfall, one crew handles the whole yard. Tell us what you need and we'll send you one price for all of it.",
     pills: ["Leaf Cleanup", "Edging", "Gutter Cleaning", "Snow Removal", "And More"],
-    image: {
-      src: "/images/fall-leaves-lawn.jpg",
-      alt: "Oak leaves in rust and gold blanketing a green lawn",
-    },
   },
 
   whyUs: {
+    eyebrow: "Why us",
     headline: ["Local students.", "Real work."],
     paragraphs: [
       "We're three local high school students who take yard work seriously. We show up, do the job right, and charge a fair price for it.",
@@ -84,13 +87,10 @@ export const content = {
       { title: "Fair prices", body: "An honest price for the job, every time." },
       { title: "Neighborhood reviewed", body: "Lots of happy customers nearby. Ask around." },
     ],
-    image: {
-      src: "/images/mower-lawn.jpg",
-      alt: "A push mower low in the grass, mid-cut, with a clean stripe of short lawn behind it",
-    },
   },
 
   seasons: {
+    eyebrow: "Year-round",
     headline: ["Three seasons.", "One crew."],
     items: [
       {
@@ -99,6 +99,10 @@ export const content = {
         body: "Regular mowing, trimming, and edging from the first cut to the last.",
         icon: "sprout",
         serviceSlug: "lawn-mowing",
+        image: {
+          src: "/images/mower-lawn.jpg",
+          alt: "A push mower low in the grass, mid-cut, with a clean stripe of short lawn behind it",
+        },
       },
       {
         season: "Fall",
@@ -106,6 +110,10 @@ export const content = {
         body: "Leaves out of the lawn, beds, and gutters before the ground freezes.",
         icon: "leaf",
         serviceSlug: "fall-cleanup",
+        image: {
+          src: "/images/fall-leaves-lawn.jpg",
+          alt: "Oak leaves in rust and gold blanketing a green lawn",
+        },
       },
       {
         season: "Winter",
@@ -113,6 +121,10 @@ export const content = {
         body: "Driveways and walkways cleared with a snowblower.",
         icon: "snowflake",
         serviceSlug: "snow-removal",
+        image: {
+          src: "/images/snow-driveway.jpg",
+          alt: "A snowblower clearing a fresh lane down a long, snowy driveway",
+        },
       },
     ],
   },
@@ -130,6 +142,7 @@ export const content = {
   finalCta: {
     headline: ["Ready for", "your price?"],
     body: "Tell us about your yard and we'll send you a fair price by text or email. Free, and no obligation.",
+    // The small label above the headline.
     cardHeading: "Get your free quote",
     points: ["Takes about two minutes", "Price by text or email", "Pick a day that works for you"],
     callPrompt: "Rather talk it through? Call the crew.",
@@ -137,6 +150,7 @@ export const content = {
   },
 
   contactPage: {
+    eyebrow: "Contact",
     headline: ["Contact", "us"],
     body: "One call is all it takes. Tell us what your yard needs and we'll give you a price.",
   },

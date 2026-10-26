@@ -70,16 +70,18 @@ deploy with "Edge Function size is 1.48 MB". The site's own pages always use the
 ## What's in here
 
 - **Sections** (`components/sections/`): hero (quote button + service shortcuts that pre-tick the form),
-  how it works, services grid, benefits pills, why us, seasons band, and a closing quote section
-  (`quote-cta.tsx`, keeps `id="contact"`). `/contact` is still the call-first page (`contact.tsx`), and
+  how it works, services, three seasons (which also carries the "one crew covers it" line), why us,
+  and a closing quote section on forest green (`quote-cta.tsx`, keeps `id="contact"`). `/contact` is still the call-first page (`contact.tsx`), and
   `/book` redirects there.
   (A booking form and a customer reviews section were removed; both are in the git history.)
-- **Brand shapes** (`components/site/`): `Diagonal` (clip-path panels), `OvalPhoto` (3:4 ellipse
-  frame), `PillList` (the flyer's black pills), `Headline` (condensed caps).
+- **Brand shapes** (`components/site/`), all from the badge: `RingPhoto` (a photo in the thin
+  ring), `Eyebrow` / `SectionHeading` (letterspaced label between rules, heavy Montserrat caps),
+  `season-glyphs.tsx` (maple, grass, snowflake), `Wordmark`. `Diagonal` (clip-path panels) is the
+  old flyer shape, still used by the quote, thanks and unsubscribe pages.
 - **Phones:** a sticky bottom bar keeps *Free quote* (and *Call*) one tap away at any scroll position.
 - **SEO:** metadata + Open Graph (`app/opengraph-image.tsx` generates the share card), a
   `LocalBusiness` JSON-LD block (`components/site/json-ld.tsx`), `robots.txt`, and `sitemap.xml`.
 - **Accessibility:** semantic headings, skip link, visible focus rings, alt text on every image,
   and `prefers-reduced-motion` disables all animation.
-- **Motion:** CSS-only hero entrance, plus a tiny IntersectionObserver reveal
+- **Motion:** CSS-only hero entrance (the ring draws itself in), plus a tiny IntersectionObserver reveal
   (`components/site/reveal.tsx`). No animation libraries.

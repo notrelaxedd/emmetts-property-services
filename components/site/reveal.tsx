@@ -4,8 +4,8 @@ import { createElement, useEffect, useRef, type CSSProperties, type ReactNode } 
 
 type RevealProps = {
   as?: "div" | "li" | "article" | "ul" | "section";
-  /** Direction the element travels in from. */
-  from?: "below" | "left" | "scale";
+  /** Rise in from just below, or settle in from slightly smaller. */
+  from?: "below" | "scale";
   /** Stagger delay in ms. */
   delay?: number;
   className?: string;

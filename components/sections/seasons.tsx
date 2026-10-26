@@ -1,39 +1,71 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { Diagonal } from "@/components/site/diagonal";
-import { Headline } from "@/components/site/headline";
-import { ServiceGlyph } from "@/components/site/icons";
 import { Reveal } from "@/components/site/reveal";
+import { RingPhoto } from "@/components/site/ring-photo";
+import { SeasonMark, type SeasonMarkName } from "@/components/site/season-glyphs";
+import { SectionHeading } from "@/components/site/section-heading";
 import { content } from "@/lib/content";
+import type { ServiceIcon } from "@/lib/services";
+import { cn } from "@/lib/utils";
 
-/** Black band echoing the logo's three-season identity: grass, leaf, snowflake. */
+// Each season gets its badge mark on the ring and a matching label color (the *-ink shades pass AA as small text).
+const seasonStyle: Partial<Record<ServiceIcon, { mark: SeasonMarkName; label: string }>> = {
+  sprout: { mark: "grass", label: "text-pine" },
+  leaf: { mark: "maple", label: "text-maple-ink" },
+  snowflake: { mark: "snow", label: "text-frost-ink" },
+};
+
+/**
+ * The badge's three season marks, unfolded into three rings. Also carries the "one crew covers it"
+ * message (its body is the intro, its list the line under it), which used to be a section of its own.
+ */
 export function Seasons() {
-  const { seasons } = content;
+  const { seasons, benefits } = content;
 
   return (
-    <section aria-labelledby="seasons-title" className="on-dark relative isolate overflow-hidden bg-ink py-16 text-white md:py-20">
-      <Diagonal
-        className="bg-white/[0.06]"
-        sm="polygon(0 0, 100% 0, 100% 12%, 0 30%)"
-        md="polygon(0 0, 34% 0, 22% 100%, 0 100%)"
-      />
+    <section aria-labelledby="seasons-title" className="py-24 md:py-32">
+      <div className="container">
+        <SectionHeading id="seasons-title" eyebrow={seasons.eyebrow} lines={seasons.headline} intro={benefits.body} />
 
-      <div className="container grid gap-12 lg:grid-cols-12 lg:items-center">
-        <Headline id="seasons-title" lines={seasons.headline} className="text-white lg:col-span-4" />
-
-        <ul className="grid gap-10 sm:grid-cols-3 sm:gap-0 sm:divide-x sm:divide-white/15 lg:col-span-8">
-          {seasons.items.map((item, i) => (
-            <Reveal as="li" key={item.season} delay={i * 100} className="sm:px-6 sm:first:pl-0 sm:last:pr-0 lg:px-8">
-              <ServiceGlyph icon={item.icon} className="size-9 text-brand-green" />
-              <p className="mt-4 text-[0.9375rem] font-semibold text-brand-green">{item.season}</p>
-              <h3 className="display mt-1.5 text-[2rem] text-white">{item.title}</h3>
-              <p className="mt-3 text-white/75">{item.body}</p>
-              <Link href={`/quote?service=${item.serviceSlug}`} className="mt-5 inline-flex items-center gap-2 font-semibold text-white underline decoration-brand-green decoration-2 underline-offset-[6px] transition-colors hover:text-brand-green">
-                Get a {item.title.toLowerCase()} quote
-                <ArrowRight className="size-4" aria-hidden="true" />
-              </Link>
-            </Reveal>
+        <ul
+          aria-label={benefits.headline.join(" ")}
+          className="mx-auto mt-8 flex max-w-3xl flex-wrap justify-center gap-x-5 gap-y-3 font-heading text-xs font-semibold uppercase tracking-[0.18em] text-forest"
+        >
+          {benefits.pills.map((pill) => (
+            <li key={pill} className="flex items-center gap-2.5">
+              <span aria-hidden="true" className="size-1.5 rounded-full border border-forest" />
+              {pill}
+            </li>
           ))}
+        </ul>
+
+        <ul className="mx-auto mt-16 grid max-w-6xl gap-16 md:mt-24 md:grid-cols-3 md:gap-6 lg:gap-10">
+          {seasons.items.map((item, i) => {
+            const style = seasonStyle[item.icon] ?? { mark: "grass", label: "text-pine" };
+            return (
+              <Reveal as="li" key={item.season} delay={i * 110} className="flex flex-col items-center text-center">
+                <RingPhoto
+                  src={item.image.src}
+                  alt={item.image.alt}
+                  sizes="(min-width: 1024px) 240px, (min-width: 768px) 26vw, 208px"
+                  className="w-52 md:w-full md:max-w-60"
+                  ornament={<SeasonMark mark={style.mark} />}
+                />
+                <p className={cn("mt-9 font-heading text-xs font-semibold uppercase tracking-[0.26em]", style.label)}>
+                  {item.season}
+                </p>
+                <h3 className="mt-3 font-heading text-2xl font-extrabold uppercase text-forest">{item.title}</h3>
+                <p className="mt-3 max-w-xs text-forest-body">{item.body}</p>
+                <Link
+                  href={`/quote?service=${item.serviceSlug}`}
+                  className="mt-4 inline-flex min-h-11 items-center gap-2 whitespace-nowrap text-[0.9375rem] font-semibold text-forest underline decoration-forest/30 decoration-1 underline-offset-[6px] transition-colors hover:decoration-forest"
+                >
+                  Get a {item.title.toLowerCase()} quote
+                  <ArrowRight className="size-4" aria-hidden="true" strokeWidth={1.75} />
+                </Link>
+              </Reveal>
+            );
+          })}
         </ul>
       </div>
     </section>
