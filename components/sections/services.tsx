@@ -1,85 +1,98 @@
 import Link from "next/link";
-import { ArrowRight, Leaf, Phone } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Diagonal } from "@/components/site/diagonal";
-import { Headline } from "@/components/site/headline";
+import { CallLink } from "@/components/site/call-link";
 import { ServiceBadge } from "@/components/site/icons";
 import { Reveal } from "@/components/site/reveal";
+import { SeasonMark, seasonMarks } from "@/components/site/season-glyphs";
+import { SectionHeading } from "@/components/site/section-heading";
 import { content } from "@/lib/content";
 import { services, type Service } from "@/lib/services";
 import { siteConfig } from "@/lib/site-config";
+import { cn } from "@/lib/utils";
 
 function priceFor(slug: string) {
   return siteConfig.pricing.from[slug] ?? null;
 }
 
+/** The in-season service: a thin-ruled panel, the pitch and its quote button beside a ruled list of what's included. */
 function FeaturedService({ service }: { service: Service }) {
   const price = priceFor(service.slug);
+  const season = seasonMarks[service.season];
   return (
-    <article className="on-dark relative isolate flex h-full flex-col overflow-hidden rounded-[2rem] bg-ink p-8 text-white md:p-10">
-      <Diagonal className="bg-white/[0.06]" sm="polygon(38% 0, 100% 0, 100% 62%)" />
-      <span className="inline-flex w-fit items-center gap-2 rounded-full bg-brand-green px-3.5 py-1.5 text-sm font-semibold text-ink">
-        <Leaf className="size-4" aria-hidden="true" strokeWidth={2.5} />
-        {content.services.featuredLabel}
-      </span>
+    // Edge to edge on phones: the quote button can't wrap, and at 320px it needs the full width.
+    <article className="-mx-5 grid gap-10 border-y border-forest/20 bg-cream px-5 py-9 sm:mx-0 sm:border-x sm:p-10 md:grid-cols-12 md:gap-8 lg:p-14">
+      <div className="md:col-span-7">
+        <p className={cn("flex items-center gap-2.5 font-heading text-xs font-semibold uppercase tracking-[0.26em]", season.text)}>
+          <SeasonMark mark={season.mark} className="size-4" />
+          {content.services.featuredLabel}
+        </p>
+        <h3 className="mt-5 font-heading text-[clamp(1.75rem,3.6vw,2.5rem)] font-extrabold uppercase leading-none text-forest">
+          {service.title}
+        </h3>
+        <p className="mt-5 max-w-md text-forest-body">{service.blurb}</p>
+        {price && <p className="mt-4 font-semibold text-forest">From {price}</p>}
 
-      <ServiceBadge icon={service.icon} size="lg" className="mt-10" />
-      <h3 className="display mt-6 text-[2.75rem] text-white md:text-[3.25rem]">{service.title}</h3>
-      <p className="mt-4 max-w-md text-white/80">{service.blurb}</p>
+        <div className="mt-9 flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-7">
+          <Button asChild variant="cta" size="cta" className="w-full sm:w-auto">
+            <Link href={`/quote?service=${service.slug}`}>
+              {content.cta.quote}
+              <span className="sr-only">: {service.title}</span>
+              <ArrowRight aria-hidden="true" />
+            </Link>
+          </Button>
+          <CallLink prompt={content.cta.callAlt} />
+        </div>
+      </div>
 
       {service.includes && (
-        <ul className="mt-6 flex flex-wrap gap-2" aria-label="Includes">
-          {service.includes.map((item) => (
-            <li key={item} className="rounded-full border border-white/30 px-4 py-1.5 text-sm font-medium text-white">
-              {item}
-            </li>
-          ))}
-        </ul>
+        <div className="md:col-span-5 md:self-center">
+          <p className="font-heading text-xs font-semibold uppercase tracking-[0.26em] text-forest-muted">
+            {content.services.includesLabel}
+          </p>
+          <ul className="mt-3 border-t border-forest/20">
+            {service.includes.map((item) => (
+              <li key={item} className="border-b border-forest/20 py-3.5 font-medium text-forest">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
-      {price && <p className="mt-5 font-semibold text-white">From {price}</p>}
-
-      <div className="mt-auto pt-10">
-        <Button asChild variant="cta-green" size="cta" className="w-full sm:w-auto">
-          <Link href={`/quote?service=${service.slug}`}>
-            {content.cta.quote}
-            <span className="sr-only">: {service.title}</span>
-            <ArrowRight aria-hidden="true" />
-          </Link>
-        </Button>
-        <a
-          href={siteConfig.phone.href}
-          className="mt-4 inline-flex items-center gap-2 rounded-full px-1 py-2 font-semibold text-white/80 underline decoration-white/40 decoration-2 underline-offset-[6px] hover:text-white hover:decoration-brand-green sm:ml-6 sm:mt-0"
-        >
-          <Phone className="size-4" aria-hidden="true" />
-          {content.cta.callAlt} {siteConfig.phone.display}
-        </a>
-      </div>
     </article>
   );
 }
 
-function ServiceCard({ service }: { service: Service }) {
+/** One ruled row. The whole row opens the quote form with this service ticked, and focus outlines all of it. */
+function ServiceRow({ service, index }: { service: Service; index: number }) {
   const price = priceFor(service.slug);
   return (
-    <article className="group relative flex h-full flex-col rounded-[2rem] bg-white p-7 transition-[transform,box-shadow] duration-300 ease-out-quart hover:-translate-y-1 hover:shadow-[0_24px_48px_-24px_rgb(11_11_11/0.35)] has-[a:focus-visible]:ring-4 has-[a:focus-visible]:ring-brand-green-dark md:p-8">
-      <div className="flex items-center gap-4">
-        <ServiceBadge icon={service.icon} />
-        <h3 className="display text-[1.75rem] leading-[0.9]">{service.title}</h3>
-      </div>
-      <p className="mt-4 text-ink-body">{service.blurb}</p>
-      {price && <p className="mt-3 font-semibold text-ink">From {price}</p>}
-      <div className="mt-auto pt-6">
-        {/* Stretched link: the whole card opens the quote form with this service ticked. */}
-        <Link
-          href={`/quote?service=${service.slug}`}
-          className="inline-flex w-fit items-center gap-2 font-semibold text-brand-green-dark outline-none after:absolute after:inset-0 after:rounded-[2rem] after:content-['']"
-        >
-          {content.services.linkLabel}
-          <span className="sr-only">: {service.title}</span>
-          <ArrowRight className="size-4 transition-transform duration-300 ease-out-quart group-hover:translate-x-1" aria-hidden="true" />
-        </Link>
-      </div>
-    </article>
+    <Reveal
+      as="li"
+      delay={index * 70}
+      className="group relative grid grid-cols-[3rem_1fr] gap-x-5 gap-y-1.5 border-b border-forest/20 py-7 has-[a:focus-visible]:outline has-[a:focus-visible]:outline-[3px] has-[a:focus-visible]:outline-offset-2 has-[a:focus-visible]:outline-forest lg:grid-cols-[3rem_minmax(0,17rem)_minmax(0,1fr)_auto] lg:items-center lg:gap-x-8"
+    >
+      <ServiceBadge icon={service.icon} className="row-span-3 lg:row-span-1" />
+      <h3 className="font-heading text-[0.9375rem] font-bold uppercase leading-snug tracking-[0.08em] text-forest decoration-1 underline-offset-[5px] group-hover:underline">
+        {service.title}
+      </h3>
+      <p className="text-forest-body">
+        {service.blurb}
+        {price && <span className="mt-1 block font-semibold text-forest">From {price}</span>}
+      </p>
+      <Link
+        href={`/quote?service=${service.slug}`}
+        className="inline-flex min-h-11 w-fit items-center gap-2 whitespace-nowrap font-heading text-xs font-semibold uppercase tracking-[0.2em] text-forest focus-visible:outline-none after:absolute after:inset-0 after:content-['']"
+      >
+        {content.services.linkLabel}
+        <span className="sr-only">: {service.title}</span>
+        <ArrowRight
+          className="size-4 transition-transform duration-300 ease-out-quart group-hover:translate-x-1"
+          aria-hidden="true"
+          strokeWidth={1.75}
+        />
+      </Link>
+    </Reveal>
   );
 }
 
@@ -88,27 +101,29 @@ export function Services() {
   const rest = services.filter((s) => s.slug !== featured.slug);
 
   return (
-    <section id="services" aria-labelledby="services-title" className="relative isolate overflow-hidden bg-gray-light py-20 md:py-28">
-      <Diagonal className="bg-gray-mid" sm="polygon(0 0, 78% 0, 0 16%)" md="polygon(0 0, 40% 0, 0 58%)" />
-
+    <section id="services" aria-labelledby="services-title" className="bg-sage py-24 md:py-32">
       <div className="container">
-        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between md:gap-12">
-          <Headline id="services-title" lines={content.services.headline} />
-          <p className="max-w-md text-lead text-ink-body">{content.services.intro}</p>
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between lg:gap-16">
+          <SectionHeading id="services-title" align="start" eyebrow={content.services.eyebrow} lines={content.services.headline} />
+          <p className="max-w-md text-lead text-forest-body">{content.services.intro}</p>
         </div>
 
-        <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-3 lg:grid-rows-2">
-          <Reveal className="md:col-span-2 lg:col-span-1 lg:row-span-2">
-            <FeaturedService service={featured} />
-          </Reveal>
-          {rest.map((service, i) => (
-            <Reveal key={service.slug} delay={80 + i * 80}>
-              <ServiceCard service={service} />
-            </Reveal>
-          ))}
+        <Reveal className="mt-14 md:mt-16">
+          <FeaturedService service={featured} />
+        </Reveal>
+
+        <div className="mt-16 md:mt-20">
+          <p className="font-heading text-xs font-semibold uppercase tracking-[0.26em] text-forest-muted">
+            {content.services.moreLabel}
+          </p>
+          <ul className="mt-4 border-t border-forest/40">
+            {rest.map((service, i) => (
+              <ServiceRow key={service.slug} service={service} index={i} />
+            ))}
+          </ul>
         </div>
 
-        {siteConfig.pricing.note && <p className="mt-8 font-medium text-ink">{siteConfig.pricing.note}</p>}
+        {siteConfig.pricing.note && <p className="mt-10 font-medium text-forest">{siteConfig.pricing.note}</p>}
       </div>
     </section>
   );

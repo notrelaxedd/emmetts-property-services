@@ -16,6 +16,7 @@ import { check } from "../ops/types";
 import type { Db } from "../ops/types";
 import { billedLines, expireOpenCheckout } from "./checkout";
 import type { BilledLine } from "./checkout";
+import { siteConfig } from "../site-config";
 import { getStripe } from "./client";
 import { parseUsAddress, taxConfig } from "./tax";
 import type { TaxConfig } from "./tax";
@@ -146,7 +147,7 @@ export async function createInvoiceForQuote(
       automatic_tax: { enabled: tax.enabled },
       currency: "usd",
       description: `Quote ${quoteId.slice(0, 8)} for ${customer.name}`,
-      footer: `Emmett's Property Services · ${siteUrl}`,
+      footer: `${siteConfig.name} · ${siteConfig.phone.display} · ${siteUrl}`,
       metadata: { quote_id: quoteId, customer_id: quote.customer_id, items_hash: hash },
     },
     // A new key per previous invoice: re-sending after a void must not replay the voided invoice.

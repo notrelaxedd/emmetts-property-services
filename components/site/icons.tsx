@@ -10,12 +10,7 @@ const iconMap: Record<ServiceIcon, LucideIcon> = {
   snowflake: Snowflake,
 };
 
-export function ServiceGlyph({ icon, className }: { icon: ServiceIcon; className?: string }) {
-  const Icon = iconMap[icon];
-  return <Icon aria-hidden="true" className={className} strokeWidth={2.25} />;
-}
-
-/** Small solid-green circle holding an ink icon. Same badge the pills use. */
+/** A thin-line icon inside a thin forest ring: the badge's ring at icon scale. */
 export function IconBadge({
   icon: Icon,
   size = "md",
@@ -29,14 +24,14 @@ export function IconBadge({
     <span
       aria-hidden="true"
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-full bg-brand-green text-ink",
+        "inline-flex shrink-0 items-center justify-center rounded-full border-[1.5px] border-forest text-forest",
         size === "sm" && "size-8 [&_svg]:size-4",
-        size === "md" && "size-11 [&_svg]:size-5",
-        size === "lg" && "size-14 [&_svg]:size-6",
+        size === "md" && "size-12 [&_svg]:size-5",
+        size === "lg" && "size-16 [&_svg]:size-6",
         className,
       )}
     >
-      <Icon strokeWidth={2.5} />
+      <Icon strokeWidth={1.5} />
     </span>
   );
 }

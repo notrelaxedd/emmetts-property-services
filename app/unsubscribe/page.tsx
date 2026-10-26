@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Diagonal } from "@/components/site/diagonal";
+import { CallLink } from "@/components/site/call-link";
 import { Headline } from "@/components/site/headline";
+import { Eyebrow } from "@/components/site/section-heading";
 import { content } from "@/lib/content";
-import { siteConfig } from "@/lib/site-config";
 import { unsubscribeByToken } from "./unsubscribe";
 
 export const metadata: Metadata = {
@@ -29,21 +29,14 @@ export default async function UnsubscribePage({ searchParams }: { searchParams: 
         : { headline: copy.errorTitle, body: copy.errorBody };
 
   return (
-    <section aria-labelledby="unsub-title" className="relative isolate overflow-hidden bg-gray-light py-16 md:py-28">
-      <Diagonal className="bg-gray-mid" sm="polygon(0 0, 100% 0, 100% 5%, 0 12%)" md="polygon(0 0, 40% 0, 24% 100%, 0 100%)" />
-      <div className="container">
-        <div className="max-w-xl" role="status">
-          <Headline as="h1" id="unsub-title" lines={view.headline} />
-          <p className="mt-6 text-lead text-ink-body">{view.body}</p>
-          {result === "ok" && (
-            <p className="mt-4 text-ink-body">
-              {copy.changedMind}{" "}
-              <a href={siteConfig.phone.href} className="whitespace-nowrap font-semibold text-brand-green-dark underline underline-offset-4">
-                {siteConfig.phone.display}
-              </a>
-            </p>
-          )}
-          <Button asChild variant="cta-outline" size="cta-sm" className="mt-8">
+    <section aria-labelledby="unsub-title" className="py-20 md:py-28">
+      <div className="container flex flex-col items-center text-center">
+        <div className="flex max-w-xl flex-col items-center" role="status">
+          <Eyebrow>{copy.eyebrow}</Eyebrow>
+          <Headline as="h1" id="unsub-title" lines={view.headline} className="mt-6" />
+          <p className="mt-6 text-lead text-forest-body">{view.body}</p>
+          {result === "ok" && <CallLink prompt={copy.changedMind} className="mt-4" />}
+          <Button asChild variant="cta-outline" size="cta-sm" className="mt-9">
             <Link href="/">{content.quote.thanks.back}</Link>
           </Button>
         </div>

@@ -71,6 +71,12 @@ describe("render", () => {
     expect(text).toContain("https://x.test/unsubscribe?token=abc");
     expect(text).toContain("Hello <script>"); // plain text is not escaped
   });
+
+  it("signs off with the phone number and our postal address", () => {
+    const { text, html } = renderEmail({ subject: "s", body: "b", siteUrl: "https://x.test", token: "abc", business: "Emmett's" });
+    expect(text).toContain("Emmett's · (440) 823-5545\n19618 Beach Cliff Blvd, Rocky River, OH 44116\n");
+    expect(html).toContain("(440) 823-5545<br>19618 Beach Cliff Blvd, Rocky River, OH 44116<br>");
+  });
 });
 
 describe("requiresOptIn", () => {

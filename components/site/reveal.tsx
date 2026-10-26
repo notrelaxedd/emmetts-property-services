@@ -4,8 +4,6 @@ import { createElement, useEffect, useRef, type CSSProperties, type ReactNode } 
 
 type RevealProps = {
   as?: "div" | "li" | "article" | "ul" | "section";
-  /** Direction the element travels in from. */
-  from?: "below" | "left" | "scale";
   /** Stagger delay in ms. */
   delay?: number;
   className?: string;
@@ -18,7 +16,7 @@ type RevealProps = {
  * hidden (data-reveal="pending") after hydration, and only if it's still below the fold, so the
  * server-rendered page never ships blank. Reduced-motion users skip it entirely (see globals.css).
  */
-export function Reveal({ as = "div", from = "below", delay = 0, className, style, children }: RevealProps) {
+export function Reveal({ as = "div", delay = 0, className, style, children }: RevealProps) {
   const ref = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -47,7 +45,6 @@ export function Reveal({ as = "div", from = "below", delay = 0, className, style
       ref,
       className,
       "data-reveal": "",
-      "data-reveal-from": from,
       style: { ...style, "--reveal-delay": `${delay}ms` } as CSSProperties,
     },
     children,

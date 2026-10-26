@@ -5,6 +5,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { approvalRow, fakeDb, jobRow } from "../test-utils";
+import { describeSlot, fallbackConfirmationEmail } from "./booking";
 import { crew_changeHandler } from "./crew_change";
 import { dropHandler } from "./drop";
 import { rejectBooking } from "./reject";
@@ -79,5 +80,24 @@ describe("rejectBooking", () => {
       expect(db.tables.jobs[0]).toMatchObject({ status: "proposed", ...slot, owner_hold: false });
       expect(rows(db, "j1")).toEqual([["A", "accepted"]]);
     }
+  });
+});
+
+describe("booking confirmation fallback", () => {
+  it("names the slot when the job is scheduled", () => {
+    const when = describeSlot({ start_at: "2026-10-13T13:00:00Z", end_at: "2026-10-13T14:30:00Z" });
+    expect(when).toBeTruthy();
+    const email = fallbackConfirmationEmail({ firstName: "Dana", services: ["Mowing"], when, address: "1 Lake Rd" });
+    expect(email.subject).toBe(`You're booked: ${when}`);
+    expect(email.body).toContain(`for Mowing on ${when} at 1 Lake Rd.`);
+  });
+
+  it("says we'll confirm the day and time when the job isn't scheduled yet", () => {
+    const when = describeSlot({ start_at: null, end_at: null });
+    expect(when).toBeNull();
+    const email = fallbackConfirmationEmail({ firstName: "Dana", services: ["Mowing"], when, address: null });
+    expect(email.subject).toBe("You're booked");
+    expect(email.body).toContain("You're booked for Mowing. We'll confirm the exact day and time with you.");
+    expect(email.body).not.toMatch(/on a time/);
   });
 });

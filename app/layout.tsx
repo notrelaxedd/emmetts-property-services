@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Anton, Work_Sans } from "next/font/google";
+import { Anton, Montserrat, Work_Sans } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { content } from "@/lib/content";
@@ -7,16 +7,25 @@ import { siteConfig } from "@/lib/site-config";
 import { cn } from "@/lib/utils";
 import "./globals.css";
 
+// The owner console's condensed caps. The marketing pages don't use it, so don't preload it there.
 const display = Anton({
   weight: "400",
   subsets: ["latin"],
   variable: "--font-display",
   display: "swap",
+  preload: false,
 });
 
 const body = Work_Sans({
   subsets: ["latin"],
   variable: "--font-body",
+  display: "swap",
+});
+
+// Variable font: one file covers the badge's 500 (PROPERTY SERVICES) through 900 (EMMETT'S).
+const heading = Montserrat({
+  subsets: ["latin"],
+  variable: "--font-heading",
   display: "swap",
 });
 
@@ -59,7 +68,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={cn(display.variable, body.variable)}>
+    <html lang="en" className={cn(display.variable, body.variable, heading.variable)}>
       <body>
         {children}
         <Analytics />

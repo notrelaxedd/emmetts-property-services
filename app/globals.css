@@ -35,6 +35,12 @@
     scroll-padding-top: calc(var(--header-h) + 1rem);
     -webkit-tap-highlight-color: transparent;
   }
+  /* Phones: keep focused and scrolled-to elements clear of the marketing pages' fixed call bar too. */
+  @media (max-width: 767px) {
+    html:has(.theme-badge) {
+      scroll-padding-bottom: calc(4.25rem + env(safe-area-inset-bottom) + 1rem);
+    }
+  }
 
   @media (prefers-reduced-motion: no-preference) {
     html {
@@ -71,6 +77,19 @@
     background: theme("colors.brand-green");
     color: theme("colors.ink");
   }
+
+  /* Marketing pages wear the badge: forest focus ring and selection on cream, cream on forest.
+     :where() keeps these no more specific than the rules they recolor, so outline-none still wins. */
+  :where(.theme-badge) :focus-visible {
+    outline-color: theme("colors.forest");
+  }
+  :where(.theme-badge) .on-dark :focus-visible {
+    outline-color: theme("colors.cream");
+  }
+  .theme-badge ::selection {
+    background: theme("colors.forest");
+    color: theme("colors.cream");
+  }
 }
 
 @layer components {
@@ -80,27 +99,6 @@
     font-weight: 400; /* Anton ships a single heavy weight */
     line-height: 0.85;
     letter-spacing: -0.01em;
-  }
-
-  /* Tall-ellipse photo frame. */
-  .oval {
-    @apply relative aspect-[3/4] overflow-hidden bg-gray-mid;
-    border-radius: 50%;
-    /* Safari clips children of a rounded parent more reliably with an isolated stacking context. */
-    isolation: isolate;
-  }
-
-  /* Diagonal panels: clip-path polygons supplied per breakpoint via custom properties. */
-  .diag {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    clip-path: var(--clip-sm);
-  }
-  @media (min-width: 768px) {
-    .diag {
-      clip-path: var(--clip-md, var(--clip-sm));
-    }
   }
 }
 
@@ -129,20 +127,14 @@
   }
   [data-reveal="pending"] {
     opacity: 0;
-    transform: translate3d(0, 1.5rem, 0);
-  }
-  [data-reveal="pending"][data-reveal-from="left"] {
-    transform: translate3d(-3rem, 0, 0);
-  }
-  [data-reveal="pending"][data-reveal-from="scale"] {
-    transform: scale(0.94);
+    transform: translate3d(0, 1rem, 0);
   }
 
-  /* Hero page-load choreography: headline lines rise out of a mask, panel sweeps in. */
+  /* Hero page-load choreography: the ring draws itself, the photo fades up, headline lines rise out of a mask. */
   .hero-line {
     display: block;
     overflow: hidden;
-    padding-block: 0.04em; /* keeps Anton's cap tops from clipping inside the mask */
+    padding-block: 0.04em; /* keeps cap tops from clipping inside the mask */
   }
   .hero-line > span {
     display: block;
@@ -153,13 +145,13 @@
     animation: fade-up 0.9s var(--ease-out-quart) both;
     animation-delay: var(--d, 450ms);
   }
-  .panel-sweep {
-    animation: panel-sweep 1.2s var(--ease-out-expo) both;
-    animation-delay: var(--d, 0ms);
-  }
-  .oval-in {
-    animation: oval-in 1.2s var(--ease-out-expo) both;
-    animation-delay: var(--d, 250ms);
+  /* One dash as long as the whole ring: 2 * pi * 159.25, RingPhoto's radius in its 320-unit viewBox.
+     (Not pathLength, which Safari has ignored for dashes on <circle>.) */
+  .ring-draw circle {
+    stroke-dasharray: 1001;
+    stroke-dashoffset: 1001;
+    animation: ring-draw 1.8s var(--ease-out-quart) both;
+    animation-delay: var(--d, 100ms);
   }
 }
 
@@ -181,23 +173,8 @@
     transform: none;
   }
 }
-@keyframes panel-sweep {
-  from {
-    opacity: 0;
-    transform: translate3d(14%, 0, 0);
-  }
+@keyframes ring-draw {
   to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes oval-in {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 2rem, 0) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: none;
+    stroke-dashoffset: 0;
   }
 }

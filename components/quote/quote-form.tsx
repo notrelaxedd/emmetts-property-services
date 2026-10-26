@@ -5,7 +5,8 @@ import { useFormState, useFormStatus } from "react-dom";
 import { AlertCircle, ArrowLeft, ArrowRight, Check, Loader2, Plus } from "lucide-react";
 
 import { submitQuote } from "@/app/actions/quote";
-import { ServiceGlyph } from "@/components/site/icons";
+import { CallLink } from "@/components/site/call-link";
+import { ServiceBadge } from "@/components/site/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,7 +26,6 @@ import {
   type QuoteFormValues,
 } from "@/lib/quote-schema";
 import type { ServiceIcon } from "@/lib/services";
-import { siteConfig } from "@/lib/site-config";
 import { cn } from "@/lib/utils";
 import type { QuoteServiceOption } from "./services-data";
 import { AddressAutocomplete } from "./address-autocomplete";
@@ -95,7 +95,9 @@ function pickErrors(errors: QuoteFieldErrors, fields: readonly QuoteField[]): Qu
 
 /* ---------- small building blocks ---------- */
 
-const inputClass = "h-12 rounded-xl px-4 text-base";
+// Forest over the shared input styles (the owner console's stay gray). /60 keeps the border above 3:1 on white.
+const controlSkin = "border-forest/60 text-forest shadow-none placeholder:text-forest-muted";
+const inputClass = `h-12 rounded-xl px-4 text-base ${controlSkin}`;
 
 function FieldError({ id, message }: { id: string; message?: string }) {
   if (!message) return null;
@@ -128,13 +130,13 @@ function Field({
   const describedBy = [hint ? `${id}-hint` : null, error ? `${id}-error` : null].filter(Boolean).join(" ") || undefined;
   return (
     <div className={className}>
-      <Label htmlFor={id} className="mb-2 block text-[0.9375rem] font-semibold leading-tight">
+      <Label htmlFor={id} className="mb-2 block text-[0.9375rem] font-semibold leading-tight text-forest">
         {label}
-        {optional && <span className="ml-1.5 font-normal text-ink-muted">(optional)</span>}
+        {optional && <span className="ml-1.5 font-normal text-forest-muted">(optional)</span>}
       </Label>
       {children({ id, "aria-invalid": Boolean(error), "aria-describedby": describedBy })}
       {hint && (
-        <p id={`${id}-hint`} className="mt-1.5 text-sm text-ink-muted">
+        <p id={`${id}-hint`} className="mt-1.5 text-sm text-forest-muted">
           {hint}
         </p>
       )}
@@ -171,10 +173,11 @@ function CheckRow({
   return (
     <label
       className={cn(
-        "flex cursor-pointer items-start gap-3 border bg-white text-ink transition-colors has-[:checked]:border-ink has-[:checked]:bg-brand-green/10 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-green-dark has-[:focus-visible]:ring-offset-2",
+        // Ticked rows fill with sage and take a forest edge, like the home page's quiet panels.
+        "flex cursor-pointer items-start gap-3 border bg-white text-forest transition-colors has-[:checked]:border-forest has-[:checked]:bg-sage has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-forest has-[:focus-visible]:ring-offset-2 motion-reduce:transition-none",
         pill ? "min-h-11 items-center rounded-full px-4 py-2" : "min-h-12 rounded-xl p-3.5",
         descriptionFrom === "sm" && "items-center sm:items-start",
-        invalid ? "border-destructive" : "border-input",
+        invalid ? "border-destructive" : "border-forest/25 hover:border-forest/60",
       )}
     >
       <input
@@ -184,14 +187,14 @@ function CheckRow({
         defaultChecked={defaultChecked}
         aria-invalid={invalid || undefined}
         aria-describedby={describedBy}
-        className={cn("size-5 shrink-0 accent-[#327213]", !pill && (descriptionFrom === "sm" ? "sm:mt-0.5" : "mt-0.5"))}
+        className={cn("size-5 shrink-0 accent-forest", !pill && (descriptionFrom === "sm" ? "sm:mt-0.5" : "mt-0.5"))}
       />
       <span className="min-w-0">
         <span className="block font-semibold leading-snug">{title}</span>
         {description && (
           <span
             className={cn(
-              "mt-0.5 text-sm font-normal leading-snug text-ink-muted",
+              "mt-0.5 text-sm font-normal leading-snug text-forest-muted",
               descriptionFrom === "sm" ? "hidden sm:block" : "block",
             )}
           >
@@ -199,11 +202,7 @@ function CheckRow({
           </span>
         )}
       </span>
-      {icon && (
-        <span className="ml-auto flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-green/20 text-brand-green-dark">
-          <ServiceGlyph icon={icon} className="size-[1.125rem]" />
-        </span>
-      )}
+      {icon && <ServiceBadge icon={icon} size="sm" className="ml-auto size-9 [&_svg]:size-[1.125rem]" />}
     </label>
   );
 }
@@ -227,11 +226,17 @@ function Group({
   const describedBy = [hint ? `${id}-hint` : null, error ? `${id}-error` : null].filter(Boolean).join(" ") || undefined;
   return (
     <fieldset aria-describedby={describedBy} className="min-w-0">
-      <legend className={cn("font-display uppercase leading-none text-ink", sub ? "text-lg" : "text-2xl sm:text-[1.75rem]")}>
+      {/* Step titles in the badge's heavy caps; secondary groups in the small letterspaced caps /contact uses. */}
+      <legend
+        className={cn(
+          "text-balance font-heading uppercase text-forest",
+          sub ? "text-sm font-bold leading-snug tracking-[0.12em]" : "text-[1.375rem] font-extrabold leading-[1.1] sm:text-[1.625rem]",
+        )}
+      >
         {legend}
       </legend>
       {hint && (
-        <p id={`${id}-hint`} className="mt-2 text-sm text-ink-muted">
+        <p id={`${id}-hint`} className="mt-2 text-sm text-forest-muted">
           {hint}
         </p>
       )}
@@ -250,7 +255,12 @@ function SubmitButton({ busy, hidden }: { busy: boolean; hidden: boolean }) {
       variant="cta"
       size="cta"
       data-quote-submit
-      className={cn("w-full sm:w-auto", hidden && "hidden")}
+      // The longest label on the site: a touch tighter on phones so it stays on one line from 375px,
+      // and below that it wraps rather than pushing the page sideways.
+      className={cn(
+        "h-auto min-h-14 w-full whitespace-normal px-5 py-3 text-center text-[0.875rem] leading-snug tracking-[0.08em] sm:w-auto sm:px-9 sm:text-[0.9375rem] sm:tracking-[0.14em]",
+        hidden && "hidden",
+      )}
       disabled={working}
       aria-disabled={working}
     >
@@ -536,19 +546,33 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
       <noscript dangerouslySetInnerHTML={{ __html: NO_JS_CSS }} />
 
       <div data-quote-js className="grid gap-3">
-        <p ref={progressRef} tabIndex={-1} className="text-sm font-semibold uppercase tracking-wide text-brand-green-dark outline-none">
+        <p
+          ref={progressRef}
+          tabIndex={-1}
+          className="font-heading text-xs font-semibold uppercase tracking-[0.26em] text-forest outline-none"
+        >
           {copy.progress(step + 1, steps.length)}
           <span className="sr-only">: {steps[step].title}</span>
         </p>
         <ol aria-label="Progress" className="grid grid-cols-3 gap-2">
           {steps.map((s, i) => (
-            <li key={s.label} aria-current={i === step ? "step" : undefined} className="grid gap-2">
+            <li key={s.label} aria-current={i === step ? "step" : undefined} className="grid gap-2.5">
+              {/* Thin rules, like the lines either side of the badge's PROPERTY SERVICES. */}
               <span
                 aria-hidden="true"
-                className={cn("h-1.5 rounded-full transition-colors duration-300", i <= step ? "bg-brand-green" : "bg-gray-light")}
+                className={cn(
+                  "h-1 rounded-full transition-colors duration-300 motion-reduce:transition-none",
+                  i <= step ? "bg-forest" : "bg-forest/10",
+                )}
               />
-              <span className={cn("flex items-center gap-1 text-xs font-semibold sm:text-sm", i <= step ? "text-ink" : "text-ink-muted")}>
-                {i < step && <Check className="size-3.5 text-brand-green-dark" aria-hidden="true" strokeWidth={3} />}
+              <span
+                className={cn(
+                  "flex items-center gap-1 font-heading text-[0.6875rem] font-semibold uppercase tracking-[0.1em] sm:text-xs sm:tracking-[0.14em]",
+                  i <= step ? "text-forest" : "text-forest-muted",
+                )}
+              >
+                {/* The filled rule already shows it's done; the tick only fits beside the label from sm up. */}
+                {i < step && <Check className="hidden size-3.5 shrink-0 text-forest sm:block" aria-hidden="true" strokeWidth={2.5} />}
                 {s.label}
               </span>
             </li>
@@ -610,10 +634,14 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
               {/* Collapsed until wanted; opens itself when there's something in it or the list needs it. */}
               <details
                 open={Boolean(values.customRequest || errors.customRequest || errors.services)}
-                className="group rounded-xl border border-dashed border-input open:border-solid open:p-4"
+                className="group rounded-xl border border-dashed border-forest/40 transition-colors hover:border-forest/70 open:border-solid open:border-forest/25 open:p-4 motion-reduce:transition-none"
               >
-                <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 rounded-xl px-4 font-semibold text-ink group-open:mb-3 group-open:min-h-0 group-open:px-0 [&::-webkit-details-marker]:hidden">
-                  <Plus className="size-5 text-brand-green-dark transition-transform group-open:rotate-45" aria-hidden="true" strokeWidth={2.5} />
+                <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 rounded-xl px-4 font-semibold text-forest group-open:mb-3 group-open:px-0 [&::-webkit-details-marker]:hidden">
+                  <Plus
+                    className="size-5 text-forest transition-transform group-open:rotate-45 motion-reduce:transition-none"
+                    aria-hidden="true"
+                    strokeWidth={2}
+                  />
                   {copy.custom.toggle}
                 </summary>
                 <Field id="q-custom" label={copy.custom.label} hint={copy.custom.hint} error={errors.customRequest}>
@@ -625,7 +653,7 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
                       maxLength={1500}
                       defaultValue={values.customRequest}
                       placeholder={copy.custom.placeholder}
-                      className="min-h-24 rounded-xl px-4 py-3 text-base"
+                      className={`min-h-24 rounded-xl px-4 py-3 text-base ${controlSkin}`}
                     />
                   )}
                 </Field>
@@ -644,26 +672,33 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
                       multiple
                       capture="environment"
                       onChange={onPhotosChange}
-                      className="h-auto cursor-pointer rounded-xl px-4 py-3 text-base file:mr-3 file:rounded-full file:bg-ink file:px-4 file:py-1.5 file:text-sm file:font-semibold file:text-white"
+                      className={`h-auto cursor-pointer rounded-xl px-4 py-3 text-base file:mr-3 file:rounded-full file:bg-forest file:px-4 file:py-1.5 file:text-sm file:font-semibold file:text-cream ${controlSkin}`}
                     />
                     {photos.length > 0 && (
                       <div className="mt-2 text-sm" aria-live="polite">
-                        <p className="font-medium text-ink">{copy.photos.count(Math.min(photos.length, MAX_PHOTOS))}</p>
+                        <p className="font-medium text-forest">{copy.photos.count(Math.min(photos.length, MAX_PHOTOS))}</p>
                         <ul className="mt-1 grid gap-1">
                           {photos.map((p) => (
-                            <li key={p.id} className="flex flex-wrap gap-x-2 text-ink-muted">
+                            <li key={p.id} className="flex flex-wrap gap-x-2 text-forest-muted">
                               <span className="min-w-0 break-all">{p.name}</span>
-                              <span className={cn("font-medium", p.status === "error" ? "text-destructive" : "text-ink")}>
+                              <span className={cn("font-medium", p.status === "error" ? "text-destructive" : "text-forest")}>
                                 {photoStatusText(p)}
                               </span>
                             </li>
                           ))}
                         </ul>
                         {photos.some((p) => p.status === "local") && photos.every((p) => p.type !== null) && (
-                          <p className="mt-1.5 text-ink-muted">{copy.photos.fallbackNote}</p>
+                          <p className="mt-1.5 text-forest-muted">{copy.photos.fallbackNote}</p>
                         )}
                         {canRetry && (
-                          <Button type="button" variant="outline" size="sm" className="mt-2" disabled={processing} onClick={retryPhotos}>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="mt-2 h-11 rounded-full border-forest/60 bg-white px-4 text-forest shadow-none hover:bg-sage hover:text-forest"
+                            disabled={processing}
+                            onClick={retryPhotos}
+                          >
                             {copy.photos.retry}
                           </Button>
                         )}
@@ -839,7 +874,7 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
           {/* Stays mounted on every step: Turnstile renders implicitly when its script first loads. */}
           {turnstileSiteKey && (
             <div>
-              <p className="mb-2 text-sm text-ink-muted">{copy.turnstile}</p>
+              <p className="mb-2 text-sm text-forest-muted">{copy.turnstile}</p>
               <Turnstile siteKey={turnstileSiteKey} resetKey={nonce} />
             </div>
           )}
@@ -862,12 +897,7 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
           )}
           <SubmitButton busy={processing} hidden={step < LAST_STEP} />
         </div>
-        <p className="text-sm text-ink-muted">
-          {copy.callInstead}{" "}
-          <a href={siteConfig.phone.href} className="font-semibold text-brand-green-dark underline underline-offset-4">
-            {siteConfig.phone.display}
-          </a>
-        </p>
+        <CallLink prompt={copy.callInstead} />
       </div>
     </form>
   );

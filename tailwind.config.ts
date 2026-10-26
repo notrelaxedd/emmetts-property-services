@@ -25,6 +25,21 @@ const config: Config = {
         "gray-light": "#E8E8E8", // section backgrounds
         paper: "#F7F7F6", // page background
 
+        // Marketing-site palette, from the 2026 badge (assets/logo-source-2026.webp): one deep green on
+        // near-white, with the badge's three small season glyphs as the only other colors.
+        forest: "#0E2C1C", // wordmark + ring: headlines, buttons, rules (14.4:1 on cream)
+        pine: "#1E4421", // the tree line: hovers, secondary fills (10.5:1 on cream)
+        "forest-body": "#36443C", // body copy (9.8:1 on cream, 8.8:1 on sage)
+        "forest-muted": "#5B6860", // secondary copy (5.6:1 on cream, 5.0:1 on sage)
+        cream: "#FAFAF6", // page background: the badge's paper
+        sage: "#EBEFE8", // quiet tinted sections
+        maple: "#BE4C23", // fall glyph, exact; icons and large type only (4.7:1 on cream, 4.25:1 on sage)
+        "maple-ink": "#A9431D", // maple for small text (5.7:1 on cream, 5.1:1 on sage)
+        frost: "#4C778B", // winter glyph, exact; icons and large type only
+        "frost-ink": "#3F687A", // frost for small text (5.8:1 on cream, 5.2:1 on sage)
+        // The grass accent on a forest background: check marks and pins (7.7:1 on forest).
+        "grass-light": "#9CC58F",
+
         // shadcn/ui semantic tokens, mapped onto the brand palette in globals.css
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
@@ -54,12 +69,17 @@ const config: Config = {
       },
       fontFamily: {
         display: ["var(--font-display)", "Impact", "Arial Narrow", "sans-serif"],
+        // The badge's heavy geometric wordmark (EMMETT'S) and its letterspaced PROPERTY SERVICES line.
+        heading: ["var(--font-heading)", "Montserrat", "system-ui", "sans-serif"],
         sans: ["var(--font-body)", "system-ui", "sans-serif"],
       },
       fontSize: {
         hero: ["clamp(2.75rem, 7vw, 5.5rem)", { lineHeight: "0.85", letterSpacing: "-0.01em" }],
         section: ["clamp(2.25rem, 5vw, 4rem)", { lineHeight: "0.85", letterSpacing: "-0.01em" }],
         lead: ["1.1875rem", { lineHeight: "1.6" }],
+        // Marketing headings: the badge's heavy Montserrat caps (EMMETT'S), a touch tighter than the wordmark.
+        "heading-hero": ["clamp(2.75rem, 6.2vw, 5.25rem)", { lineHeight: "0.95", letterSpacing: "-0.015em" }],
+        "heading-section": ["clamp(2rem, 4.2vw, 3.5rem)", { lineHeight: "1", letterSpacing: "-0.01em" }],
       },
       borderRadius: {
         lg: "var(--radius)",

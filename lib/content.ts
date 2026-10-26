@@ -1,6 +1,7 @@
 /**
  * All site copy lives here so text can be edited without touching components.
- * Headlines are arrays: each entry is one line of the big condensed headline.
+ * Headlines are arrays: each entry is one line of the big headline.
+ * Eyebrows are the small letterspaced labels between thin rules above section and page headings.
  */
 
 import { siteConfig } from "./site-config";
@@ -8,8 +9,9 @@ import { siteConfig } from "./site-config";
 export const content = {
   nav: [
     { label: "Services", href: "/#services" },
+    { label: "Commercial", href: "/#commercial" },
     { label: "How it works", href: "/#how-it-works" },
-    { label: "Why Us", href: "/#why-us" },
+    { label: "Why us", href: "/#why-us" },
     { label: "Contact", href: "/#contact" },
   ],
 
@@ -24,7 +26,7 @@ export const content = {
   },
 
   hero: {
-    kicker: { name: siteConfig.altName, place: "Northeast Ohio" },
+    kicker: { name: siteConfig.name, place: "Northeast Ohio" },
     // The business's main offer. Swap seasonally (e.g. ["Snow", "removal"] in December).
     headline: ["Fall lawn", "cleanup"],
     body: "Leaf removal, edging, and gutter cleaning in one visit. We get your lawn ready to survive the winter so it bounces back stronger in spring.",
@@ -38,7 +40,8 @@ export const content = {
       { label: "Gutters", slug: "gutter-cleaning" },
       { label: "Snow", slug: "snow-removal" },
     ],
-    trust: ["Three-person local crew", "Fair prices", "Great reviews around the neighborhood"],
+    trust: ["Locally owned and operated", "Clear, upfront pricing", "Great reviews from local customers"],
+    trustLabel: "Why customers hire us",
     image: {
       src: "/images/hero-leaf-blowing.jpg",
       alt: "A crew member with a backpack blower sending a wave of red fall leaves across a lawn",
@@ -46,6 +49,7 @@ export const content = {
   },
 
   howItWorks: {
+    eyebrow: "How it works",
     headline: ["Your price", "in three steps"],
     steps: [
       { title: "Tell us what you need", body: "Pick your services and add your address. It takes about two minutes." },
@@ -55,64 +59,88 @@ export const content = {
   },
 
   services: {
-    headline: ["Yard work,", "handled"],
+    eyebrow: "Services",
+    headline: ["Property care,", "handled"],
     intro:
-      "Pick what you need and we'll take care of it. Every job is done by the same three of us, start to finish.",
+      "Pick what you need, from a single service to the whole property, and we'll take care of it. Our own crew handles every job, start to finish.",
     featuredSlug: "fall-cleanup",
     featuredLabel: "In season now",
+    includesLabel: "Includes",
+    // Above the rest of the services, under the in-season one.
+    moreLabel: "Also on the list",
     linkLabel: "Get a price",
   },
 
+  // On the home page this shares a section with `seasons`: the body is its intro, the pills a line under it.
   benefits: {
     headline: ["One crew", "covers it"],
     body: "From the first mow in spring to the last snowfall, one crew handles the whole yard. Tell us what you need and we'll send you one price for all of it.",
     pills: ["Leaf Cleanup", "Edging", "Gutter Cleaning", "Snow Removal", "And More"],
-    image: {
-      src: "/images/fall-leaves-lawn.jpg",
-      alt: "Oak leaves in rust and gold blanketing a green lawn",
-    },
+  },
+
+  // Bigger accounts. Keeps id="commercial" so the nav link lands here.
+  commercial: {
+    eyebrow: "Commercial & HOA",
+    headline: ["Commercial", "& HOA care"],
+    intro: `We look after storefronts, offices, and HOA common areas in ${siteConfig.serviceArea.summary}. One crew, one point of contact, one invoice.`,
+    points: [
+      { title: "Scheduled maintenance", body: "Mowing, trimming, and edging on a set schedule, so the grounds always look cared for." },
+      { title: "Seasonal cleanups", body: "Leaves cleared from lawns, beds, and gutters before winter sets in." },
+      { title: "Snow removal", body: "Walkways and entrances cleared after the snow." },
+      { title: "Simple billing", body: "One quote for the property, invoiced to your business or association." },
+    ],
+    cta: "Get a commercial quote",
+    callPrompt: "Rather walk the property with us first?",
   },
 
   whyUs: {
-    headline: ["Local students.", "Real work."],
+    eyebrow: "Why us",
+    headline: ["Local crew.", "Real work."],
     paragraphs: [
-      "We're three local high school students who take yard work seriously. We show up, do the job right, and charge a fair price for it.",
-      "There's a good chance you've already seen our work. Plenty of the neighborhood has, and they keep telling their neighbors about us.",
+      "We're a local crew that takes property care seriously. We show up when we say we will, do the job right, and charge a fair price for it.",
+      "There's a good chance you've already seen our work. Our customers keep recommending us to friends and neighbors.",
     ],
     points: [
       { title: "Quality work", body: "Crisp edges, clean beds, and no leaves left in the corners." },
-      { title: "Fair prices", body: "An honest price for the job, every time." },
-      { title: "Neighborhood reviewed", body: "Lots of happy customers nearby. Ask around." },
+      { title: "Fair prices", body: "A clear, honest price before any work starts." },
+      { title: "Well reviewed", body: "Lots of happy customers across the area." },
     ],
-    image: {
-      src: "/images/mower-lawn.jpg",
-      alt: "A push mower low in the grass, mid-cut, with a clean stripe of short lawn behind it",
-    },
   },
 
   seasons: {
+    eyebrow: "Year-round",
     headline: ["Three seasons.", "One crew."],
+    linkLabel: (title: string) => `Get a ${title.toLowerCase()} quote`,
     items: [
       {
         season: "Spring & Summer",
         title: "Mowing",
         body: "Regular mowing, trimming, and edging from the first cut to the last.",
-        icon: "sprout",
         serviceSlug: "lawn-mowing",
+        image: {
+          src: "/images/mower-lawn.jpg",
+          alt: "A push mower low in the grass, mid-cut, with a clean stripe of short lawn behind it",
+        },
       },
       {
         season: "Fall",
         title: "Cleanup",
         body: "Leaves out of the lawn, beds, and gutters before the ground freezes.",
-        icon: "leaf",
         serviceSlug: "fall-cleanup",
+        image: {
+          src: "/images/fall-leaves-lawn.jpg",
+          alt: "Oak leaves in rust and gold blanketing a green lawn",
+        },
       },
       {
         season: "Winter",
         title: "Snow removal",
-        body: "Driveways and walkways cleared with a snowblower.",
-        icon: "snowflake",
+        body: "Driveways and walkways cleared after the snow.",
         serviceSlug: "snow-removal",
+        image: {
+          src: "/images/snow-driveway.jpg",
+          alt: "A snowblower clearing a fresh lane down a long, snowy driveway",
+        },
       },
     ],
   },
@@ -130,6 +158,7 @@ export const content = {
   finalCta: {
     headline: ["Ready for", "your price?"],
     body: "Tell us about your yard and we'll send you a fair price by text or email. Free, and no obligation.",
+    // The small label above the headline.
     cardHeading: "Get your free quote",
     points: ["Takes about two minutes", "Price by text or email", "Pick a day that works for you"],
     callPrompt: "Rather talk it through? Call the crew.",
@@ -137,12 +166,14 @@ export const content = {
   },
 
   contactPage: {
+    eyebrow: "Northeast Ohio",
     headline: ["Contact", "us"],
     body: "One call is all it takes. Tell us what your yard needs and we'll give you a price.",
   },
 
   quote: {
     cta: "Get a quote",
+    eyebrow: "No obligation",
     headline: ["Get your", "free quote"],
     body: "Tell us about your yard and what you need. We'll look it over and send you a price. No pressure, and you can always call us instead.",
     steps: {
@@ -183,7 +214,7 @@ export const content = {
         toggle: "Something not listed?",
         label: "Something else?",
         hint: "Tell us about anything that isn't on the list, and roughly how big it is.",
-        placeholder: "A hedge that needs trimming, a pile of branches, a patio to sweep...",
+        placeholder: "Hedges to trim, brush or branches to haul away, a bigger one-time cleanup...",
       },
       photos: {
         label: "Photos (optional)",
@@ -222,6 +253,7 @@ export const content = {
       turnstile: "We couldn't confirm the security check. Please try again.",
     },
     thanks: {
+      eyebrow: "Request received",
       headline: ["Your quote", "is on the way"],
       body: "Thanks! We've got your request and we're taking a look. We'll send your price as soon as it's ready.",
       nextHeading: "What happens next",
@@ -232,8 +264,29 @@ export const content = {
       ],
       soonerPrompt: "Need it sooner? Call the crew.",
       back: "Back to home",
+      // Shown instead when someone backs out of Stripe Checkout (?cancelled=1).
+      cancelled: {
+        eyebrow: "Payment not finished",
+        headline: ["No charge", "was made"],
+        body: "You left checkout before paying, so nothing was charged. The link in your quote email works until the quote expires, so you can finish any time, or give us a call.",
+        prompt: "Questions about your quote? Call the crew.",
+      },
+    },
+    // After Stripe Checkout succeeds (/quote/paid).
+    paid: {
+      eyebrow: "You're all set",
+      headline: ["Payment", "received"],
+      body: "Thank you! Your payment went through and your spot is saved. We'll be in touch soon to schedule your job, and a receipt from Stripe is on its way to your email.",
+      callPrompt: "Need to change something or have a question? Give us a call.",
+    },
+    // A pay link that's past its date or already paid (/quote/expired).
+    expired: {
+      eyebrow: "Quote link",
+      headline: ["That quote", "has expired"],
+      body: "Quote links stay active for a couple of weeks. This one has passed its date, or it was already paid. Give us a call and we'll send a fresh quote right away.",
     },
     unsubscribe: {
+      eyebrow: "Your preferences",
       doneTitle: ["You're", "unsubscribed"],
       doneBody:
         "We've stopped our emails and texts to you, and taken you off the snow list. You may still get a message about a job you've already booked.",
@@ -245,6 +298,11 @@ export const content = {
     },
   },
 
+  menu: {
+    open: "Open menu",
+    title: "Menu",
+  },
+
   mobileBar: {
     quote: "Free quote",
     call: "Call",
@@ -252,7 +310,8 @@ export const content = {
   },
 
   footer: {
-    blurb: "Lawn care, fall cleanup, gutters, and snow removal from three local students who do it right.",
+    blurb: "Lawn care, fall cleanup, gutters, and snow removal from a local crew that does it right.",
+    servingLine: "Serving Northeast Ohio",
     linksHeading: "Explore",
     contactHeading: "Get in touch",
     areaHeading: "Service area",
@@ -261,6 +320,6 @@ export const content = {
   seo: {
     title: `${siteConfig.name} | Lawn Care, Fall Cleanup & Snow Removal in Northeast Ohio`,
     description:
-      "Lawn mowing, fall leaf cleanup, gutter cleaning, and snow removal in Northeast Ohio and Cleveland's west-side suburbs. Three-person local crew, fair prices, great neighborhood reviews.",
+      "Lawn care, fall cleanup, gutters, and snow removal for homes, businesses, and HOAs in Rocky River, Westlake, Bay Village, and Lakewood. Locally owned, with upfront pricing.",
   },
 } as const;

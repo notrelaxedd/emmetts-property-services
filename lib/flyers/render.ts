@@ -7,20 +7,26 @@ import { jpegPagePdf } from "./pdf";
 
 /**
  * The flyer template and where each worker's QR code goes on it. Coordinates are pixels in the
- * template image (the gray "QR code here" box). To swap in a new design, replace the file, then
- * update the size and box here (and the paths in next.config.mjs if the file name changes).
+ * template image (its flat gray placeholder box). The template is rendered from
+ * assets/flyer/fall-cleanup.html by `npm run flyer:template`, which prints the size and box to paste
+ * here (update the paths in next.config.mjs too if the file name changes).
  */
 export const FLYER_TEMPLATE = {
   file: "assets/flyer/fall-cleanup.webp",
-  width: 1545,
-  height: 1999,
-  qrBox: { left: 1055, top: 696, width: 338, height: 312 },
+  width: 2550,
+  height: 3300,
+  qrBox: { left: 1695, top: 2025, width: 480, height: 540 },
 } as const;
 
-const FONT_FILE = "assets/fonts/Anton-Regular.ttf";
+/** The site's heading face (Montserrat SemiBold): the ASCII subset the share image also uses. */
+const FONT_FILE = "assets/og/Montserrat-600-Subset.ttf";
 
-/** 2× the template: a crisp QR at ~360 dpi on US Letter. */
-const PRINT_SCALE = 2;
+/** The template is already print resolution (US Letter at 300 dpi), so it's used as is: no upscaling, crisp text. */
+export const PRINT_SCALE = 1;
+
+/** In template pixels: the code label's cap height, and the padding around the QR and above the label. */
+const LABEL_HEIGHT = 24;
+const PAD = 14;
 
 let templateCache: Promise<Buffer> | null = null;
 function template(): Promise<Buffer> {
@@ -32,17 +38,20 @@ function template(): Promise<Buffer> {
 }
 
 /**
- * The worker's code in small light-gray Anton under the QR, like a reference number: easy to read
- * out on the phone if asked, easy to overlook otherwise. Null if text rendering isn't available.
+ * The worker's code in small, lightly letterspaced light-gray Montserrat under the QR, like a
+ * reference number: easy to read out on the phone if asked, easy to overlook otherwise. Codes are
+ * caps and digits, so the image is about `height` px tall. Null if text rendering isn't available.
  */
 async function codeLabel(code: string, height: number): Promise<Buffer | null> {
   try {
     return await sharp({
       text: {
-        text: `<span foreground="#9a9a9a">${code}</span>`,
+        // letter_spacing is in 1/1024 px here: about 0.1em.
+        text: `<span foreground="#9a9a9a" letter_spacing="${Math.round(height * 0.15 * 1024)}">${code}</span>`,
         fontfile: path.join(process.cwd(), FONT_FILE),
-        font: "Anton",
-        dpi: Math.round(height * 6.8),
+        font: "Montserrat SemiBold",
+        // Pango sets its default 12pt at this dpi; Montserrat's caps are 0.7em, so they come out `height` px tall.
+        dpi: Math.round(height * 8.6),
         rgba: true,
       },
     })
@@ -72,8 +81,8 @@ async function compose(url: string, code: string, scale: number): Promise<Buffer
     width: Math.round(qrBox.width * scale),
     height: Math.round(qrBox.height * scale),
   };
-  const pad = Math.round(8 * scale);
-  const label = await codeLabel(code, Math.round(15 * scale));
+  const pad = Math.round(PAD * scale);
+  const label = await codeLabel(code, Math.round(LABEL_HEIGHT * scale));
   const labelMeta = label ? await sharp(label).metadata() : null;
   const labelHeight = labelMeta?.height ?? 0;
   const qr = await qrPng(url, Math.min(box.width - pad * 2, box.height - pad * 2 - (labelHeight ? labelHeight + pad : 0)));
@@ -97,8 +106,9 @@ async function compose(url: string, code: string, scale: number): Promise<Buffer
     });
   }
 
-  const flyer = await sharp(await template())
-    .resize(FLYER_TEMPLATE.width * scale, FLYER_TEMPLATE.height * scale, { kernel: "lanczos3" })
+  const base = sharp(await template());
+  if (scale !== 1) base.resize(FLYER_TEMPLATE.width * scale, FLYER_TEMPLATE.height * scale, { kernel: "lanczos3" });
+  const flyer = await base
     .composite(layers)
     .png()
     .toBuffer();

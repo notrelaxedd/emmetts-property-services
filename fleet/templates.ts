@@ -12,7 +12,7 @@ export function reviewTemplate(input: { name: string; services: string[]; review
   const what = input.services.length ? input.services.join(", ").toLowerCase() : "the work";
   const ask = input.reviewUrl
     ? `If you were happy with ${what}, would you leave us a quick review? It takes a minute: ${input.reviewUrl}`
-    : `If you were happy with ${what}, a quick review or a word to your neighbors would mean a lot to us.`;
+    : `If you were happy with ${what}, we'd appreciate a quick review, or a recommendation to anyone who needs similar work.`;
   return {
     subject: `Thanks from ${siteConfig.name}`,
     body: [`Hi ${firstName(input.name)},`, "", `Thanks for having us out. ${ask}`, "", SIGN_OFF].join("\n"),

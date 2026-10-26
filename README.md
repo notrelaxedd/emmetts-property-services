@@ -40,9 +40,9 @@ npm run test:e2e             # Playwright smoke tests (set PLAYWRIGHT_CHROMIUM_P
 | --- | --- |
 | Phone, email, hours, pricing, service area (TODOs live here) | `lib/site-config.ts` |
 | All the words on the site | `lib/content.ts` |
-| The list of services (cards, seasons band, SEO) | `lib/services.ts` |
-| Photos and logo | `public/images/` and `public/logo.png`; see `public/images/README.md` |
-| Flyer template + where the QR code goes | `assets/flyer/` and `FLYER_TEMPLATE` in `lib/flyers/render.ts` |
+| The list of services (in-season panel, service rows, quote form, SEO) | `lib/services.ts` |
+| Photos and logo | `public/images/`, `public/logo.png` and `public/logo-light.png`; see `public/images/README.md` |
+| Flyer design (words, layout) + where the QR code goes | `assets/flyer/fall-cleanup.html`, then `npm run flyer:template` (re-renders `fall-cleanup.webp` at 300 dpi and prints the box to paste into `FLYER_TEMPLATE` in `lib/flyers/render.ts`) |
 | Colors, fonts, sizes | `tailwind.config.ts`, `app/globals.css` |
 
 The hero headline is the current seasonal offer (`content.hero.headline`). Swap it to
@@ -51,8 +51,9 @@ The hero headline is the current seasonal offer (`content.hero.headline`). Swap 
 ### Before launch checklist
 
 - [ ] Replace the photos in `public/images/` (same filenames)
-- [ ] Fill in the `TODO`s in `lib/site-config.ts`: email, hours, pricing, and the suburbs you serve.
-      Email and hours show on the contact page as soon as they're set, and stay hidden until then
+- [ ] Fill in the `TODO`s in `lib/site-config.ts`: email, hours, and pricing.
+      Email and hours show on the contact page as soon as they're set, and stay hidden until then.
+      The towns served and the mailing address (customer email footer) are already set there
 - [ ] Set `NEXT_PUBLIC_SITE_URL` once you have a domain (flyer QR codes point at it: set it before printing flyers)
 
 ## Deploy (Vercel)
@@ -62,24 +63,30 @@ The public site needs no env vars; the ops system needs the ones in `docs/ENV.md
 test keys). Apply `supabase/migrations/` to the Supabase project first (`supabase/README.md`), then promote your
 own user to `owner`.
 
-**If you change the logo**, also refresh `assets/og/logo-og.png` (a ~420px-wide copy) and, if you ever
-swap the headline font, `assets/og/Anton-Subset.ttf`. The share-image function inlines whatever it
+**If you change the logo**, also refresh `assets/og/logo-og.png` (a ~520px-wide copy) and, if you ever
+swap the headline font, `assets/og/Montserrat-*-Subset.ttf` (ASCII-only static cuts). The share-image function inlines whatever it
 loads, and Vercel rejects an edge function over 1 MB — using the full-size logo there breaks the
-deploy with "Edge Function size is 1.48 MB". The site's own pages always use the full `public/logo.png`.
+deploy with "Edge Function size is 1.48 MB". The site's own pages always use the full-size `public/logo.png` / `public/logo-light.png`.
+The flyer template has the logo baked in, so run `npm run flyer:template` after a logo change too (its HTML
+uses those Montserrat subsets plus `assets/fonts/WorkSans-*-Subset.ttf`, and the code under each QR is set in the 600 cut).
 
 ## What's in here
 
 - **Sections** (`components/sections/`): hero (quote button + service shortcuts that pre-tick the form),
-  how it works, services grid, benefits pills, why us, seasons band, and a closing quote section
-  (`quote-cta.tsx`, keeps `id="contact"`). `/contact` is still the call-first page (`contact.tsx`), and
+  how it works, services (the in-season one first, then ruled rows), commercial & HOA, why us, three seasons (which also
+  carries the "one crew covers it" line), and a closing quote section on forest green (`quote-cta.tsx`,
+  keeps `id="contact"`). `/contact` is still the call-first page (`contact.tsx`), and
   `/book` redirects there.
   (A booking form and a customer reviews section were removed; both are in the git history.)
-- **Brand shapes** (`components/site/`): `Diagonal` (clip-path panels), `OvalPhoto` (3:4 ellipse
-  frame), `PillList` (the flyer's black pills), `Headline` (condensed caps).
+- **Brand shapes** (`components/site/`), all from the badge: `RingPhoto` (a photo in the thin
+  ring), `Eyebrow` / `SectionHeading` (letterspaced label between rules, heavy Montserrat caps),
+  `season-glyphs.tsx` (maple, grass, snowflake, and the `GroundLine` divider), `Wordmark`, plus the quiet
+  `ArrowLink` and `CallLink` text links. The quote, thanks, paid, expired and unsubscribe pages are built
+  from the same pieces; `/contact` is the reference for a non-home page.
 - **Phones:** a sticky bottom bar keeps *Free quote* (and *Call*) one tap away at any scroll position.
 - **SEO:** metadata + Open Graph (`app/opengraph-image.tsx` generates the share card), a
   `LocalBusiness` JSON-LD block (`components/site/json-ld.tsx`), `robots.txt`, and `sitemap.xml`.
 - **Accessibility:** semantic headings, skip link, visible focus rings, alt text on every image,
   and `prefers-reduced-motion` disables all animation.
-- **Motion:** CSS-only hero entrance, plus a tiny IntersectionObserver reveal
+- **Motion:** CSS-only hero entrance (the ring draws itself in), plus a tiny IntersectionObserver reveal
   (`components/site/reveal.tsx`). No animation libraries.

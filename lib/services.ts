@@ -50,7 +50,7 @@ export const services = [
   {
     slug: "snow-removal",
     title: "Snow Removal",
-    blurb: "Driveways and walkways cleared with a snowblower so you can get out the door.",
+    blurb: "Driveways and walkways cleared so you can get out the door.",
     icon: "snowflake",
     season: "winter",
   },

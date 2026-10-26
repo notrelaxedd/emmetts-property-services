@@ -4,30 +4,34 @@ The images in this folder are **temporary stand-ins** (public-domain / CC0 stock
 Replace each one with a real photo of your crew and your work, keeping the **same filename**.
 Nothing else needs to change.
 
-Every photo is shown inside a tall oval, so shoot **vertical (portrait)** and keep the subject centered:
-the corners get cropped away. Aim for at least **1200 × 1600 px**, JPG.
+Every photo is cropped to a **circle** inside the logo's thin green ring, so keep the subject in the middle
+of the frame: the top, bottom and corners get cropped away. Vertical (portrait) or square both work.
+Aim for at least **1200 × 1600 px**, JPG.
 
 | File | Where it shows | What to shoot |
 | --- | --- | --- |
 | `hero-leaf-blowing.jpg` | Hero, top of the page (first thing people see) | One of you blowing leaves across a customer's lawn, leaves in the air. Daylight, fall colors. |
-| `mower-lawn.jpg` | "Local students. Real work." section | Your mower on freshly cut grass. Low angle, with clean stripes if you can get them. |
-| `fall-leaves-lawn.jpg` | "One call covers it" section, next to the black pills | A lawn covered in fall leaves, or a big raked leaf pile. A before/after is even better. |
-| `snow-driveway.jpg` | Not used yet (spare) | Your snowblower clearing a driveway. Handy for a winter version of the hero. |
+| `mower-lawn.jpg` | "Three seasons. One crew." section, Spring & Summer circle | Your mower on freshly cut grass. Low angle, with clean stripes if you can get them. |
+| `fall-leaves-lawn.jpg` | "Three seasons. One crew." section, Fall circle | A lawn covered in fall leaves, or a big raked leaf pile. A before/after is even better. |
+| `snow-driveway.jpg` | "Three seasons. One crew." section, Winter circle | Your snowblower clearing a driveway. Also handy for a winter version of the hero. |
 
 Nice to have (not wired in yet): a photo of **Emmett, Kevin, and Chase together** with the equipment.
 A real crew photo builds more trust than anything else on the page.
 
 ## Logo
 
-The real badge is in place. The original file (on a black square) is kept at `assets/logo-source.jpg`.
-From it we cut a transparent, sticker-style version with a thin black keyline so it sits cleanly on
-light and dark backgrounds:
+The badge is the 2026 minimalist version: deep forest green on white, with a maple leaf, grass, and a
+snowflake for the three seasons. The original artwork (on white) is kept at `assets/logo-source-2026.webp`;
+the earlier full-color badge is `assets/logo-source.jpg`. From the new source we cut:
 
-- `public/logo.png`: header, footer, hero sticker, social share image, and search-engine data
-- `app/icon.png`: browser tab icon
-- `app/apple-icon.png`: iPhone home-screen icon (on black, since iOS doesn't allow transparency)
+- `public/logo.png`: transparent, for light backgrounds. Header, login, admin, crew, and search-engine data
+- `public/logo-light.png`: the same badge in one cream color, for the forest-green panels (the home page's closing section)
+- `assets/og/logo-og.png`: a ~520px copy for the social share image (see the main README for why it's small)
+- `app/icon.png`: browser tab icon, on a rounded cream plate so it shows up on dark tab strips
+- `app/apple-icon.png` and `public/icons/icon-*.png`: home-screen icons, on the paper background
+  (`icon-maskable-512.png` keeps the badge inside the safe circle Android crops to)
 
-If the logo ever changes, replace those three files (or ask for them to be regenerated from a new source).
+If the logo ever changes, replace those files (or ask for them to be regenerated from a new source).
 
 ## Where the stand-ins came from
 

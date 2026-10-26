@@ -1,39 +1,65 @@
-import Link from "next/link";
-import { ArrowRight } from "lucide-react";
-import { Diagonal } from "@/components/site/diagonal";
-import { Headline } from "@/components/site/headline";
-import { ServiceGlyph } from "@/components/site/icons";
+import { ArrowLink } from "@/components/site/arrow-link";
 import { Reveal } from "@/components/site/reveal";
+import { RingPhoto } from "@/components/site/ring-photo";
+import { SeasonMark, seasonMarks } from "@/components/site/season-glyphs";
+import { SectionHeading } from "@/components/site/section-heading";
 import { content } from "@/lib/content";
+import { getService } from "@/lib/services";
+import { cn } from "@/lib/utils";
 
-/** Black band echoing the logo's three-season identity: grass, leaf, snowflake. */
+/**
+ * The badge's three season marks, unfolded into three rings. Also carries the "one crew covers it"
+ * message (its body is the intro, its list the line under it), which used to be a section of its own.
+ * Phones get compact rows (small ring beside the text) so the three seasons don't stack into a tower.
+ */
 export function Seasons() {
-  const { seasons } = content;
+  const { seasons, benefits } = content;
 
   return (
-    <section aria-labelledby="seasons-title" className="on-dark relative isolate overflow-hidden bg-ink py-16 text-white md:py-20">
-      <Diagonal
-        className="bg-white/[0.06]"
-        sm="polygon(0 0, 100% 0, 100% 12%, 0 30%)"
-        md="polygon(0 0, 34% 0, 22% 100%, 0 100%)"
-      />
+    <section aria-labelledby="seasons-title" className="py-24 md:py-32">
+      <div className="container">
+        <SectionHeading id="seasons-title" eyebrow={seasons.eyebrow} lines={seasons.headline} intro={benefits.body} />
 
-      <div className="container grid gap-12 lg:grid-cols-12 lg:items-center">
-        <Headline id="seasons-title" lines={seasons.headline} className="text-white lg:col-span-4" />
-
-        <ul className="grid gap-10 sm:grid-cols-3 sm:gap-0 sm:divide-x sm:divide-white/15 lg:col-span-8">
-          {seasons.items.map((item, i) => (
-            <Reveal as="li" key={item.season} delay={i * 100} className="sm:px-6 sm:first:pl-0 sm:last:pr-0 lg:px-8">
-              <ServiceGlyph icon={item.icon} className="size-9 text-brand-green" />
-              <p className="mt-4 text-[0.9375rem] font-semibold text-brand-green">{item.season}</p>
-              <h3 className="display mt-1.5 text-[2rem] text-white">{item.title}</h3>
-              <p className="mt-3 text-white/75">{item.body}</p>
-              <Link href={`/quote?service=${item.serviceSlug}`} className="mt-5 inline-flex items-center gap-2 font-semibold text-white underline decoration-brand-green decoration-2 underline-offset-[6px] transition-colors hover:text-brand-green">
-                Get a {item.title.toLowerCase()} quote
-                <ArrowRight className="size-4" aria-hidden="true" />
-              </Link>
-            </Reveal>
+        <ul
+          aria-label={benefits.headline.join(" ")}
+          className="mx-auto mt-8 flex max-w-3xl flex-wrap justify-center gap-x-5 gap-y-3 font-heading text-xs font-semibold uppercase tracking-[0.18em] text-forest"
+        >
+          {benefits.pills.map((pill) => (
+            <li key={pill} className="flex items-center gap-2.5">
+              <span aria-hidden="true" className="size-1.5 rounded-full border border-forest" />
+              {pill}
+            </li>
           ))}
+        </ul>
+
+        <ul className="mx-auto mt-14 grid max-w-6xl gap-10 md:mt-20 md:grid-cols-3 md:gap-6 lg:gap-10">
+          {seasons.items.map((item, i) => {
+            const season = seasonMarks[getService(item.serviceSlug)?.season ?? "spring-summer"];
+            return (
+              <Reveal
+                as="li"
+                key={item.season}
+                delay={i * 110}
+                className="grid grid-cols-[7rem_1fr] items-center gap-6 md:flex md:flex-col md:items-center md:gap-0 md:text-center"
+              >
+                <RingPhoto
+                  src={item.image.src}
+                  alt={item.image.alt}
+                  sizes="(min-width: 1024px) 240px, (min-width: 768px) 26vw, 112px"
+                  className="w-28 md:w-full md:max-w-60"
+                  ornament={<SeasonMark mark={season.mark} />}
+                />
+                <div className="md:mt-9 md:flex md:flex-col md:items-center">
+                  <p className={cn("font-heading text-xs font-semibold uppercase tracking-[0.26em]", season.text)}>{item.season}</p>
+                  <h3 className="mt-2 font-heading text-xl font-extrabold uppercase text-forest md:mt-3 md:text-2xl">{item.title}</h3>
+                  <p className="mt-2 max-w-xs text-forest-body md:mt-3">{item.body}</p>
+                  <ArrowLink href={`/quote?service=${item.serviceSlug}`} className="mt-1 md:mt-2">
+                    {seasons.linkLabel(item.title)}
+                  </ArrowLink>
+                </div>
+              </Reveal>
+            );
+          })}
         </ul>
       </div>
     </section>
