@@ -5,6 +5,7 @@ import { useFormState, useFormStatus } from "react-dom";
 import { AlertCircle, ArrowLeft, ArrowRight, Check, Loader2, Plus } from "lucide-react";
 
 import { submitQuote } from "@/app/actions/quote";
+import { CallLink } from "@/components/site/call-link";
 import { ServiceGlyph } from "@/components/site/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +26,6 @@ import {
   type QuoteFormValues,
 } from "@/lib/quote-schema";
 import type { ServiceIcon } from "@/lib/services";
-import { siteConfig } from "@/lib/site-config";
 import { cn } from "@/lib/utils";
 import type { QuoteServiceOption } from "./services-data";
 import { AddressAutocomplete } from "./address-autocomplete";
@@ -902,15 +902,7 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
           )}
           <SubmitButton busy={processing} hidden={step < LAST_STEP} />
         </div>
-        <p className="text-sm text-forest-muted">
-          {copy.callInstead}{" "}
-          <a
-            href={siteConfig.phone.href}
-            className="inline-flex min-h-11 items-center font-semibold text-forest underline decoration-forest/30 decoration-1 underline-offset-[6px] transition-colors hover:decoration-forest"
-          >
-            {siteConfig.phone.display}
-          </a>
-        </p>
+        <CallLink prompt={copy.callInstead} />
       </div>
     </form>
   );

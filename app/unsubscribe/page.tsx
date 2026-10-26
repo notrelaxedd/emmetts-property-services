@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { CallLink } from "@/components/site/call-link";
 import { Headline } from "@/components/site/headline";
 import { Eyebrow } from "@/components/site/section-heading";
 import { content } from "@/lib/content";
-import { siteConfig } from "@/lib/site-config";
 import { unsubscribeByToken } from "./unsubscribe";
 
 export const metadata: Metadata = {
@@ -35,17 +35,7 @@ export default async function UnsubscribePage({ searchParams }: { searchParams: 
           <Eyebrow>{copy.eyebrow}</Eyebrow>
           <Headline as="h1" id="unsub-title" lines={view.headline} className="mt-6" />
           <p className="mt-6 text-lead text-forest-body">{view.body}</p>
-          {result === "ok" && (
-            <p className="mt-4 text-forest-body">
-              {copy.changedMind}{" "}
-              <a
-                href={siteConfig.phone.href}
-                className="inline-flex min-h-11 items-center whitespace-nowrap font-semibold text-forest underline decoration-forest/30 decoration-1 underline-offset-[6px] transition-colors hover:decoration-forest"
-              >
-                {siteConfig.phone.display}
-              </a>
-            </p>
-          )}
+          {result === "ok" && <CallLink prompt={copy.changedMind} className="mt-4" />}
           <Button asChild variant="cta-outline" size="cta-sm" className="mt-9">
             <Link href="/">{content.quote.thanks.back}</Link>
           </Button>

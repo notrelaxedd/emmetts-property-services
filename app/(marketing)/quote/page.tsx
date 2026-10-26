@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
-import { Phone } from "lucide-react";
+import { CallLink } from "@/components/site/call-link";
 import { Headline } from "@/components/site/headline";
 import { Eyebrow } from "@/components/site/section-heading";
 import { QuoteForm } from "@/components/quote/quote-form";
 import { loadQuoteServices } from "@/components/quote/services-data";
 import { opsConfig } from "@/lib/config";
 import { content } from "@/lib/content";
-import { siteConfig } from "@/lib/site-config";
 
 export const metadata: Metadata = {
   title: "Get a Quote",
@@ -28,11 +27,11 @@ export default async function QuotePage({ searchParams }: { searchParams: { serv
   return (
     <section aria-labelledby="quote-title" className="py-14 md:py-20 lg:py-24">
       <div className="container grid items-start gap-10 lg:grid-cols-12 lg:gap-x-16">
-        {/* Centered like /contact on phones; a quiet left-aligned column beside the form on wide screens. */}
-        <div className="text-center lg:sticky lg:top-[calc(var(--header-h)+2.5rem)] lg:col-span-5 lg:text-left">
-          <Eyebrow className="lg:justify-start">{quote.eyebrow}</Eyebrow>
+        {/* Left-aligned like the home page hero, so it lines up with the form; a sticky column beside it on wide screens. */}
+        <div className="lg:sticky lg:top-[calc(var(--header-h)+2.5rem)] lg:col-span-5">
+          <Eyebrow align="start">{quote.eyebrow}</Eyebrow>
           <Headline as="h1" id="quote-title" lines={quote.headline} className="mt-6" />
-          <p className="mx-auto mt-6 max-w-md text-lead text-forest-body lg:mx-0">{quote.body}</p>
+          <p className="mt-6 max-w-md text-lead text-forest-body">{quote.body}</p>
 
           {/* On phones this would push the form below the fold; the thanks page repeats it anyway. */}
           <div className="mt-12 hidden border-t border-forest/10 pt-10 lg:block">
@@ -53,16 +52,7 @@ export default async function QuotePage({ searchParams }: { searchParams: { serv
               ))}
             </ol>
 
-            <p className="mt-10 text-[0.9375rem] text-forest-muted">
-              {content.cta.callAlt}{" "}
-              <a
-                href={siteConfig.phone.href}
-                className="inline-flex min-h-11 items-center gap-1.5 font-semibold text-forest underline decoration-forest/30 decoration-1 underline-offset-[6px] transition-colors hover:decoration-forest"
-              >
-                <Phone className="size-4" aria-hidden="true" strokeWidth={1.75} />
-                {siteConfig.phone.display}
-              </a>
-            </p>
+            <CallLink prompt={content.cta.callAlt} className="mt-10" />
           </div>
         </div>
 
