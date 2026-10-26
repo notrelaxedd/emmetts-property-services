@@ -8,6 +8,9 @@ export const alt = `${siteConfig.name}: lawn care, fall cleanup, and snow remova
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
+const FOREST = "#0E2C1C";
+const CREAM = "#FAFAF6";
+
 function toBase64(buffer: ArrayBuffer) {
   let binary = "";
   const bytes = new Uint8Array(buffer);
@@ -17,59 +20,63 @@ function toBase64(buffer: ArrayBuffer) {
   return btoa(binary);
 }
 
-/** Social share card: seasonal headline, phone, and the badge from /public/logo.png. */
+/** Social share card: the badge, the seasonal headline, and the phone, in the badge's forest on cream. */
 export default async function OpenGraphImage() {
   // Trimmed-down copies: everything here is inlined into the edge bundle, which has a 1 MB limit.
-  // (assets/og/* are generated from assets/fonts/Anton-Regular.ttf and public/logo.png — see README.)
-  const [anton, logo] = await Promise.all([
-    fetch(new URL("../assets/og/Anton-Subset.ttf", import.meta.url)).then((r) => r.arrayBuffer()),
+  // (assets/og/* are ASCII subsets of Montserrat and a small copy of public/logo.png — see README.)
+  const [heavy, medium, logo] = await Promise.all([
+    fetch(new URL("../assets/og/Montserrat-800-Subset.ttf", import.meta.url)).then((r) => r.arrayBuffer()),
+    fetch(new URL("../assets/og/Montserrat-600-Subset.ttf", import.meta.url)).then((r) => r.arrayBuffer()),
     fetch(new URL("../assets/og/logo-og.png", import.meta.url)).then((r) => r.arrayBuffer()),
   ]);
   const logoSrc = `data:image/png;base64,${toBase64(logo)}`;
+  const rule = { width: 44, height: 2, background: FOREST };
 
   return new ImageResponse(
     (
-      <div style={{ width: "100%", height: "100%", display: "flex", position: "relative", background: "#F7F7F6" }}>
-        {/* Diagonal panels (satori has no clip-path, so these are skewed blocks). */}
-        <div style={{ position: "absolute", top: -40, bottom: -40, left: 640, width: 900, background: "#E8E8E8", transform: "skewX(-14deg)" }} />
-        <div style={{ position: "absolute", top: -40, bottom: -40, left: 960, width: 600, background: "#BFC1C0", transform: "skewX(-14deg)" }} />
-        <div style={{ position: "absolute", top: 380, bottom: -40, left: 1080, width: 600, background: "#8E9190", transform: "skewX(-24deg)" }} />
-
-        <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 72px", width: 720 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 28, color: "#0B0B0B", fontWeight: 600 }}>
-            <div style={{ width: 40, height: 5, borderRadius: 4, background: "#65C435" }} />
-            {siteConfig.altName} · Northeast Ohio
+      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", background: CREAM, fontFamily: "Montserrat" }}>
+        <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 0 0 84px", width: 660 }}>
+          {/* The badge's letterspaced PROPERTY SERVICES line, rules and all. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 18, fontSize: 22, fontWeight: 600, letterSpacing: 7, color: FOREST }}>
+            <div style={rule} />
+            {content.hero.kicker.place.toUpperCase()}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", marginTop: 20, fontFamily: "Anton", fontSize: 132, lineHeight: 0.88, color: "#0B0B0B", textTransform: "uppercase" }}>
+          <div style={{ display: "flex", flexDirection: "column", marginTop: 28, fontSize: 92, fontWeight: 800, lineHeight: 1, letterSpacing: -1, color: FOREST }}>
             {content.hero.headline.map((line) => (
-              <span key={line}>{line}</span>
+              <span key={line}>{line.toUpperCase()}</span>
             ))}
           </div>
-          <div style={{ display: "flex", marginTop: 36 }}>
+          <div style={{ display: "flex", marginTop: 44 }}>
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
-                padding: "18px 40px",
+                padding: "18px 36px",
                 borderRadius: 999,
-                background: "#0B0B0B",
-                color: "#FFFFFF",
-                fontFamily: "Anton",
-                fontSize: 36,
-                letterSpacing: 1,
+                background: FOREST,
+                color: CREAM,
+                fontSize: 26,
+                fontWeight: 600,
+                letterSpacing: 3,
               }}
             >
-              CALL {siteConfig.phone.display}
+              {`CALL ${siteConfig.phone.display}`}
             </div>
           </div>
         </div>
 
-        <div style={{ position: "absolute", right: 48, top: 105, display: "flex" }}>
+        <div style={{ display: "flex", flex: 1, justifyContent: "center", paddingRight: 40 }}>
           {/* eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text */}
-          <img src={logoSrc} width={480} height={419} style={{ objectFit: "contain" }} />
+          <img src={logoSrc} width={460} height={402} style={{ objectFit: "contain" }} />
         </div>
       </div>
     ),
-    { ...size, fonts: [{ name: "Anton", data: anton, style: "normal", weight: 400 }] },
+    {
+      ...size,
+      fonts: [
+        { name: "Montserrat", data: heavy, style: "normal", weight: 800 },
+        { name: "Montserrat", data: medium, style: "normal", weight: 600 },
+      ],
+    },
   );
 }

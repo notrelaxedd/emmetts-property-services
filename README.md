@@ -62,8 +62,8 @@ The public site needs no env vars; the ops system needs the ones in `docs/ENV.md
 test keys). Apply `supabase/migrations/` to the Supabase project first (`supabase/README.md`), then promote your
 own user to `owner`.
 
-**If you change the logo**, also refresh `assets/og/logo-og.png` (a ~420px-wide copy) and, if you ever
-swap the headline font, `assets/og/Anton-Subset.ttf`. The share-image function inlines whatever it
+**If you change the logo**, also refresh `assets/og/logo-og.png` (a ~520px-wide copy) and, if you ever
+swap the headline font, `assets/og/Montserrat-*-Subset.ttf` (ASCII-only static cuts). The share-image function inlines whatever it
 loads, and Vercel rejects an edge function over 1 MB — using the full-size logo there breaks the
 deploy with "Edge Function size is 1.48 MB". The site's own pages always use the full `public/logo.png`.
 
