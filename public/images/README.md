@@ -19,15 +19,17 @@ A real crew photo builds more trust than anything else on the page.
 
 ## Logo
 
-The real badge is in place. The original file (on a black square) is kept at `assets/logo-source.jpg`.
-From it we cut a transparent, sticker-style version with a thin black keyline so it sits cleanly on
-light and dark backgrounds:
+The badge is the 2026 minimalist version: deep forest green on white, with a maple leaf, grass, and a
+snowflake for the three seasons. The original artwork (on white) is kept at `assets/logo-source-2026.webp`;
+the earlier full-color badge is `assets/logo-source.jpg`. From the new source we cut:
 
-- `public/logo.png`: header, footer, hero sticker, social share image, and search-engine data
+- `public/logo.png`: transparent, for light backgrounds. Header, hero, login, admin, crew, and search-engine data
+- `public/logo-light.png`: the same badge in one cream color, for the forest-green panels
+- `assets/og/logo-og.png`: a ~420px copy for the social share image (see the main README for why it's small)
 - `app/icon.png`: browser tab icon
-- `app/apple-icon.png`: iPhone home-screen icon (on black, since iOS doesn't allow transparency)
+- `app/apple-icon.png` and `public/icons/icon-*.png`: home-screen icons, on the paper background
 
-If the logo ever changes, replace those three files (or ask for them to be regenerated from a new source).
+If the logo ever changes, replace those files (or ask for them to be regenerated from a new source).
 
 ## Where the stand-ins came from
 
