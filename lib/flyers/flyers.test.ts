@@ -128,27 +128,54 @@ describe("flyer pdf", () => {
 });
 
 describe("flyer render", () => {
-  it("puts the QR code over the gray placeholder box", async () => {
-    const { FLYER_TEMPLATE, renderFlyerPng, renderFlyerPdf } = await import("./render");
-    const png = await renderFlyerPng("https://eodlawns.com/f/K7M2", "K7M2");
-    const meta = await sharp(png).metadata();
-    expect([meta.width, meta.height]).toEqual([FLYER_TEMPLATE.width * 2, FLYER_TEMPLATE.height * 2]);
+  type Box = { left: number; top: number; width: number; height: number };
 
-    // The placeholder was flat gray (115); now the box is white paper with black QR modules.
-    const { qrBox } = FLYER_TEMPLATE;
-    const { data } = await sharp(png)
-      .extract({ left: qrBox.left * 2, top: qrBox.top * 2, width: qrBox.width * 2, height: qrBox.height * 2 })
-      .greyscale()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+  /** Share of a region's pixels (greyscale) in each band: placeholder gray, QR black, the code's light gray. */
+  async function tones(image: Buffer | string, box: Box) {
+    const { data } = await sharp(image).extract(box).greyscale().raw().toBuffer({ resolveWithObject: true });
     let gray = 0;
     let dark = 0;
+    let label = 0;
     for (let i = 0; i < data.length; i++) {
       if (data[i] > 100 && data[i] < 130) gray++;
       if (data[i] < 40) dark++;
+      if (data[i] >= 140 && data[i] <= 170) label++;
     }
-    expect(gray / data.length).toBeLessThan(0.02);
-    expect(dark / data.length).toBeGreaterThan(0.15);
+    return { gray: gray / data.length, dark: dark / data.length, label };
+  }
+
+  it("has a flat gray placeholder exactly where FLYER_TEMPLATE says", async () => {
+    const { FLYER_TEMPLATE } = await import("./render");
+    const meta = await sharp(FLYER_TEMPLATE.file).metadata();
+    expect([meta.width, meta.height]).toEqual([FLYER_TEMPLATE.width, FLYER_TEMPLATE.height]);
+    // Stale coordinates (after re-rendering the template) would miss part of the gray box.
+    expect((await tones(FLYER_TEMPLATE.file, FLYER_TEMPLATE.qrBox)).gray).toBeGreaterThan(0.98);
+  });
+
+  it("puts the QR code and the worker's code over the gray placeholder box", async () => {
+    const { FLYER_TEMPLATE, PRINT_SCALE, renderFlyerPng, renderFlyerPdf } = await import("./render");
+    const png = await renderFlyerPng("https://eodlawns.com/f/K7M2", "K7M2");
+    const meta = await sharp(png).metadata();
+    expect([meta.width, meta.height]).toEqual([FLYER_TEMPLATE.width * PRINT_SCALE, FLYER_TEMPLATE.height * PRINT_SCALE]);
+
+    // The placeholder was flat gray (115); now the box is white paper with black QR modules and the
+    // code in light gray (the QR itself is pure black and white).
+    const { qrBox } = FLYER_TEMPLATE;
+    const box = {
+      left: qrBox.left * PRINT_SCALE,
+      top: qrBox.top * PRINT_SCALE,
+      width: qrBox.width * PRINT_SCALE,
+      height: qrBox.height * PRINT_SCALE,
+    };
+    const inside = await tones(png, box);
+    expect(inside.gray).toBeLessThan(0.02);
+    expect(inside.dark).toBeGreaterThan(0.15);
+    expect(inside.label).toBeGreaterThan(200);
+
+    // No gray edge left around it either.
+    const m = 8 * PRINT_SCALE;
+    const around = await tones(png, { left: box.left - m, top: box.top - m, width: box.width + 2 * m, height: box.height + 2 * m });
+    expect(around.gray).toBeLessThan(0.005);
 
     const pdf = await renderFlyerPdf("https://eodlawns.com/f/K7M2", "K7M2");
     expect(pdf.subarray(0, 8).toString("latin1")).toBe("%PDF-1.4");

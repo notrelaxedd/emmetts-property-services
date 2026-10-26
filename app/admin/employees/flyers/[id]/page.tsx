@@ -126,7 +126,7 @@ export default async function FlyerWorkerPage({ params }: { params: { id: string
         <Card>
           <CardHeader>
             <CardTitle>Their flyer</CardTitle>
-            <CardDescription>Fall Clean Up flyer with {worker.name}’s QR code and code.</CardDescription>
+            <CardDescription>Fall lawn cleanup flyer with {worker.name}’s QR code and code.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {/* eslint-disable-next-line @next/next/no-img-element -- generated per worker by the route next door */}
