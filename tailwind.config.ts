@@ -79,6 +79,9 @@ const config: Config = {
         hero: ["clamp(2.75rem, 7vw, 5.5rem)", { lineHeight: "0.85", letterSpacing: "-0.01em" }],
         section: ["clamp(2.25rem, 5vw, 4rem)", { lineHeight: "0.85", letterSpacing: "-0.01em" }],
         lead: ["1.1875rem", { lineHeight: "1.6" }],
+        // Marketing headings: the badge's heavy Montserrat caps (EMMETT'S), a touch tighter than the wordmark.
+        "heading-hero": ["clamp(2.75rem, 6.2vw, 5.25rem)", { lineHeight: "0.95", letterSpacing: "-0.015em" }],
+        "heading-section": ["clamp(2rem, 4.2vw, 3.5rem)", { lineHeight: "1", letterSpacing: "-0.01em" }],
       },
       borderRadius: {
         lg: "var(--radius)",

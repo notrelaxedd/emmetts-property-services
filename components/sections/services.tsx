@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { ArrowRight, Leaf, Phone } from "lucide-react";
+import { ArrowRight, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Diagonal } from "@/components/site/diagonal";
-import { Headline } from "@/components/site/headline";
 import { ServiceBadge } from "@/components/site/icons";
 import { Reveal } from "@/components/site/reveal";
+import { MapleLeaf } from "@/components/site/season-glyphs";
+import { SectionHeading } from "@/components/site/section-heading";
 import { content } from "@/lib/content";
 import { services, type Service } from "@/lib/services";
 import { siteConfig } from "@/lib/site-config";
@@ -13,33 +13,37 @@ function priceFor(slug: string) {
   return siteConfig.pricing.from[slug] ?? null;
 }
 
+/** The in-season service: one centered, thin-ruled panel with its own quote button. */
 function FeaturedService({ service }: { service: Service }) {
   const price = priceFor(service.slug);
   return (
-    <article className="on-dark relative isolate flex h-full flex-col overflow-hidden rounded-[2rem] bg-ink p-8 text-white md:p-10">
-      <Diagonal className="bg-white/[0.06]" sm="polygon(38% 0, 100% 0, 100% 62%)" />
-      <span className="inline-flex w-fit items-center gap-2 rounded-full bg-brand-green px-3.5 py-1.5 text-sm font-semibold text-ink">
-        <Leaf className="size-4" aria-hidden="true" strokeWidth={2.5} />
-        {content.services.featuredLabel}
-      </span>
-
-      <ServiceBadge icon={service.icon} size="lg" className="mt-10" />
-      <h3 className="display mt-6 text-[2.75rem] text-white md:text-[3.25rem]">{service.title}</h3>
-      <p className="mt-4 max-w-md text-white/80">{service.blurb}</p>
+    <article className="border border-forest/20 bg-cream px-6 py-12 text-center sm:px-12 md:py-14">
+      <p className="flex items-center justify-center gap-2.5 font-heading text-xs font-semibold uppercase tracking-[0.26em] text-maple-ink">
+        <MapleLeaf className="size-4 text-maple" />
+        <span className="pl-[0.26em]">{content.services.featuredLabel}</span>
+      </p>
+      <h3 className="mt-5 font-heading text-[clamp(1.75rem,3.6vw,2.5rem)] font-extrabold uppercase leading-none text-forest">
+        {service.title}
+      </h3>
+      <p className="mx-auto mt-5 max-w-md text-forest-body">{service.blurb}</p>
 
       {service.includes && (
-        <ul className="mt-6 flex flex-wrap gap-2" aria-label="Includes">
+        <ul
+          className="mt-7 flex flex-wrap justify-center gap-x-6 gap-y-3 font-heading text-xs font-semibold uppercase tracking-[0.18em] text-forest"
+          aria-label={content.services.includesLabel}
+        >
           {service.includes.map((item) => (
-            <li key={item} className="rounded-full border border-white/30 px-4 py-1.5 text-sm font-medium text-white">
+            <li key={item} className="flex items-center gap-2.5">
+              <span aria-hidden="true" className="size-1.5 rounded-full border border-forest" />
               {item}
             </li>
           ))}
         </ul>
       )}
-      {price && <p className="mt-5 font-semibold text-white">From {price}</p>}
+      {price && <p className="mt-5 font-semibold text-forest">From {price}</p>}
 
-      <div className="mt-auto pt-10">
-        <Button asChild variant="cta-green" size="cta" className="w-full sm:w-auto">
+      <div className="mt-10 flex flex-col items-center gap-3">
+        <Button asChild variant="cta" size="cta" className="w-full sm:w-auto">
           <Link href={`/quote?service=${service.slug}`}>
             {content.cta.quote}
             <span className="sr-only">: {service.title}</span>
@@ -48,35 +52,40 @@ function FeaturedService({ service }: { service: Service }) {
         </Button>
         <a
           href={siteConfig.phone.href}
-          className="mt-4 inline-flex items-center gap-2 rounded-full px-1 py-2 font-semibold text-white/80 underline decoration-white/40 decoration-2 underline-offset-[6px] hover:text-white hover:decoration-brand-green sm:ml-6 sm:mt-0"
+          className="inline-flex min-h-11 items-center gap-2 text-[0.9375rem] text-forest-muted transition-colors hover:text-forest"
         >
-          <Phone className="size-4" aria-hidden="true" />
-          {content.cta.callAlt} {siteConfig.phone.display}
+          <Phone className="size-4" aria-hidden="true" strokeWidth={1.75} />
+          {content.cta.callAlt} <span className="font-semibold text-forest">{siteConfig.phone.display}</span>
         </a>
       </div>
     </article>
   );
 }
 
-function ServiceCard({ service }: { service: Service }) {
+function ServiceItem({ service }: { service: Service }) {
   const price = priceFor(service.slug);
   return (
-    <article className="group relative flex h-full flex-col rounded-[2rem] bg-white p-7 transition-[transform,box-shadow] duration-300 ease-out-quart hover:-translate-y-1 hover:shadow-[0_24px_48px_-24px_rgb(11_11_11/0.35)] has-[a:focus-visible]:ring-4 has-[a:focus-visible]:ring-brand-green-dark md:p-8">
-      <div className="flex items-center gap-4">
-        <ServiceBadge icon={service.icon} />
-        <h3 className="display text-[1.75rem] leading-[0.9]">{service.title}</h3>
-      </div>
-      <p className="mt-4 text-ink-body">{service.blurb}</p>
-      {price && <p className="mt-3 font-semibold text-ink">From {price}</p>}
-      <div className="mt-auto pt-6">
-        {/* Stretched link: the whole card opens the quote form with this service ticked. */}
+    <article className="group relative flex h-full flex-col items-center bg-sage px-6 py-10 text-center md:py-12 transition-colors duration-300 ease-out-quart hover:bg-cream/60 lg:px-7">
+      <ServiceBadge icon={service.icon} size="lg" />
+      {/* Two lines' worth of height on wide screens, so the blurbs line up across the row. */}
+      <h3 className="mt-7 font-heading text-base font-bold uppercase leading-snug tracking-[0.08em] text-forest lg:min-h-[2.75em]">
+        {service.title}
+      </h3>
+      <p className="mt-3 max-w-xs text-[0.975rem] text-forest-body">{service.blurb}</p>
+      {price && <p className="mt-3 font-semibold text-forest">From {price}</p>}
+      <div className="mt-auto pt-7">
+        {/* Stretched link: the whole item opens the quote form with this service ticked. */}
         <Link
           href={`/quote?service=${service.slug}`}
-          className="inline-flex w-fit items-center gap-2 font-semibold text-brand-green-dark outline-none after:absolute after:inset-0 after:rounded-[2rem] after:content-['']"
+          className="inline-flex min-h-11 items-center gap-2 font-heading text-xs font-semibold uppercase tracking-[0.2em] text-forest after:absolute after:inset-0 after:content-['']"
         >
           {content.services.linkLabel}
           <span className="sr-only">: {service.title}</span>
-          <ArrowRight className="size-4 transition-transform duration-300 ease-out-quart group-hover:translate-x-1" aria-hidden="true" />
+          <ArrowRight
+            className="size-4 transition-transform duration-300 ease-out-quart group-hover:translate-x-1"
+            aria-hidden="true"
+            strokeWidth={1.75}
+          />
         </Link>
       </div>
     </article>
@@ -88,27 +97,29 @@ export function Services() {
   const rest = services.filter((s) => s.slug !== featured.slug);
 
   return (
-    <section id="services" aria-labelledby="services-title" className="relative isolate overflow-hidden bg-gray-light py-20 md:py-28">
-      <Diagonal className="bg-gray-mid" sm="polygon(0 0, 78% 0, 0 16%)" md="polygon(0 0, 40% 0, 0 58%)" />
-
+    <section id="services" aria-labelledby="services-title" className="bg-sage py-24 md:py-32">
       <div className="container">
-        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between md:gap-12">
-          <Headline id="services-title" lines={content.services.headline} />
-          <p className="max-w-md text-lead text-ink-body">{content.services.intro}</p>
-        </div>
+        <SectionHeading
+          id="services-title"
+          eyebrow={content.services.eyebrow}
+          lines={content.services.headline}
+          intro={content.services.intro}
+        />
 
-        <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-3 lg:grid-rows-2">
-          <Reveal className="md:col-span-2 lg:col-span-1 lg:row-span-2">
-            <FeaturedService service={featured} />
-          </Reveal>
+        <Reveal className="mx-auto mt-16 max-w-3xl md:mt-20">
+          <FeaturedService service={featured} />
+        </Reveal>
+
+        {/* 1px gaps over a forest tint draw the hairlines between items at every column count. */}
+        <ul className="mx-auto mt-16 grid max-w-6xl gap-px border-y border-forest/15 bg-forest/15 sm:grid-cols-2 lg:grid-cols-4">
           {rest.map((service, i) => (
-            <Reveal key={service.slug} delay={80 + i * 80}>
-              <ServiceCard service={service} />
+            <Reveal as="li" key={service.slug} delay={i * 80} className="bg-sage">
+              <ServiceItem service={service} />
             </Reveal>
           ))}
-        </div>
+        </ul>
 
-        {siteConfig.pricing.note && <p className="mt-8 font-medium text-ink">{siteConfig.pricing.note}</p>}
+        {siteConfig.pricing.note && <p className="mt-10 text-center font-medium text-forest">{siteConfig.pricing.note}</p>}
       </div>
     </section>
   );
