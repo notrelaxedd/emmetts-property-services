@@ -160,6 +160,7 @@ export const content = {
 
   quote: {
     cta: "Get a quote",
+    eyebrow: "Free quote",
     headline: ["Get your", "free quote"],
     body: "Tell us about your yard and what you need. We'll look it over and send you a price. No pressure, and you can always call us instead.",
     steps: {
@@ -239,6 +240,7 @@ export const content = {
       turnstile: "We couldn't confirm the security check. Please try again.",
     },
     thanks: {
+      eyebrow: "Request received",
       headline: ["Your quote", "is on the way"],
       body: "Thanks! We've got your request and we're taking a look. We'll send your price as soon as it's ready.",
       nextHeading: "What happens next",
@@ -250,7 +252,21 @@ export const content = {
       soonerPrompt: "Need it sooner? Call the crew.",
       back: "Back to home",
     },
+    // After Stripe Checkout succeeds (/quote/paid).
+    paid: {
+      eyebrow: "You're all set",
+      headline: ["Payment", "received"],
+      body: "Thank you! Your payment went through and your spot is saved. We'll be in touch soon to schedule your job, and a receipt from Stripe is on its way to your email.",
+      callPrompt: "Need to change something or have a question? Give us a call.",
+    },
+    // A pay link that's past its date or already paid (/quote/expired).
+    expired: {
+      eyebrow: "Quote link",
+      headline: ["That quote", "has expired"],
+      body: "Quote links stay active for a couple of weeks. This one has passed its date, or it was already paid. Give us a call and we'll send a fresh quote right away.",
+    },
     unsubscribe: {
+      eyebrow: "Your preferences",
       doneTitle: ["You're", "unsubscribed"],
       doneBody:
         "We've stopped our emails and texts to you, and taken you off the snow list. You may still get a message about a job you've already booked.",

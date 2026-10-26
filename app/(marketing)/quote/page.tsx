@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Phone } from "lucide-react";
-import { Diagonal } from "@/components/site/diagonal";
 import { Headline } from "@/components/site/headline";
+import { Eyebrow } from "@/components/site/section-heading";
 import { QuoteForm } from "@/components/quote/quote-form";
 import { loadQuoteServices } from "@/components/quote/services-data";
 import { opsConfig } from "@/lib/config";
@@ -26,52 +26,54 @@ export default async function QuotePage({ searchParams }: { searchParams: { serv
   const { quote } = content;
 
   return (
-    <section aria-labelledby="quote-title" className="relative isolate overflow-hidden bg-gray-light py-12 md:py-24">
-      <Diagonal
-        className="bg-gray-mid"
-        sm="polygon(0 0, 100% 0, 100% 4%, 0 10%)"
-        md="polygon(0 0, 40% 0, 24% 100%, 0 100%)"
-      />
-
-      <div className="container grid items-start gap-10 lg:grid-cols-12 lg:gap-x-12">
-        <div className="lg:col-span-5 lg:sticky lg:top-[calc(var(--header-h)+2rem)]">
-          <Headline as="h1" id="quote-title" lines={quote.headline} />
-          <p className="mt-6 max-w-md text-lead text-ink-body">{quote.body}</p>
+    <section aria-labelledby="quote-title" className="py-14 md:py-20 lg:py-24">
+      <div className="container grid items-start gap-10 lg:grid-cols-12 lg:gap-x-16">
+        {/* Centered like /contact on phones; a quiet left-aligned column beside the form on wide screens. */}
+        <div className="text-center lg:sticky lg:top-[calc(var(--header-h)+2.5rem)] lg:col-span-5 lg:text-left">
+          <Eyebrow className="lg:justify-start">{quote.eyebrow}</Eyebrow>
+          <Headline as="h1" id="quote-title" lines={quote.headline} className="mt-6" />
+          <p className="mx-auto mt-6 max-w-md text-lead text-forest-body lg:mx-0">{quote.body}</p>
 
           {/* On phones this would push the form below the fold; the thanks page repeats it anyway. */}
-          <h2 className="mt-10 hidden font-display text-xl uppercase text-ink lg:block">{quote.steps.heading}</h2>
-          <ol className="mt-4 hidden space-y-3 lg:block">
-            {quote.steps.items.map((item, i) => (
-              <li key={item} className="flex items-start gap-3 font-medium text-ink-body">
-                <span
-                  aria-hidden="true"
-                  className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-green font-display text-base text-ink"
-                >
-                  {i + 1}
-                </span>
-                <span className="pt-0.5">{item}</span>
-              </li>
-            ))}
-          </ol>
+          <div className="mt-12 hidden border-t border-forest/10 pt-10 lg:block">
+            <h2 className="font-heading text-sm font-bold uppercase tracking-[0.12em] text-forest">{quote.steps.heading}</h2>
+            <ol className="relative mt-6 space-y-5">
+              {/* A hairline threading the numbered rings, like the steps on the home page. */}
+              <span aria-hidden="true" className="absolute inset-y-4 left-4 w-px -translate-x-1/2 bg-forest/20" />
+              {quote.steps.items.map((item, i) => (
+                <li key={item} className="relative flex items-start gap-4 text-forest-body">
+                  <span
+                    aria-hidden="true"
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full border-[1.5px] border-forest bg-cream font-heading text-sm font-semibold text-forest"
+                  >
+                    {i + 1}
+                  </span>
+                  <span className="pt-1">{item}</span>
+                </li>
+              ))}
+            </ol>
 
-          <a
-            href={siteConfig.phone.href}
-            className="mt-10 hidden items-center gap-3 font-semibold text-ink hover:text-brand-green-dark lg:inline-flex"
-          >
-            <Phone className="size-5 text-brand-green-dark" aria-hidden="true" strokeWidth={2.5} />
-            {siteConfig.phone.display}
-          </a>
+            <p className="mt-10 text-[0.9375rem] text-forest-muted">
+              {content.cta.callAlt}{" "}
+              <a
+                href={siteConfig.phone.href}
+                className="inline-flex min-h-11 items-center gap-1.5 font-semibold text-forest underline decoration-forest/30 decoration-1 underline-offset-[6px] transition-colors hover:decoration-forest"
+              >
+                <Phone className="size-4" aria-hidden="true" strokeWidth={1.75} />
+                {siteConfig.phone.display}
+              </a>
+            </p>
+          </div>
         </div>
 
-        <div className="lg:col-span-7">
-          <div className="rounded-[2rem] bg-white p-6 shadow-[0_40px_80px_-48px_rgb(11_11_11/0.35)] sm:p-10">
-            <QuoteForm
-              services={services}
-              defaultService={defaultService}
-              verifyAddress={opsConfig.geocoder !== "none"}
-              turnstileSiteKey={opsConfig.turnstileSiteKey}
-            />
-          </div>
+        {/* A thin-ruled white sheet on the cream page, like the featured service panel on the home page. */}
+        <div className="border border-forest/15 bg-white px-5 py-8 sm:p-10 lg:col-span-7">
+          <QuoteForm
+            services={services}
+            defaultService={defaultService}
+            verifyAddress={opsConfig.geocoder !== "none"}
+            turnstileSiteKey={opsConfig.turnstileSiteKey}
+          />
         </div>
       </div>
     </section>

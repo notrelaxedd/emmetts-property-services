@@ -93,19 +93,6 @@
     line-height: 0.85;
     letter-spacing: -0.01em;
   }
-
-  /* Diagonal panels: clip-path polygons supplied per breakpoint via custom properties. */
-  .diag {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    clip-path: var(--clip-sm);
-  }
-  @media (min-width: 768px) {
-    .diag {
-      clip-path: var(--clip-md, var(--clip-sm));
-    }
-  }
 }
 
 @layer utilities {
