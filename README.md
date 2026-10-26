@@ -42,7 +42,7 @@ npm run test:e2e             # Playwright smoke tests (set PLAYWRIGHT_CHROMIUM_P
 | All the words on the site | `lib/content.ts` |
 | The list of services (in-season panel, service rows, quote form, SEO) | `lib/services.ts` |
 | Photos and logo | `public/images/`, `public/logo.png` and `public/logo-light.png`; see `public/images/README.md` |
-| Flyer template + where the QR code goes | `assets/flyer/` and `FLYER_TEMPLATE` in `lib/flyers/render.ts` |
+| Flyer design (words, layout) + where the QR code goes | `assets/flyer/fall-cleanup.html`, then `npm run flyer:template` (re-renders `fall-cleanup.webp` at 300 dpi and prints the box to paste into `FLYER_TEMPLATE` in `lib/flyers/render.ts`) |
 | Colors, fonts, sizes | `tailwind.config.ts`, `app/globals.css` |
 
 The hero headline is the current seasonal offer (`content.hero.headline`). Swap it to
@@ -67,6 +67,8 @@ own user to `owner`.
 swap the headline font, `assets/og/Montserrat-*-Subset.ttf` (ASCII-only static cuts). The share-image function inlines whatever it
 loads, and Vercel rejects an edge function over 1 MB — using the full-size logo there breaks the
 deploy with "Edge Function size is 1.48 MB". The site's own pages always use the full-size `public/logo.png` / `public/logo-light.png`.
+The flyer template has the logo baked in, so run `npm run flyer:template` after a logo change too (its HTML
+uses those Montserrat subsets plus `assets/fonts/WorkSans-*-Subset.ttf`, and the code under each QR is set in the 600 cut).
 
 ## What's in here
 
