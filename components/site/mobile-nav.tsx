@@ -22,7 +22,7 @@ export function MobileNav() {
         <button
           type="button"
           className="inline-flex size-11 items-center justify-center rounded-full border border-forest/25 text-forest transition-colors hover:border-forest"
-          aria-label="Open menu"
+          aria-label={content.menu.open}
         >
           <Menu className="size-5" aria-hidden="true" strokeWidth={1.75} />
         </button>
@@ -35,7 +35,7 @@ export function MobileNav() {
         // Don't yank focus back to the trigger after tapping a link; the page is scrolling to a section.
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
-        <SheetTitle className="sr-only">Menu</SheetTitle>
+        <SheetTitle className="sr-only">{content.menu.title}</SheetTitle>
         <nav aria-label="Main">
           <ul className="border-t border-forest/10">
             {content.nav.map((item) => (

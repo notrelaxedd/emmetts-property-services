@@ -65,6 +65,8 @@ export const content = {
     featuredSlug: "fall-cleanup",
     featuredLabel: "In season now",
     includesLabel: "Includes",
+    // Above the rest of the services, under the in-season one.
+    moreLabel: "Also on the list",
     linkLabel: "Get a price",
   },
 
@@ -92,6 +94,7 @@ export const content = {
   seasons: {
     eyebrow: "Year-round",
     headline: ["Three seasons.", "One crew."],
+    linkLabel: (title: string) => `Get a ${title.toLowerCase()} quote`,
     items: [
       {
         season: "Spring & Summer",
@@ -257,6 +260,11 @@ export const content = {
       errorBody: `We couldn't update your preferences just now. Please try the link again in a minute, or call us at ${siteConfig.phone.display}.`,
       changedMind: "Changed your mind? Give us a call and we'll add you back.",
     },
+  },
+
+  menu: {
+    open: "Open menu",
+    title: "Menu",
   },
 
   mobileBar: {

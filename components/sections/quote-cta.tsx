@@ -1,7 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, Check, Clock, Mail, MapPin, Phone } from "lucide-react";
+import { ArrowRight, Check, Clock, Mail, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CallLink } from "@/components/site/call-link";
 import { SectionHeading } from "@/components/site/section-heading";
 import { content } from "@/lib/content";
 import { siteConfig } from "@/lib/site-config";
@@ -51,16 +52,7 @@ export function QuoteCta() {
           </Link>
         </Button>
 
-        <p className="mt-8 text-cream/75">
-          {finalCta.callPrompt}{" "}
-          <a
-            href={siteConfig.phone.href}
-            className="inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap font-semibold text-cream underline decoration-cream/40 decoration-1 underline-offset-[6px] transition-colors hover:decoration-cream"
-          >
-            <Phone className="size-4" aria-hidden="true" strokeWidth={1.75} />
-            {siteConfig.phone.display}
-          </a>
-        </p>
+        <CallLink prompt={finalCta.callPrompt} tone="dark" className="mt-8" />
 
         <ul className="mt-14 w-full max-w-xl space-y-3 border-t border-cream/15 pt-10 text-cream/80">
           <li className="flex flex-col items-center gap-2">

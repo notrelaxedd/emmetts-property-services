@@ -70,13 +70,15 @@ deploy with "Edge Function size is 1.48 MB". The site's own pages always use the
 ## What's in here
 
 - **Sections** (`components/sections/`): hero (quote button + service shortcuts that pre-tick the form),
-  how it works, services, three seasons (which also carries the "one crew covers it" line), why us,
-  and a closing quote section on forest green (`quote-cta.tsx`, keeps `id="contact"`). `/contact` is still the call-first page (`contact.tsx`), and
+  how it works, services (the in-season one first, then ruled rows), why us, three seasons (which also
+  carries the "one crew covers it" line), and a closing quote section on forest green (`quote-cta.tsx`,
+  keeps `id="contact"`). `/contact` is still the call-first page (`contact.tsx`), and
   `/book` redirects there.
   (A booking form and a customer reviews section were removed; both are in the git history.)
 - **Brand shapes** (`components/site/`), all from the badge: `RingPhoto` (a photo in the thin
   ring), `Eyebrow` / `SectionHeading` (letterspaced label between rules, heavy Montserrat caps),
-  `season-glyphs.tsx` (maple, grass, snowflake), `Wordmark`. `Diagonal` (clip-path panels) is the
+  `season-glyphs.tsx` (maple, grass, snowflake, and the `GroundLine` divider), `Wordmark`, plus the quiet
+  `ArrowLink` and `CallLink` text links. `Diagonal` (clip-path panels) is the
   old flyer shape, still used by the quote, thanks and unsubscribe pages.
 - **Phones:** a sticky bottom bar keeps *Free quote* (and *Call*) one tap away at any scroll position.
 - **SEO:** metadata + Open Graph (`app/opengraph-image.tsx` generates the share card), a

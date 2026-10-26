@@ -14,24 +14,30 @@ export function HowItWorks() {
       <div className="container">
         <SectionHeading id="how-it-works-title" eyebrow={howItWorks.eyebrow} lines={howItWorks.headline} />
 
-        <ol className="relative mx-auto mt-16 grid max-w-5xl gap-14 md:mt-20 md:grid-cols-3 md:gap-10">
+        {/* Phones: compact rows, number ring beside the step. Wider: three columns joined by a hairline. */}
+        <ol className="relative mx-auto mt-14 grid max-w-md gap-9 md:mt-20 md:max-w-5xl md:grid-cols-3 md:gap-10">
           {/* A hairline linking the three numbered rings, from the first ring's center to the last's. */}
           <span
             aria-hidden="true"
             className="absolute inset-x-[calc((100%-5rem)/6)] top-8 hidden h-px bg-forest/20 md:block"
           />
           {howItWorks.steps.map((step, i) => (
-            <Reveal as="li" key={step.title} delay={i * 100} className="relative flex flex-col items-center text-center">
+            <Reveal
+              as="li"
+              key={step.title}
+              delay={i * 100}
+              className="relative grid grid-cols-[3.5rem_1fr] gap-x-5 md:flex md:flex-col md:items-center md:text-center"
+            >
               <span
                 aria-hidden="true"
-                className="flex size-16 items-center justify-center rounded-full border-[1.5px] border-forest bg-cream font-heading text-xl font-semibold text-forest"
+                className="row-span-2 flex size-14 items-center justify-center rounded-full border-[1.5px] border-forest bg-cream font-heading text-lg font-semibold text-forest md:size-16 md:text-xl"
               >
                 {i + 1}
               </span>
-              <h3 className="mt-7 font-heading text-[1.0625rem] font-bold uppercase tracking-[0.08em] text-forest">
+              <h3 className="self-end font-heading text-[0.9375rem] font-bold uppercase tracking-[0.08em] text-forest md:mt-7 md:text-[1.0625rem]">
                 {step.title}
               </h3>
-              <p className="mt-3 max-w-[17rem] text-forest-body">{step.body}</p>
+              <p className="mt-1.5 text-forest-body md:mt-3 md:max-w-[17rem]">{step.body}</p>
             </Reveal>
           ))}
         </ol>

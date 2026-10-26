@@ -4,19 +4,21 @@ import { QuoteCta } from "@/components/sections/quote-cta";
 import { Seasons } from "@/components/sections/seasons";
 import { Services } from "@/components/sections/services";
 import { WhyUs } from "@/components/sections/why-us";
+import { GroundLine } from "@/components/site/season-glyphs";
 
 /**
  * Every section ends in the same place: the free quote form at /quote.
- * Cream, cream, sage, cream, sage, then the one forest panel to close.
+ * Cream, cream (split by the badge's ground line), sage, cream, sage, then the one forest panel to close.
  */
 export default function HomePage() {
   return (
     <>
       <Hero />
+      <GroundLine />
       <HowItWorks />
       <Services />
-      <Seasons />
       <WhyUs />
+      <Seasons />
       <QuoteCta />
     </>
   );

@@ -26,7 +26,7 @@ the earlier full-color badge is `assets/logo-source.jpg`. From the new source we
 
 - `public/logo.png`: transparent, for light backgrounds. Header, login, admin, crew, and search-engine data
 - `public/logo-light.png`: the same badge in one cream color, for the forest-green panels (the home page's closing section)
-- `assets/og/logo-og.png`: a ~420px copy for the social share image (see the main README for why it's small)
+- `assets/og/logo-og.png`: a ~520px copy for the social share image (see the main README for why it's small)
 - `app/icon.png`: browser tab icon
 - `app/apple-icon.png` and `public/icons/icon-*.png`: home-screen icons, on the paper background
 

@@ -135,9 +135,6 @@
     opacity: 0;
     transform: translate3d(0, 1rem, 0);
   }
-  [data-reveal="pending"][data-reveal-from="scale"] {
-    transform: scale(0.96);
-  }
 
   /* Hero page-load choreography: the ring draws itself, the photo fades up, headline lines rise out of a mask. */
   .hero-line {

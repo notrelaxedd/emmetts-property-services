@@ -1,3 +1,4 @@
+import type { Season } from "@/lib/services";
 import { cn } from "@/lib/utils";
 
 /**
@@ -51,36 +52,39 @@ export type SeasonMarkName = "maple" | "grass" | "snow";
 
 const glyphs = { maple: MapleLeaf, grass: GrassTuft, snow: SnowflakeMark } as const;
 
-// Logo-exact colors on cream/sage (icons only, never text); the *-light set is for forest panels.
-const tones = {
-  logo: { maple: "text-maple", grass: "text-pine", snow: "text-frost" },
-  light: { maple: "text-maple-light", grass: "text-grass-light", snow: "text-frost-light" },
-} as const;
+// Logo-exact colors, for cream and sage. Icons only, never text: they're under 4.5:1 on sage.
+const colors = { maple: "text-maple", grass: "text-pine", snow: "text-frost" } as const;
 
-type Tone = keyof typeof tones;
+/** Which badge mark stands for each season, and the AA-safe color for small text beside it. */
+export const seasonMarks: Record<Season, { mark: SeasonMarkName; text: string }> = {
+  "spring-summer": { mark: "grass", text: "text-pine" },
+  fall: { mark: "maple", text: "text-maple-ink" },
+  winter: { mark: "snow", text: "text-frost-ink" },
+};
 
-export function SeasonMark({ mark, tone = "logo", className }: { mark: SeasonMarkName; tone?: Tone; className?: string }) {
+export function SeasonMark({ mark, className }: { mark: SeasonMarkName; className?: string }) {
   const Glyph = glyphs[mark];
-  return <Glyph className={cn("size-5", tones[tone][mark], className)} />;
+  return <Glyph className={cn("size-5", colors[mark], className)} />;
 }
 
 /** Maple, grass, snowflake in a row: the quiet ornament at the foot of the badge. */
-export function SeasonTrio({ tone = "logo", className }: { tone?: Tone; className?: string }) {
+export function SeasonTrio({ className }: { className?: string }) {
   return (
     <span aria-hidden="true" className={cn("inline-flex items-center gap-4", className)}>
-      <SeasonMark mark="maple" tone={tone} />
-      <SeasonMark mark="grass" tone={tone} />
-      <SeasonMark mark="snow" tone={tone} />
+      <SeasonMark mark="maple" />
+      <SeasonMark mark="grass" />
+      <SeasonMark mark="snow" />
     </span>
   );
 }
 
-/** A hairline across the page with the trio resting on it, like the badge's ground line. */
-export function SeasonDivider({ className }: { className?: string }) {
+/** The badge's ground line: a hairline across the page with one grass tuft standing on it. */
+export function GroundLine({ className }: { className?: string }) {
   return (
-    <div aria-hidden="true" className={cn("flex items-center gap-6", className)}>
+    <div aria-hidden="true" className={cn("container flex items-end", className)}>
       <span className="h-px flex-1 bg-forest/15" />
-      <SeasonTrio />
+      {/* The tuft's blades end 1.5 units above its 24-unit box, so a 1px nudge stands it on the line. */}
+      <GrassTuft className="mx-3 size-5 translate-y-px text-pine" />
       <span className="h-px flex-1 bg-forest/15" />
     </div>
   );
