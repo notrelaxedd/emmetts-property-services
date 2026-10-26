@@ -16,7 +16,7 @@ export function Seasons() {
   const { seasons, benefits } = content;
 
   return (
-    <section aria-labelledby="seasons-title" className="bg-sage py-24 md:py-32">
+    <section aria-labelledby="seasons-title" className="py-24 md:py-32">
       <div className="container">
         <SectionHeading id="seasons-title" eyebrow={seasons.eyebrow} lines={seasons.headline} intro={benefits.body} />
 
@@ -46,7 +46,6 @@ export function Seasons() {
                   src={item.image.src}
                   alt={item.image.alt}
                   sizes="(min-width: 1024px) 240px, (min-width: 768px) 26vw, 112px"
-                  surface="sage"
                   className="w-28 md:w-full md:max-w-60"
                   ornament={<SeasonMark mark={season.mark} />}
                 />

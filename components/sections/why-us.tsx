@@ -15,7 +15,7 @@ export function WhyUs() {
   const { whyUs } = content;
 
   return (
-    <section id="why-us" aria-labelledby="why-us-title" className="py-24 md:py-32">
+    <section id="why-us" aria-labelledby="why-us-title" className="bg-sage py-24 md:py-32">
       <div className="container grid gap-14 lg:grid-cols-12 lg:gap-8">
         <div className="lg:col-span-6">
           <SectionHeading id="why-us-title" align="start" eyebrow={whyUs.eyebrow} lines={whyUs.headline} />

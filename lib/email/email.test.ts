@@ -72,10 +72,10 @@ describe("render", () => {
     expect(text).toContain("Hello <script>"); // plain text is not escaped
   });
 
-  it("signs off with where we work and the phone number", () => {
+  it("signs off with the phone number and our postal address", () => {
     const { text, html } = renderEmail({ subject: "s", body: "b", siteUrl: "https://x.test", token: "abc", business: "Emmett's" });
-    expect(text).toContain("Emmett's · Northeast Ohio · (440) 823-5545");
-    expect(html).toContain("Northeast Ohio · (440) 823-5545");
+    expect(text).toContain("Emmett's · (440) 823-5545\n19618 Beach Cliff Blvd, Rocky River, OH 44116\n");
+    expect(html).toContain("(440) 823-5545<br>19618 Beach Cliff Blvd, Rocky River, OH 44116<br>");
   });
 });
 

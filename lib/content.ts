@@ -9,6 +9,7 @@ import { siteConfig } from "./site-config";
 export const content = {
   nav: [
     { label: "Services", href: "/#services" },
+    { label: "Commercial", href: "/#commercial" },
     { label: "How it works", href: "/#how-it-works" },
     { label: "Why us", href: "/#why-us" },
     { label: "Contact", href: "/#contact" },
@@ -75,6 +76,21 @@ export const content = {
     headline: ["One crew", "covers it"],
     body: "From the first mow in spring to the last snowfall, one crew handles the whole yard. Tell us what you need and we'll send you one price for all of it.",
     pills: ["Leaf Cleanup", "Edging", "Gutter Cleaning", "Snow Removal", "And More"],
+  },
+
+  // Bigger accounts. Keeps id="commercial" so the nav link lands here.
+  commercial: {
+    eyebrow: "Commercial & HOA",
+    headline: ["Commercial", "& HOA care"],
+    intro: `We look after storefronts, offices, and HOA common areas in ${siteConfig.serviceArea.summary}. One crew, one point of contact, one invoice.`,
+    points: [
+      { title: "Scheduled maintenance", body: "Mowing, trimming, and edging on a set schedule, so the grounds always look cared for." },
+      { title: "Seasonal cleanups", body: "Leaves cleared from lawns, beds, and gutters before winter sets in." },
+      { title: "Snow removal", body: "Walkways and entrances cleared after the snow." },
+      { title: "Simple billing", body: "One quote for the property, invoiced to your business or association." },
+    ],
+    cta: "Get a commercial quote",
+    callPrompt: "Rather walk the property with us first?",
   },
 
   whyUs: {
@@ -304,6 +320,6 @@ export const content = {
   seo: {
     title: `${siteConfig.name} | Lawn Care, Fall Cleanup & Snow Removal in Northeast Ohio`,
     description:
-      "Lawn mowing, fall leaf cleanup, gutter cleaning, and snow removal in Northeast Ohio and Cleveland's west-side suburbs. Locally owned, with upfront pricing and great reviews from local customers.",
+      "Lawn care, fall cleanup, gutters, and snow removal for homes, businesses, and HOAs in Rocky River, Westlake, Bay Village, and Lakewood. Locally owned, with upfront pricing.",
   },
 } as const;

@@ -51,11 +51,16 @@ export const siteConfig = {
     primary: "Rocky River",
     region: "OH",
     regionName: "Ohio",
-    summary: "Northeast Ohio and surrounding west-side Cleveland suburbs",
-    // TODO: list the suburbs you actually serve (e.g. Bay Village, Westlake, Fairview Park, Lakewood).
-    // They're used in the footer and in search-engine data, so only add places you'll really drive to.
-    cities: [] as string[],
+    summary: "Rocky River, Westlake, Bay Village, and Lakewood",
+    // The towns we serve. Used in search-engine data; keep `summary` in step when this changes.
+    cities: ["Rocky River", "Westlake", "Bay Village", "Lakewood"] as string[],
   },
+
+  /**
+   * Postal address for customer emails (marketing email must carry one by law). Not shown on the
+   * website or in search data: it isn't a storefront.
+   */
+  mailingAddress: "19618 Beach Cliff Blvd, Rocky River, OH 44116",
 
   /** Timezone used to decide what "today" means for the preferred-date field. */
   timezone: "America/New_York",

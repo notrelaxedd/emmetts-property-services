@@ -1,3 +1,4 @@
+import { Commercial } from "@/components/sections/commercial";
 import { Hero } from "@/components/sections/hero";
 import { HowItWorks } from "@/components/sections/how-it-works";
 import { QuoteCta } from "@/components/sections/quote-cta";
@@ -8,7 +9,7 @@ import { GroundLine } from "@/components/site/season-glyphs";
 
 /**
  * Every section ends in the same place: the free quote form at /quote.
- * Cream, cream (split by the badge's ground line), sage, cream, sage, then the one forest panel to close.
+ * Cream, cream (split by the badge's ground line), sage, cream, sage, cream, then the one forest panel to close.
  */
 export default function HomePage() {
   return (
@@ -17,6 +18,7 @@ export default function HomePage() {
       <GroundLine />
       <HowItWorks />
       <Services />
+      <Commercial />
       <WhyUs />
       <Seasons />
       <QuoteCta />

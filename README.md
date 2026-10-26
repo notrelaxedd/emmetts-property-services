@@ -51,8 +51,9 @@ The hero headline is the current seasonal offer (`content.hero.headline`). Swap 
 ### Before launch checklist
 
 - [ ] Replace the photos in `public/images/` (same filenames)
-- [ ] Fill in the `TODO`s in `lib/site-config.ts`: email, hours, pricing, and the suburbs you serve.
-      Email and hours show on the contact page as soon as they're set, and stay hidden until then
+- [ ] Fill in the `TODO`s in `lib/site-config.ts`: email, hours, and pricing.
+      Email and hours show on the contact page as soon as they're set, and stay hidden until then.
+      The towns served and the mailing address (customer email footer) are already set there
 - [ ] Set `NEXT_PUBLIC_SITE_URL` once you have a domain (flyer QR codes point at it: set it before printing flyers)
 
 ## Deploy (Vercel)
@@ -70,7 +71,7 @@ deploy with "Edge Function size is 1.48 MB". The site's own pages always use the
 ## What's in here
 
 - **Sections** (`components/sections/`): hero (quote button + service shortcuts that pre-tick the form),
-  how it works, services (the in-season one first, then ruled rows), why us, three seasons (which also
+  how it works, services (the in-season one first, then ruled rows), commercial & HOA, why us, three seasons (which also
   carries the "one crew covers it" line), and a closing quote section on forest green (`quote-cta.tsx`,
   keeps `id="contact"`). `/contact` is still the call-first page (`contact.tsx`), and
   `/book` redirects there.

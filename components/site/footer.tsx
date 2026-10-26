@@ -13,7 +13,6 @@ import { Eyebrow } from "./section-heading";
  */
 export function SiteFooter() {
   const year = new Date().getFullYear();
-  const cities = siteConfig.serviceArea.cities;
 
   return (
     <footer className="border-t border-forest/10 bg-cream text-forest-body">
@@ -82,7 +81,6 @@ export function SiteFooter() {
               <span className="text-left">
                 <span className="sr-only">{content.footer.areaHeading}: </span>
                 {siteConfig.serviceArea.summary}
-                {cities.length > 1 && <span className="block text-forest-muted">{cities.join(" · ")}</span>}
               </span>
             </li>
           </ul>

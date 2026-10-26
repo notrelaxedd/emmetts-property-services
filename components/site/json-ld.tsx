@@ -16,7 +16,7 @@ export function LocalBusinessJsonLd() {
     image: `${siteConfig.url}/logo.png`,
     logo: `${siteConfig.url}/logo.png`,
     description:
-      "Lawn mowing, fall cleanup, leaf removal, gutter cleaning, and snow removal from a locally owned Northeast Ohio business.",
+      "Lawn mowing, fall cleanup, leaf removal, gutter cleaning, and snow removal for homes, businesses, and HOAs, from a locally owned Northeast Ohio business.",
     address: {
       "@type": "PostalAddress",
       addressLocality: serviceArea.primary,
