@@ -39,8 +39,8 @@ export const content = {
       { label: "Gutters", slug: "gutter-cleaning" },
       { label: "Snow", slug: "snow-removal" },
     ],
-    trust: ["Three-person local crew", "Fair prices", "Great reviews around the neighborhood"],
-    trustLabel: "Why neighbors hire us",
+    trust: ["Locally owned and operated", "Clear, upfront pricing", "Great reviews from local customers"],
+    trustLabel: "Why customers hire us",
     image: {
       src: "/images/hero-leaf-blowing.jpg",
       alt: "A crew member with a backpack blower sending a wave of red fall leaves across a lawn",
@@ -61,7 +61,7 @@ export const content = {
     eyebrow: "Services",
     headline: ["Yard work,", "handled"],
     intro:
-      "Pick what you need and we'll take care of it. Every job is done by the same three of us, start to finish.",
+      "Pick what you need, from a single service to the whole property, and we'll take care of it. Our own crew handles every job, start to finish.",
     featuredSlug: "fall-cleanup",
     featuredLabel: "In season now",
     includesLabel: "Includes",
@@ -79,15 +79,15 @@ export const content = {
 
   whyUs: {
     eyebrow: "Why us",
-    headline: ["Local students.", "Real work."],
+    headline: ["Local crew.", "Real work."],
     paragraphs: [
-      "We're three local high school students who take yard work seriously. We show up, do the job right, and charge a fair price for it.",
-      "There's a good chance you've already seen our work. Plenty of the neighborhood has, and they keep telling their neighbors about us.",
+      "We're a local crew that takes property care seriously. We show up when we say we will, do the job right, and charge a fair price for it.",
+      "There's a good chance you've already seen our work. Our customers keep recommending us to the people around them.",
     ],
     points: [
       { title: "Quality work", body: "Crisp edges, clean beds, and no leaves left in the corners." },
-      { title: "Fair prices", body: "An honest price for the job, every time." },
-      { title: "Neighborhood reviewed", body: "Lots of happy customers nearby. Ask around." },
+      { title: "Fair prices", body: "A clear, honest price before any work starts." },
+      { title: "Well reviewed", body: "Lots of happy customers across the area." },
     ],
   },
 
@@ -287,7 +287,7 @@ export const content = {
   },
 
   footer: {
-    blurb: "Lawn care, fall cleanup, gutters, and snow removal from three local students who do it right.",
+    blurb: "Lawn care, fall cleanup, gutters, and snow removal from a local crew that does it right.",
     linksHeading: "Explore",
     contactHeading: "Get in touch",
     areaHeading: "Service area",
@@ -296,6 +296,6 @@ export const content = {
   seo: {
     title: `${siteConfig.name} | Lawn Care, Fall Cleanup & Snow Removal in Northeast Ohio`,
     description:
-      "Lawn mowing, fall leaf cleanup, gutter cleaning, and snow removal in Northeast Ohio and Cleveland's west-side suburbs. Three-person local crew, fair prices, great neighborhood reviews.",
+      "Lawn mowing, fall leaf cleanup, gutter cleaning, and snow removal in Northeast Ohio and Cleveland's west-side suburbs. Locally owned crew, upfront pricing, and great reviews from local customers.",
   },
 } as const;

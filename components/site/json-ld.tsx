@@ -16,7 +16,7 @@ export function LocalBusinessJsonLd() {
     image: `${siteConfig.url}/logo.png`,
     logo: `${siteConfig.url}/logo.png`,
     description:
-      "Lawn mowing, fall cleanup, leaf removal, gutter cleaning, and snow removal by a three-person local crew.",
+      "Lawn mowing, fall cleanup, leaf removal, gutter cleaning, and snow removal by a locally owned crew.",
     address: {
       "@type": "PostalAddress",
       addressLocality: serviceArea.primary,

@@ -7,7 +7,7 @@ import { Reveal } from "@/components/site/reveal";
 import { SectionHeading } from "@/components/site/section-heading";
 import { content } from "@/lib/content";
 
-// In content order: quality work, fair prices, neighborhood reviewed.
+// In content order: quality work, fair prices, well reviewed.
 const pointIcons = [Award, Tag, Users];
 
 /** The story on the left, the three reasons as ruled rows on the right: reading copy stays left-aligned. */

@@ -61,7 +61,7 @@ export const defaultBusiness: BusinessContext = {
   phone: "(440) 823-5545",
   services: ["Lawn mowing", "Edging", "Fall leaf cleanup", "Gutter cleaning", "Snow removal"],
   voice:
-    "Three local high-school students who do quality work at fair prices. Friendly, plain-spoken, neighborly. " +
+    "A local crew that does quality work at fair, upfront prices. Professional, plain-spoken, friendly. " +
     "No hype, no emojis, no em dashes.",
 };
 
