@@ -44,7 +44,7 @@ export const content = {
     trustLabel: "Why customers hire us",
     image: {
       src: "/images/hero-leaf-blowing.jpg",
-      alt: "A crew member with a backpack blower sending a wave of red fall leaves across a lawn",
+      alt: "A crew member with a backpack blower clearing leaves from a lawn under bright fall trees",
     },
   },
 
@@ -119,7 +119,7 @@ export const content = {
         serviceSlug: "lawn-mowing",
         image: {
           src: "/images/mower-lawn.jpg",
-          alt: "A push mower low in the grass, mid-cut, with a clean stripe of short lawn behind it",
+          alt: "A crew member mowing clean stripes into a front lawn",
         },
       },
       {
@@ -129,7 +129,7 @@ export const content = {
         serviceSlug: "fall-cleanup",
         image: {
           src: "/images/fall-leaves-lawn.jpg",
-          alt: "Oak leaves in rust and gold blanketing a green lawn",
+          alt: "Two crew members with backpack blowers clearing leaves off a lawn toward the curb",
         },
       },
       {
