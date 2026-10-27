@@ -92,8 +92,13 @@ export default async function LeadPage({ params }: { params: { id: string } }) {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle className="text-base">Customer</CardTitle>
+            {customer ? (
+              <Link href={`/admin/customers/${customer.id}`} className="text-sm text-ink underline underline-offset-4">
+                Edit
+              </Link>
+            ) : null}
           </CardHeader>
           <CardContent>
             {customer ? (

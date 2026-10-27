@@ -145,7 +145,7 @@ Sidebar: Approval inbox (home, with pending count), Ads, Leads, Quotes, Schedule
 - **Schedule:** week view, owner windows, jobs colored by status, drag to move (re-check crew availability on drop), weather holds.
 - **Availability:** edit owner windows + exceptions; view every crew member's blocks and pending time-off requests (approve/decline).
 - **Employees:** invite crew (magic link), rate, max hours, hours this week, cash payout log ("mark paid").
-- **Customer log:** history, jobs, messages, opt-ins, snow list.
+- **Customer log:** history, jobs, messages, opt-ins, snow list. Name, email, phone, address and parcel number stay editable (a changed address re-finds the map pin).
 - **Money:** Stripe revenue (from webhook), payouts, expenses → profit per job / week / month.
 - **Autopilot rules:** per-kind toggles + thresholds (e.g. auto-send quotes under $[X]). All off by default.
 - **Fleet:** each worker's heartbeat, CPU/RAM/temp, current task, last error.

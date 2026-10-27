@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { requireOwner } from "@/lib/auth/session"
+import type { Customer } from "@/lib/db/types"
+import { geocode } from "@/lib/geo"
 import { check, formatPhone, normalizePhone, upsertCustomer } from "@/lib/ops"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
@@ -10,30 +12,94 @@ export type ActionResult = { ok: true; message?: string } | { ok: false; reason:
 
 const idSchema = z.string().regex(/^[0-9a-f-]{36}$/i, "Bad id")
 
-const patchSchema = z.object({
-  notes: z.string().max(5000).nullable(),
+/** Optional free text: trimmed, and empty becomes null. */
+const optionalText = (max: number, tooLong: string) =>
+  z
+    .string()
+    .trim()
+    .max(max, tooLong)
+    .transform((v) => v || null)
+    .nullable()
+
+/** Everything the owner can edit on the customer page. Stored the same way the quote form stores it. */
+const customerSchema = z.object({
+  name: z.string().trim().min(1, "Name is required.").max(120, "Keep the name under 120 characters."),
+  /** Lower-cased, so the quote form's lookup by email keeps finding this customer. */
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(254, "That email is too long.")
+    .refine((v) => v === "" || z.email().safeParse(v).success, "That email doesn't look right.")
+    .transform((v) => v || null)
+    .nullable(),
+  /** 10 digits (US), so the price log and the quote form keep matching this customer by phone. */
+  phone: z
+    .string()
+    .trim()
+    .max(40, "That phone number is too long.")
+    .refine((v) => v === "" || normalizePhone(v).length === 10, "Enter a 10-digit phone number.")
+    .transform((v) => (v ? normalizePhone(v) : null))
+    .nullable(),
+  /** One line, "123 Main St, Rocky River, OH 44116": what the geocoder and Stripe Tax read. */
+  address: optionalText(200, "Keep the address under 200 characters."),
+  parcel_id: optionalText(80, "Keep the parcel number under 80 characters."),
+  notes: optionalText(5000, "Keep the notes under 5,000 characters."),
   email_opt_in: z.boolean(),
   sms_opt_in: z.boolean(),
   snow_list: z.boolean(),
   lot_acres: z.number().min(0).max(1000).nullable(),
   tree_cover: z.enum(["none", "light", "medium", "heavy"]).nullable(),
 })
+const patchSchema = customerSchema.partial()
 
-export type CustomerPatch = z.infer<typeof patchSchema>
+type CustomerFields = z.input<typeof customerSchema>
+/** Any subset of the editable fields: only the keys sent are written. */
+export type CustomerPatch = Partial<CustomerFields>
+/** The Contact card. */
+export type CustomerContact = Pick<CustomerFields, "name" | "email" | "phone" | "address" | "parcel_id">
+/** The Preferences & property card. */
+export type CustomerPrefs = Omit<CustomerFields, keyof CustomerContact>
 
-/** Owner edits from the customer log (notes, opt-ins, snow list, lot size, tree cover). */
+/** Best-effort address -> lat/lng: null when no geocoder is set up, nothing matches, it errors, or it takes over 4 s. */
+async function findCoords(address: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const hit = await Promise.race([geocode(address), new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000))])
+    return hit ? { lat: hit.lat, lng: hit.lng } : null
+  } catch (e) {
+    console.error("[customers] geocode failed:", e instanceof Error ? e.message : e)
+    return null
+  }
+}
+
+/**
+ * Owner edits from the customer page: name, email, phone, address and parcel number (the Contact
+ * card), or notes, opt-ins, snow list, lot size and tree cover (Preferences & property). Each card
+ * sends only its own fields, so saving one never overwrites the other.
+ */
 export async function updateCustomer(id: string, patch: CustomerPatch): Promise<ActionResult> {
   await requireOwner()
   if (!idSchema.safeParse(id).success) return { ok: false, reason: "Invalid customer." }
   const parsed = patchSchema.safeParse(patch)
   if (!parsed.success) return { ok: false, reason: parsed.error.issues[0]?.message ?? "Invalid values." }
+  const data = Object.fromEntries(Object.entries(parsed.data).filter(([, v]) => v !== undefined)) as Partial<Customer>
+  if (Object.keys(data).length === 0) return { ok: true, message: "Nothing to save." }
   try {
     const db = requireSupabaseAdmin()
-    const data = { ...parsed.data, notes: parsed.data.notes?.trim() ? parsed.data.notes.trim() : null }
+    const current = check(await db.from("customers").select("address").eq("id", id).maybeSingle(), "load customer")
+    if (!current) return { ok: false, reason: "Customer not found." }
+    // A different address makes the old map pin wrong: find the new one now, or clear it so the
+    // fleet's quote task looks it up (fleet/tasks/quote.ts) next time it prices this customer.
+    if (data.address !== undefined && data.address !== current.address) {
+      const coords = data.address ? await findCoords(data.address) : null
+      data.lat = coords?.lat ?? null
+      data.lng = coords?.lng ?? null
+    }
     const rows = check(await db.from("customers").update(data).eq("id", id).select("id"), "update customer")
     if (!rows?.length) return { ok: false, reason: "Customer not found." }
     revalidatePath(`/admin/customers/${id}`)
-    revalidatePath("/admin/customers")
+    // Name and address show on the quote, lead, schedule and inbox pages too.
+    revalidatePath("/admin", "layout")
     return { ok: true, message: "Customer saved." }
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : String(e) }

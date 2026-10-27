@@ -79,6 +79,14 @@ export default async function QuotePage({ params }: { params: { id: string } }) 
             <Link className="underline" href={`/admin/leads/${quote.lead_id}`}>
               View lead
             </Link>
+            {customer ? (
+              <>
+                {" · "}
+                <Link className="underline" href={`/admin/customers/${customer.id}`}>
+                  Edit customer
+                </Link>
+              </>
+            ) : null}
           </>
         }
         actions={canRefund ? <RefundButton quoteId={quote.id} amount={quote.price_total} /> : null}

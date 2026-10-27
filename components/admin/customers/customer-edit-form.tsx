@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { updateCustomer, type CustomerPatch } from "@/app/admin/actions/customers"
+import { updateCustomer, type CustomerPrefs } from "@/app/admin/actions/customers"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -10,7 +10,8 @@ import { NativeSelect } from "@/components/ui/native-select"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/toast"
 
-export function CustomerEditForm({ id, initial }: { id: string; initial: CustomerPatch }) {
+/** The Preferences & property card: notes, opt-ins, snow list, lot size and tree cover. */
+export function CustomerEditForm({ id, initial }: { id: string; initial: CustomerPrefs }) {
   const { toast } = useToast()
   const [pending, startTransition] = React.useTransition()
   const [v, setV] = React.useState(initial)
@@ -56,7 +57,7 @@ export function CustomerEditForm({ id, initial }: { id: string; initial: Custome
           <NativeSelect
             id="c-trees"
             value={v.tree_cover ?? ""}
-            onChange={(e) => setV((s) => ({ ...s, tree_cover: (e.target.value || null) as CustomerPatch["tree_cover"] }))}
+            onChange={(e) => setV((s) => ({ ...s, tree_cover: (e.target.value || null) as CustomerPrefs["tree_cover"] }))}
           >
             <option value="">Unknown</option>
             <option value="none">None</option>
@@ -78,7 +79,7 @@ export function CustomerEditForm({ id, initial }: { id: string; initial: Custome
         />
       </div>
       <Button type="submit" disabled={pending}>
-        {pending ? "Saving…" : "Save customer"}
+        {pending ? "Saving…" : "Save preferences"}
       </Button>
     </form>
   )
