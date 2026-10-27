@@ -8,7 +8,9 @@ change, apart from the image's description (`alt`) in `lib/content.ts`.
 Every photo is cropped to a **circle** inside the logo's thin green ring, so keep the subject in the middle
 of the frame: the top, bottom and corners get cropped away. Square works best; a vertical (portrait)
 photo is centered. Aim for at least **1200 × 1200 px**, JPG. Keep yard signs, school or team logos and
-house numbers out of the shot.
+house numbers out of the shot. The current crops are smaller (585 to 936 px) because the copies we were
+sent were compressed by the messaging app; the full-size originals off the phone would look sharper,
+the hero most of all.
 
 | File | Where it shows | What to shoot |
 | --- | --- | --- |
