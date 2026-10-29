@@ -41,3 +41,6 @@ next-env.d.ts
 /fleet/dist
 /fleet/node_modules
 /fleet/.env
+
+# fleet/update.sh marker on the boxes
+.fleet-installed

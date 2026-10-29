@@ -10,7 +10,13 @@ Use the role name as the instance (ads, quotes, scheduler, followup, host) so
 
 Logs:    journalctl -u fleet-worker@quotes -f
 Status:  systemctl status fleet-worker@quotes
-Restart: sudo systemctl restart fleet-worker@quotes   (after a git pull or env change)
+Restart: sudo systemctl restart fleet-worker@quotes   (after an env change)
+
+fleet-update.timer + fleet-update.service keep /opt/fleet on the installed branch (main):
+every 10 minutes fleet/update.sh fetches it and, when it moved, resets the checkout, runs
+npm ci if the lockfile changed and restarts the fleet-worker@ units. Install both files the
+same way, then `sudo systemctl enable --now fleet-update.timer`.
+Force: sudo systemctl start fleet-update      Pause: FLEET_AUTO_UPDATE=0 in /etc/fleet/update.conf
 
 The unit runs as the unprivileged `fleet` user with a read-only /opt/fleet and a private /tmp.
 Full setup: /opt/fleet/fleet/README.md.
