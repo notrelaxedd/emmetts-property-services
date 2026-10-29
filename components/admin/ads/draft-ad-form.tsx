@@ -69,7 +69,7 @@ export function DraftAdForm() {
               value={offer}
               maxLength={300}
               onChange={(e) => setOffer(e.target.value)}
-              placeholder="e.g. $20 off first fall cleanup"
+              placeholder="e.g. $20 off first fall cleanup (blank = the site's current headline)"
             />
           </div>
           <Button type="submit" disabled={pending}>
