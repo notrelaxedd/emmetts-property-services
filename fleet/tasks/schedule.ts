@@ -8,18 +8,23 @@
  *   weather hold and still proposed / confirmed / booked is taken off its day (→ `unscheduled`, live
  *   assignments `dropped`, `weather_hold_date` remembered) and re-planned. Other marks (drop, decline,
  *   time off) keep the slot: the cover pass below fills the gap. Marks are cleared after the run.
- * - Every `unscheduled` job is solved (so the 15-minute sweep catches stragglers). A job still on
- *   weather hold keeps its held day closed (`closedDates`) until it is re-proposed, which also
- *   clears the hold.
+ * - `unscheduled` jobs are solved only when the owner wants automatic placement
+ *   (`settings.auto_schedule`) or asked for suggestions ("Run scheduler now", reason `owner_requested`).
+ *   By default the owner drags jobs onto the calendar (lib/ops/booking.ts). A job still on weather
+ *   hold keeps its held day closed (`closedDates`) until it is re-proposed, which also clears the hold.
+ *   A proposal asks the crew by email and raises the "Call <customer> to confirm" card, exactly like a
+ *   hand placement.
  * - Jobs with a declined / dropped crew member and too few holding crew get a cover offer for the
  *   SAME slot (`findCover`); if nobody fits, the owner gets a `needs_cover` booking card.
  * - Jobs on `owner_hold` (owner rejected the slot or marked a card handled) are left alone.
  * - Informational cards are only raised again when their text changes (no fresh card every sweep
  *   for something the owner already saw).
  */
-import type { AssignmentStatus, Customer, Job, JobAssignment } from "../../lib/db/types";
+import type { AssignmentStatus, Customer, Job, JobAssignment, Settings } from "../../lib/db/types";
 import { createApproval } from "../../lib/ops/approvals";
 import type { CreateApprovalInput } from "../../lib/ops/approvals";
+import { raiseCallToConfirm } from "../../lib/ops/booking";
+import { newRespondToken, notifyOffers } from "../../lib/ops/crew-offers";
 import { tryTransitionJob, withdrawBookingRequests } from "../../lib/ops/jobs";
 import { getSettings } from "../../lib/ops/settings";
 import { check } from "../../lib/ops/types";
@@ -38,6 +43,8 @@ const OPEN: Job["status"][] = ["unscheduled", ...SCHEDULED];
 
 export type ScheduleResult = {
   reason: string;
+  /** Whether unscheduled jobs were placed this run (`settings.auto_schedule`, or the owner asked). */
+  auto_place: boolean;
   /** Marked jobs picked up this run (owner-held ones excluded). */
   resolved: number;
   reset: number;
@@ -119,9 +126,15 @@ function withTimes(assignments: JobAssignment[], jobs: Job[]): ExistingAssignmen
 
 /**
  * Read everything `solve` needs. `closedDates` come from the reset step; days of jobs still on
- * weather hold (`weather_hold_date`, today or later) are added. Owner-held jobs are not solved.
+ * weather hold (`weather_hold_date`, today or later) are added. Owner-held jobs are not solved, and
+ * with `placeNew` false (the default flow: the owner drags jobs onto the calendar) nothing is.
  */
-export async function gatherSchedulerInput(db: Db, now: Date, closedDates: string[] = []): Promise<Gathered> {
+export async function gatherSchedulerInput(
+  db: Db,
+  now: Date,
+  closedDates: string[] = [],
+  opts: { placeNew?: boolean; settings?: Settings } = {},
+): Promise<Gathered> {
   const unscheduled = check(await db.from("jobs").select("*").eq("status", "unscheduled"), "schedule(unscheduled)") ?? [];
   const scheduledJobs = check(await db.from("jobs").select("*").in("status", SCHEDULED), "schedule(scheduled)") ?? [];
   const scheduledIds = scheduledJobs.map((j) => j.id);
@@ -140,7 +153,7 @@ export async function gatherSchedulerInput(db: Db, now: Date, closedDates: strin
     check(await db.from("crew_exceptions").select("*").eq("status", "approved"), "schedule(crew exceptions)") ?? []
   ).filter((e) => e.date_to >= today);
 
-  const toSolve = unscheduled.filter((j) => !j.owner_hold);
+  const toSolve = opts.placeNew === false ? [] : unscheduled.filter((j) => !j.owner_hold);
   const closed = [...closedDates];
   for (const j of toSolve) {
     const day = j.weather_hold ? j.weather_hold_date?.slice(0, 10) : null;
@@ -150,7 +163,7 @@ export async function gatherSchedulerInput(db: Db, now: Date, closedDates: strin
   const customerIds: string[] = [];
   for (const j of unscheduled.concat(scheduledJobs)) if (!customerIds.includes(j.customer_id)) customerIds.push(j.customer_id);
   const { rows, info } = await loadCustomers(db, customerIds);
-  const settings = await getSettings(db);
+  const settings = opts.settings ?? (await getSettings(db));
 
   return {
     input: {
@@ -178,9 +191,9 @@ export async function offerAssignment(db: Db, jobId: string, crewId: string): Pr
     await db.from("job_assignments").select("*").eq("job_id", jobId).eq("crew_id", crewId).maybeSingle(),
     "schedule(assignment lookup)",
   );
-  const fields = { status: "offered" as const, responded_at: null, swap_to_crew_id: null };
+  const fields = { status: "offered" as const, responded_at: null, swap_to_crew_id: null, notified_at: null };
   if (prev) check(await db.from("job_assignments").update(fields).eq("id", prev.id), "schedule(re-offer)");
-  else check(await db.from("job_assignments").insert({ job_id: jobId, crew_id: crewId, ...fields }), "schedule(offer)");
+  else check(await db.from("job_assignments").insert({ job_id: jobId, crew_id: crewId, respond_token: newRespondToken(), ...fields }), "schedule(offer)");
 }
 
 /**
@@ -217,11 +230,14 @@ export async function runSchedule(ctx: TaskContext, payload: SchedulePayload): P
   const { db } = ctx;
   const now = ctx.now();
   // `payload.job_ids` is only a hint now: the marks on the job rows are the source of truth.
+  const settings = await getSettings(db);
+  const placeNew = settings.auto_schedule || payload.reason === "owner_requested";
   const marked = await loadMarkedJobs(db);
   const { reset, closedDates } = await resetWeatherHeld(db, marked, ctx.worker);
-  const g = await gatherSchedulerInput(db, now, closedDates);
+  const g = await gatherSchedulerInput(db, now, closedDates, { placeNew, settings });
   const out: ScheduleResult = {
     reason: payload.reason,
+    auto_place: placeNew,
     resolved: marked.length,
     reset: reset.length,
     considered: g.input.jobs.length,
@@ -248,6 +264,9 @@ export async function runSchedule(ctx: TaskContext, payload: SchedulePayload): P
       });
       if (!moved) continue;
       for (const crewId of p.crew_ids) await offerAssignment(db, p.job_id, crewId);
+      // Same as a hand placement: the crew hear by email, the owner gets the "call to confirm" card.
+      await notifyOffers(db, moved, { siteUrl: ctx.siteUrl });
+      await raiseCallToConfirm(db, moved.id, { actor: ctx.worker });
       out.proposed++;
     }
     for (const u of result.unschedulable) {
@@ -329,12 +348,13 @@ async function coverPass(ctx: TaskContext, g: Gathered, now: Date, out: Schedule
       exclude.push(cover.crew_id);
       existing.push({
         id: `pending-${job.id}-${cover.crew_id}`, created_at: now.toISOString(), updated_at: now.toISOString(), job_id: job.id,
-        crew_id: cover.crew_id, status: "offered", responded_at: null, swap_to_crew_id: null, start_at: job.start_at as string,
-        end_at: job.end_at as string, est_minutes: job.est_minutes, customer_id: job.customer_id,
+        crew_id: cover.crew_id, status: "offered", responded_at: null, swap_to_crew_id: null, respond_token: "", notified_at: null,
+        start_at: job.start_at as string, end_at: job.end_at as string, est_minutes: job.est_minutes, customer_id: job.customer_id,
       });
       out.covers++;
       ctx.log.info("cover offered", { job: job.id, crew: cover.crew_id, why: cover.reason });
     }
+    if (missing - short > 0) await notifyOffers(db, job, { siteUrl: ctx.siteUrl });
     if (short > 0) {
       const name = g.customers[job.customer_id]?.name ?? (await customerName(db, job.customer_id));
       await raiseInfoCard(db, "needs_cover", {

@@ -29,8 +29,9 @@ export const rejectCrewChange: ApprovalHandler = async (db, approval) => {
 /** Owner doesn't want this quote sent: quote declined, lead lost. */
 export const rejectQuote: ApprovalHandler = async (db, approval) => {
   const quoteId = String(approval.payload.quote_id ?? approval.ref_id);
-  const quote = check(await db.from("quotes").select("id,lead_id,status").eq("id", quoteId).maybeSingle(), "rejectQuote(quote)");
-  if (!quote || quote.status === "accepted") return;
+  const quote = check(await db.from("quotes").select("id,lead_id,status,paid_at").eq("id", quoteId).maybeSingle(), "rejectQuote(quote)");
+  // A quote the customer confirmed by phone, or paid, is not declined by rejecting a card about it.
+  if (!quote || quote.status === "accepted" || quote.paid_at) return;
   check(await db.from("quotes").update({ status: "declined" }).eq("id", quoteId), "rejectQuote(update)");
   check(await db.from("leads").update({ status: "lost" }).eq("id", quote.lead_id), "rejectQuote(lead)");
 };

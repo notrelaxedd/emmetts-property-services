@@ -160,20 +160,20 @@ async function adContext(db: Db, approval: Approval): Promise<InboxContext> {
 
 async function bookingContext(db: Db, approval: Approval): Promise<InboxContext> {
   const jobId = refOf(approval, "job_id", "jobs")
-  const empty = { kind: "booking" as const, job: null, scheduleReason: null, customer: null, crew: [], services: [] }
+  const empty = { kind: "booking" as const, job: null, scheduleReason: null, customer: null, crew: [], services: [], quote: null, crewSize: 1 }
   if (!jobId) return { ...empty, error: "No job_id on this approval." }
   const job = check(await db.from("jobs").select("*").eq("id", jobId).maybeSingle(), "inbox(booking job)")
   if (!job) return { ...empty, error: "The job no longer exists." }
-  const [customer, assignmentsRes, itemsRes] = await Promise.all([
+  const [customer, assignmentsRes, itemsRes, quoteRes] = await Promise.all([
     customerById(db, job.customer_id),
     db.from("job_assignments").select("*").eq("job_id", jobId),
-    job.quote_id
-      ? db.from("quote_items").select("*").eq("quote_id", job.quote_id).in("status", ["auto", "priced"])
-      : Promise.resolve({ data: [] as QuoteItem[], error: null }),
+    job.quote_id ? db.from("quote_items").select("*").eq("quote_id", job.quote_id) : Promise.resolve({ data: [] as QuoteItem[], error: null }),
+    job.quote_id ? db.from("quotes").select("*").eq("id", job.quote_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
   ])
-  const assignments = (check(assignmentsRes, "inbox(booking crew)") ?? []).filter(
-    (a) => a.status !== "declined" && a.status !== "dropped",
-  )
+  // Declined answers are shown too ("can't make it"); only dropped rows are history.
+  const assignments = (check(assignmentsRes, "inbox(booking crew)") ?? []).filter((a) => a.status !== "dropped")
+  const allItems = (check(itemsRes, "inbox(booking items)") ?? []).sort(bySort)
+  const quoteRow = check(quoteRes, "inbox(booking quote)")
   // Swap rows: crew_id = person being offered, swap_to_crew_id = person handing over.
   const names = await profileNames(db, [
     ...assignments.map((a) => a.crew_id),
@@ -186,11 +186,22 @@ async function bookingContext(db: Db, approval: Approval): Promise<InboxContext>
     scheduleReason: job.schedule_reason,
     customer: customerSummary(customer),
     crew: assignments.map((a) => ({
+      id: a.crew_id,
       name: names.get(a.crew_id) ?? "Unknown crew",
       status: a.status,
       swapFrom: a.status === "swap_offered" && a.swap_to_crew_id ? (names.get(a.swap_to_crew_id) ?? "another crew member") : null,
     })),
-    services: (check(itemsRes, "inbox(booking items)") ?? []).sort(bySort).map((i) => i.description),
+    services: allItems.filter((i) => i.status === "auto" || i.status === "priced").map((i) => i.description),
+    quote: quoteRow
+      ? {
+          id: quoteRow.id,
+          price_total: Number(quoteRow.price_total),
+          payment_method: quoteRow.payment_method,
+          paid_at: quoteRow.paid_at,
+          needs_owner: allItems.some((i) => i.status === "needs_owner"),
+        }
+      : null,
+    crewSize: job.crew_size,
   }
 }
 
@@ -312,7 +323,7 @@ function emptyContext(kind: ApprovalKind, error: string): InboxContext {
     case "ad":
       return { kind, ad: null, error }
     case "booking":
-      return { kind, job: null, scheduleReason: null, customer: null, crew: [], services: [], error }
+      return { kind, job: null, scheduleReason: null, customer: null, crew: [], services: [], quote: null, crewSize: 1, error }
     case "followup":
       return { kind, messages: [], recipients: [], error }
     case "crew_change":

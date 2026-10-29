@@ -1,17 +1,19 @@
 /**
- * Phase 9 end-to-end flow in a real browser, against a real Supabase project + Stripe TEST keys:
+ * End-to-end flow in a real browser, against a real Supabase project + Stripe TEST keys:
  *
- *   /quote form → quote task → owner prices the custom item + approves the quote in /admin →
- *   signed `checkout.session.completed` POSTed to /api/stripe/webhook → job on /admin/schedule →
- *   schedule task → crew accepts in /crew/offers → owner books in /admin → crew starts + completes
- *   in /crew/jobs/<id> → review task → review card in /admin.
+ *   /quote form → quote task (job on the schedule's rail) → owner prices the custom item in /admin →
+ *   owner puts the job on the calendar from /admin/schedule (crew emailed, "Call … to confirm" card)
+ *   → crew says "I'm available" in /crew/offers → owner books it from the call card (check, after the
+ *   job) → crew starts + completes in /crew/jobs/<id> → owner records the check on the quote page →
+ *   the after-the-job card link: a quote approval → signed `checkout.session.completed` POSTed to
+ *   /api/stripe/webhook marks a second quote paid → review task → review card in /admin.
  *
  * Fleet tasks run IN PROCESS (the same `dispatch` the worker uses, with a service-role client), so
  * no fleet box is needed. With a worker running too (`FLEET_ROLE=quotes npm run fleet`, etc.) the
  * test still passes: it claims a task only while it is `queued` and otherwise waits for the worker.
  *
- * Use a THROWAWAY Supabase project: the scheduler sweeps every unscheduled job and offers work to any
- * crew member, and the test seeds owner windows when there are none.
+ * Use a THROWAWAY Supabase project: placing the job emails every crew member who is free, and the
+ * test seeds owner windows when there are none.
  *
  * Env (test runner):
  *   E2E_SUPABASE_SERVICE_ROLE_KEY  required   service-role key of the test project
@@ -62,6 +64,8 @@ test.describe("ops flow (real Supabase + Stripe test mode)", () => {
     leadId: null as string | null,
     quoteId: null as string | null,
     jobId: null as string | null,
+    extraQuoteIds: [] as string[],
+    extraJobIds: [] as string[],
     stripeEventIds: [] as string[],
     ownerWindowIds: [] as string[],
     crewAvailabilityIds: [] as string[],
@@ -196,23 +200,25 @@ test.describe("ops flow (real Supabase + Stripe test mode)", () => {
       if (error) console.warn(`[e2e cleanup] ${what}: ${error.message}`);
     };
     const { customerId, leadId, quoteId, jobId } = created;
+    const quoteIds = [quoteId, ...created.extraQuoteIds].filter((x): x is string => !!x);
+    const jobIds = [jobId, ...created.extraJobIds].filter((x): x is string => !!x);
     const messageIds = customerId
       ? ((await db.from("messages").select("id").eq("customer_id", customerId)).data ?? []).map((m) => m.id)
       : [];
-    const itemIds = quoteId ? ((await db.from("quote_items").select("id").eq("quote_id", quoteId)).data ?? []).map((i) => i.id) : [];
-    const refs = [quoteId, jobId, ...itemIds, ...messageIds].filter((x): x is string => !!x);
+    const itemIds = quoteIds.length ? ((await db.from("quote_items").select("id").in("quote_id", quoteIds)).data ?? []).map((i) => i.id) : [];
+    const refs = [...quoteIds, ...jobIds, ...itemIds, ...messageIds].filter((x): x is string => !!x);
     if (refs.length) await del("approvals", () => db.from("approvals").delete().in("ref_id", refs));
     if (customerId) await del("messages", () => db.from("messages").delete().eq("customer_id", customerId));
-    if (jobId) {
-      await del("payouts", () => db.from("payouts").delete().eq("job_id", jobId));
-      await del("job_assignments", () => db.from("job_assignments").delete().eq("job_id", jobId));
+    if (jobIds.length) {
+      await del("payouts", () => db.from("payouts").delete().in("job_id", jobIds));
+      await del("job_assignments", () => db.from("job_assignments").delete().in("job_id", jobIds));
     }
     const keys = [leadId && `quote:${leadId}`, leadId && `custom_summary:${leadId}`, jobId && `reminder:${jobId}`, jobId && `review:${jobId}`];
     await del("fleet_tasks", () => db.from("fleet_tasks").delete().in("dedupe_key", keys.filter((k): k is string => !!k)));
     if (jobId) await del("schedule tasks", () => db.from("fleet_tasks").delete().eq("type", "schedule").contains("payload", { job_ids: [jobId] }));
-    if (quoteId) await del("jobs", () => db.from("jobs").delete().eq("quote_id", quoteId));
-    if (quoteId) await del("quote_items", () => db.from("quote_items").delete().eq("quote_id", quoteId));
-    if (quoteId) await del("quotes", () => db.from("quotes").delete().eq("id", quoteId));
+    if (quoteIds.length) await del("jobs", () => db.from("jobs").delete().in("quote_id", quoteIds));
+    if (quoteIds.length) await del("quote_items", () => db.from("quote_items").delete().in("quote_id", quoteIds));
+    if (quoteIds.length) await del("quotes", () => db.from("quotes").delete().in("id", quoteIds));
     if (customerId) await del("leads", () => db.from("leads").delete().eq("customer_id", customerId));
     if (customerId) await del("customers", () => db.from("customers").delete().eq("id", customerId));
     if (created.stripeEventIds.length) await del("stripe_events", () => db.from("stripe_events").delete().in("stripe_event_id", created.stripeEventIds));
@@ -227,7 +233,7 @@ test.describe("ops flow (real Supabase + Stripe test mode)", () => {
 
   // ---------- the flow ----------
 
-  test("form → quote → pay → schedule → crew → book → complete → review card", async ({ page, browser, request }) => {
+  test("form → estimate → calendar → crew → call & book → complete → collect → review card", async ({ page, browser, request }) => {
     test.setTimeout(10 * 60_000);
 
     const { data: service } = await db
@@ -298,104 +304,59 @@ test.describe("ops flow (real Supabase + Stripe test mode)", () => {
         .toBe("draft");
     });
 
-    await test.step("owner approves the quote: Stripe test checkout + email with the durable pay link", async () => {
-      const c = await card(owner, new RegExp(`Quote for ${CUSTOMER_NAME}`));
-      await c.getByRole("button", { name: /approve & send link/i }).click();
-      await expect
-        .poll(async () => (await db.from("quotes").select("status").eq("id", created.quoteId!).single()).data?.status, POLL)
-        .toBe("sent");
-      const { data: msg } = await db.from("messages").select("*").eq("quote_id", created.quoteId!).eq("kind", "quote").single();
-      expect(msg!.status).toBe("sent");
-      expect(msg!.body).toContain(`/quote/pay/${created.quoteId}`);
-      // The emailed link mints a Checkout session; we don't complete it in the browser.
-      const pay = await request.get(`/quote/pay/${created.quoteId}`, { maxRedirects: 0 });
-      expect([302, 303, 307, 308]).toContain(pay.status());
-      expect(pay.headers()["location"]).toMatch(/^https:\/\/checkout\.stripe\.com\//);
-    });
-
-    await test.step("signed checkout.session.completed → quote accepted, paid job", async () => {
-      const { data: quote } = await db.from("quotes").select("*").eq("id", created.quoteId!).single();
-      const eventId = `evt_e2e_${RUN}`;
-      created.stripeEventIds.push(eventId);
-      const payload = JSON.stringify({
-        id: eventId,
-        object: "event",
-        api_version: Stripe.API_VERSION,
-        created: Math.floor(Date.now() / 1000),
-        livemode: false,
-        pending_webhooks: 1,
-        request: { id: null, idempotency_key: null },
-        type: "checkout.session.completed",
-        data: {
-          object: {
-            id: quote!.stripe_checkout_id,
-            object: "checkout.session",
-            mode: "payment",
-            status: "complete",
-            payment_status: "paid",
-            payment_intent: `pi_e2e_${RUN}`,
-            client_reference_id: quote!.id,
-            amount_total: Math.round(quote!.price_total * 100),
-            currency: "usd",
-            metadata: { quote_id: quote!.id, customer_id: quote!.customer_id },
-          },
-        },
-      });
-      const signature = Stripe.webhooks.generateTestHeaderString({ payload, secret: WEBHOOK_SECRET! });
-      const res = await request.post("/api/stripe/webhook", {
-        data: payload,
-        headers: { "content-type": "application/json", "stripe-signature": signature },
-      });
-      expect(res.status(), await res.text()).toBe(200);
-
-      await expect
-        .poll(async () => (await db.from("quotes").select("status").eq("id", created.quoteId!).single()).data?.status, POLL)
-        .toBe("accepted");
+    await test.step("the job is already waiting on the schedule's rail, unpaid; nothing was emailed to the customer", async () => {
       const { data: job } = await db.from("jobs").select("*").eq("quote_id", created.quoteId!).single();
       created.jobId = job!.id;
-      expect(job).toMatchObject({ status: "unscheduled", paid: true, crew_size: 1 });
-      expect((await db.from("leads").select("status").eq("id", created.leadId!).single()).data?.status).toBe("won");
-    });
-
-    await test.step("/admin/schedule shows the unscheduled job", async () => {
+      expect(job).toMatchObject({ status: "unscheduled", paid: false, crew_size: 1 });
+      const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("quote_id", created.quoteId!);
+      expect(count ?? 0).toBe(0);
       await owner.goto("/admin/schedule");
       await expect(owner.getByText(CUSTOMER_NAME).first()).toBeVisible({ timeout: 30_000 });
     });
 
-    await test.step("schedule task (in process) proposes a slot and offers it to the e2e crew member", async () => {
-      await dispatch(ctxFor("scheduler"), {
-        id: crypto.randomUUID(),
-        type: "schedule",
-        payload: { reason: "e2e", job_ids: [created.jobId!] },
-      });
-      const { data: job } = await db.from("jobs").select("*").eq("id", created.jobId!).single();
-      expect(job!.status).toBe("proposed");
-      expect(job!.schedule_reason).toBeTruthy();
+    await test.step("owner puts the job on the calendar from the job dialog: crew emailed, call card raised", async () => {
+      // Next week's Monday 9:00 (inside the seeded / existing owner windows), as the dialog's date + time pickers.
+      const now = new Date();
+      const monday = new Date(now);
+      monday.setUTCDate(now.getUTCDate() + ((8 - now.getUTCDay()) % 7 || 7));
+      const date = monday.toISOString().slice(0, 10);
+      await owner.getByRole("button", { name: new RegExp(CUSTOMER_NAME) }).first().click();
+      const dialog = owner.getByRole("dialog");
+      await dialog.getByLabel(/put it on/i).fill(date);
+      await dialog.getByLabel(/^start$/i).selectOption("540");
+      await dialog.getByRole("button", { name: /put on calendar/i }).click();
+      await expect
+        .poll(async () => (await db.from("jobs").select("status").eq("id", created.jobId!).single()).data?.status, POLL)
+        .toBe("proposed");
       const { data: offers } = await db.from("job_assignments").select("*").eq("job_id", created.jobId!).eq("status", "offered");
-      expect(offers).toHaveLength(1);
-      if (offers![0].crew_id !== crewId) {
-        // A shared project has other crew; hand the offer to ours so the browser can answer it.
-        await db.from("job_assignments").update({ crew_id: crewId }).eq("id", offers![0].id);
-      }
+      expect(offers!.some((o) => o.crew_id === crewId)).toBe(true);
+      await expect
+        .poll(async () => (await db.from("approvals").select("status").eq("kind", "booking").eq("ref_id", created.jobId!).maybeSingle()).data?.status, POLL)
+        .toBe("pending");
     });
 
     const crewPage = await newSignedInPage(browser, CREW_EMAIL, "/crew");
 
-    await test.step("crew accepts the offer in /crew/offers", async () => {
+    await test.step("crew says they're available in /crew/offers", async () => {
       await crewPage.goto("/crew/offers");
       await expect(crewPage.getByText(CUSTOMER_NAME).first()).toBeVisible({ timeout: 30_000 });
-      await crewPage.getByRole("button", { name: /^accept$/i }).first().click();
+      await crewPage.getByRole("button", { name: /i’m available|i'm available/i }).first().click();
       await expect
-        .poll(async () => (await db.from("jobs").select("status").eq("id", created.jobId!).single()).data?.status, POLL)
-        .toBe("crew_confirmed");
+        .poll(async () => (await db.from("job_assignments").select("status").eq("job_id", created.jobId!).eq("crew_id", crewId).single()).data?.status, POLL)
+        .toBe("accepted");
     });
 
-    await test.step("owner books it from the inbox: confirmation sent, reminder queued", async () => {
-      const c = await card(owner, new RegExp(`Book ${CUSTOMER_NAME}`));
-      await c.getByRole("button", { name: /book & confirm customer/i }).click();
+    await test.step("owner calls the customer and books it from the call card (pays by check after the job)", async () => {
+      const c = await card(owner, new RegExp(`Call ${CUSTOMER_NAME}`));
+      await expect(c.getByText(/\(440\) 555-0142/)).toBeVisible();
+      await c.getByLabel(/they.ll pay by/i).selectOption("check");
+      await c.getByRole("button", { name: /customer said yes: book it/i }).click();
       await expect
         .poll(async () => (await db.from("jobs").select("status").eq("id", created.jobId!).single()).data?.status, POLL)
         .toBe("booked");
+      const { data: quote } = await db.from("quotes").select("*").eq("id", created.quoteId!).single();
+      expect(quote).toMatchObject({ status: "accepted", payment_method: "check", paid_at: null });
+      expect((await db.from("leads").select("status").eq("id", created.leadId!).single()).data?.status).toBe("won");
       await expect
         .poll(async () => (await db.from("messages").select("status").eq("job_id", created.jobId!).eq("kind", "confirmation").maybeSingle()).data?.status, POLL)
         .toBe("sent");
@@ -431,6 +392,94 @@ test.describe("ops flow (real Supabase + Stripe test mode)", () => {
       const { data: payouts } = await db.from("payouts").select("*").eq("job_id", created.jobId!);
       expect(payouts).toHaveLength(1);
       expect(payouts![0]).toMatchObject({ hours: 1.5 });
+    });
+
+    await test.step("owner records the check on the quote page: quote + job paid, no card fee", async () => {
+      await owner.goto(`/admin/quotes/${created.quoteId}`);
+      await owner.getByRole("button", { name: /record cash \/ check/i }).click();
+      const dialog = owner.getByRole("dialog");
+      await dialog.getByRole("button", { name: /record payment/i }).click();
+      await expect
+        .poll(async () => (await db.from("quotes").select("paid_at").eq("id", created.quoteId!).single()).data?.paid_at ?? null, POLL)
+        .not.toBeNull();
+      const { data: quote } = await db.from("quotes").select("*").eq("id", created.quoteId!).single();
+      expect(quote).toMatchObject({ status: "accepted", payment_method: "check", fee_total: 0 });
+      expect((await db.from("jobs").select("paid").eq("id", created.jobId!).single()).data?.paid).toBe(true);
+    });
+
+    await test.step("the card path: the pay link redirects to Stripe for a confirmed quote, and a signed checkout.session.completed marks it paid", async () => {
+      // A second, phone-confirmed quote for the same customer whose job is done and who said "card".
+      const { data: q2, error: qErr } = await db
+        .from("quotes")
+        .insert({
+          lead_id: created.leadId!, customer_id: created.customerId!, status: "accepted", price_total: 90, labor_total: 45, fee_total: 2.91, profit_total: 42.09,
+          margin: 0.5, wage: 15, payment_method: "stripe", accepted_at: new Date().toISOString(),
+        })
+        .select("*")
+        .single();
+      if (qErr || !q2) throw qErr ?? new Error("no quote");
+      created.extraQuoteIds.push(q2.id);
+      await db.from("quote_items").insert({ quote_id: q2.id, service_id: service!.id, description: service!.name, is_custom: false, crew_size: 1, est_hours: 1, price: 90, status: "auto", sort_order: 0 });
+      const { data: j2 } = await db
+        .from("jobs")
+        .insert({ quote_id: q2.id, customer_id: created.customerId!, status: "done", paid: false, est_minutes: 60, crew_size: 1, completed_at: new Date().toISOString() })
+        .select("id")
+        .single();
+      if (j2) created.extraJobIds.push(j2.id);
+
+      await owner.goto(`/admin/quotes/${q2.id}`);
+      await owner.getByRole("button", { name: /email card link/i }).click();
+      await owner.getByRole("dialog").getByRole("button", { name: /^send$/i }).click();
+      await expect
+        .poll(async () => (await db.from("quotes").select("stripe_checkout_id").eq("id", q2.id).single()).data?.stripe_checkout_id ?? null, POLL)
+        .not.toBeNull();
+      const { data: msg } = await db.from("messages").select("*").eq("quote_id", q2.id).eq("kind", "quote").single();
+      expect(msg!.status).toBe("sent");
+      expect(msg!.body).toContain(`/quote/pay/${q2.id}`);
+      // Still accepted (confirmed), not paid: the link is how it gets paid.
+      expect((await db.from("quotes").select("status,paid_at").eq("id", q2.id).single()).data).toMatchObject({ status: "accepted", paid_at: null });
+      const pay = await request.get(`/quote/pay/${q2.id}`, { maxRedirects: 0 });
+      expect([302, 303, 307, 308]).toContain(pay.status());
+      expect(pay.headers()["location"]).toMatch(/^https:\/\/checkout\.stripe\.com\//);
+
+      const { data: quote } = await db.from("quotes").select("*").eq("id", q2.id).single();
+      const eventId = `evt_e2e_${RUN}`;
+      created.stripeEventIds.push(eventId);
+      const payload = JSON.stringify({
+        id: eventId,
+        object: "event",
+        api_version: Stripe.API_VERSION,
+        created: Math.floor(Date.now() / 1000),
+        livemode: false,
+        pending_webhooks: 1,
+        request: { id: null, idempotency_key: null },
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            id: quote!.stripe_checkout_id,
+            object: "checkout.session",
+            mode: "payment",
+            status: "complete",
+            payment_status: "paid",
+            payment_intent: `pi_e2e_${RUN}`,
+            client_reference_id: quote!.id,
+            amount_total: Math.round(quote!.price_total * 100),
+            currency: "usd",
+            metadata: { quote_id: quote!.id, customer_id: quote!.customer_id },
+          },
+        },
+      });
+      const signature = Stripe.webhooks.generateTestHeaderString({ payload, secret: WEBHOOK_SECRET! });
+      const res = await request.post("/api/stripe/webhook", {
+        data: payload,
+        headers: { "content-type": "application/json", "stripe-signature": signature },
+      });
+      expect(res.status(), await res.text()).toBe(200);
+      await expect
+        .poll(async () => (await db.from("quotes").select("paid_at").eq("id", q2.id).single()).data?.paid_at ?? null, POLL)
+        .not.toBeNull();
+      expect((await db.from("jobs").select("paid").eq("id", j2!.id).single()).data?.paid).toBe(true);
+      expect((await db.from("jobs").select("id", { count: "exact", head: true }).eq("quote_id", q2.id)).count).toBe(1);
     });
 
     await test.step("review task (in process) drafts the request; the owner sees the review card", async () => {

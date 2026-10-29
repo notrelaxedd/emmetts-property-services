@@ -151,12 +151,29 @@ describe("quoteHandler", () => {
     }
   });
 
-  it("skips an already accepted quote", async () => {
+  it("skips an already paid quote", async () => {
     const db = world();
     db.tables.quotes[0].status = "accepted";
+    db.tables.quotes[0].paid_at = T0;
     await quoteHandler(db, approval(), ctx);
     expect(m.createCheckout).not.toHaveBeenCalled();
     expect(m.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("a quote confirmed by phone (accepted, unpaid): the card link goes out as an after-the-job email and the quote stays accepted", async () => {
+    m.draftMessage.mockRejectedValue(new Error("cap"));
+    const db = world();
+    db.tables.quotes[0].status = "accepted";
+    db.tables.quotes[0].payment_method = "stripe";
+    db.tables.quotes[0].paid_at = null;
+    await quoteHandler(db, approval(), ctx);
+    expect(m.createCheckout).toHaveBeenCalledTimes(1);
+    const msg = db.tables.messages[0];
+    expect(msg.subject).toBe("Your payment link from Emmett's Property Services");
+    expect(String(msg.body)).toMatch(/Thanks for having Emmett's Property Services out/);
+    expect(String(msg.body)).toContain(PAY_URL);
+    expect(db.tables.quotes[0]).toMatchObject({ status: "accepted", paid_at: null });
+    expect(db.tables.quotes[0].sent_at).toBeTruthy();
   });
 });
 
@@ -273,10 +290,12 @@ describe("custom_itemHandler on a quote that has already gone out", () => {
 
 describe("quoteEditLockReason (saveQuote's lock)", () => {
   it("locks sent / accepted / declined quotes and points at the right way out", () => {
-    expect(quoteEditLockReason("sent")).toMatch(/Revise & re-send/);
-    expect(quoteEditLockReason("accepted")).toMatch(/Refund/);
-    expect(quoteEditLockReason("declined")).toMatch(/can't be edited/);
-    for (const s of ["draft", "needs_owner", "expired"] as const) expect(quoteEditLockReason(s)).toBeNull();
+    expect(quoteEditLockReason({ status: "sent" })).toMatch(/Revise & re-send/);
+    expect(quoteEditLockReason({ status: "accepted", paid_at: "2026-01-02T00:00:00Z" })).toMatch(/Refund/);
+    expect(quoteEditLockReason({ status: "declined" })).toMatch(/can't be edited/);
+    // Confirmed by phone but not paid yet: the price is settled when the job is done.
+    expect(quoteEditLockReason({ status: "accepted", paid_at: null })).toBeNull();
+    for (const s of ["draft", "needs_owner", "expired"] as const) expect(quoteEditLockReason({ status: s })).toBeNull();
   });
 });
 

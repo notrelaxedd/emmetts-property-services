@@ -15,6 +15,8 @@ one that has already been applied to the real project).
 | `20261012000500_rls.sql` | Row-level security on every table |
 | `20261012000600_seed.sql` | `settings` row, `services` catalogue, owner windows Mon–Sat 09:00–18:00 |
 | `20261012000700_storage.sql` | Private `lead-photos` bucket + owner-read policy (skipped when there's no `storage` schema) |
+| … | later migrations in filename order (schedule fixes, Stripe invoicing, removed crew, cash / check, flyer workers, price log, service names) |
+| `20261029001700_call_to_confirm.sql` | Pay after the job: `quotes.paid_at`, crew availability email tokens (`job_assignments.respond_token` / `notified_at`), `settings.auto_schedule`; the assignment guard protects the new columns |
 
 ## Who can see what
 

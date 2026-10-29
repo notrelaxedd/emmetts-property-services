@@ -21,6 +21,15 @@ export const dynamic = "force-dynamic"
 export const metadata = { title: "Quote review" }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const JOB_LABEL: Record<string, string> = {
+  unscheduled: "Needs a day",
+  proposed: "On the calendar, call to confirm",
+  crew_confirmed: "Crew free, call to confirm",
+  booked: "Confirmed with customer",
+  in_progress: "In progress",
+  done: "Done",
+  cancelled: "Cancelled",
+}
 
 export default async function QuotePage({ params }: { params: { id: string } }) {
   await requireOwner()
@@ -40,7 +49,7 @@ export default async function QuotePage({ params }: { params: { id: string } }) 
       .in("kind", ["quote", "custom_item"])
       .or(`ref_id.eq.${quote.id},payload->>quote_id.eq.${quote.id}`)
       .order("created_at", { ascending: true }),
-    db.from("jobs").select("id,status,start_at").eq("quote_id", quote.id).order("created_at", { ascending: true }).limit(1).maybeSingle(),
+    db.from("jobs").select("id,status,start_at,completed_at").eq("quote_id", quote.id).order("created_at", { ascending: true }).limit(1).maybeSingle(),
     getSettings(db),
   ])
   const items = check(itemsRes, "quote items") ?? []
@@ -58,7 +67,7 @@ export default async function QuotePage({ params }: { params: { id: string } }) 
   const pendingCustomItemIds = related
     .filter((a) => a.kind === "custom_item" && a.status === "pending")
     .map((a) => (typeof a.payload.quote_item_id === "string" ? a.payload.quote_item_id : a.ref_id))
-  const canRefund = quote.status === "accepted" && !!quote.stripe_payment_intent_id
+  const canRefund = !!quote.paid_at && !!quote.stripe_payment_intent_id
 
   return (
     <div className="space-y-4">
@@ -109,6 +118,7 @@ export default async function QuotePage({ params }: { params: { id: string } }) 
           pendingCustomItemIds={pendingCustomItemIds}
           invoiceDaysDefault={settings.invoice_days_until_due}
           taxEnabled={taxConfig().enabled}
+          job={job}
         />
 
         <aside className="space-y-4">
@@ -158,7 +168,7 @@ export default async function QuotePage({ params }: { params: { id: string } }) 
                 </div>
                 <p className="text-xs text-ink-muted">
                   Stripe test mode. Stripe emailed it{quote.stripe_invoice_id ? ` (${quote.stripe_invoice_id})` : ""} and sends the
-                  reminders; the quote is accepted when it is paid.
+                  reminders; the quote is marked paid when it is paid.
                 </p>
               </CardContent>
             </Card>
@@ -170,10 +180,10 @@ export default async function QuotePage({ params }: { params: { id: string } }) 
                 <CardTitle className="text-base">Job</CardTitle>
               </CardHeader>
               <CardContent className="space-y-1 text-sm">
-                <Badge variant="secondary">{label(job.status)}</Badge>
-                <p className="text-ink-muted">{job.start_at ? dateTime(job.start_at) : "Not scheduled yet"}</p>
+                <Badge variant="secondary">{JOB_LABEL[job.status] ?? label(job.status)}</Badge>
+                <p className="text-ink-muted">{job.start_at ? dateTime(job.start_at) : "Waiting for a day on the schedule's rail"}</p>
                 <Link className="underline" href={`/admin/schedule?job=${job.id}`}>
-                  Open schedule
+                  Open on the schedule
                 </Link>
               </CardContent>
             </Card>

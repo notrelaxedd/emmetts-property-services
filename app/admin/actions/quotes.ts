@@ -11,6 +11,7 @@ import { requireOwner } from "@/lib/auth/session"
 import type { QuoteItem, QuoteItemStatus } from "@/lib/db/types"
 import { createApproval, decideApproval } from "@/lib/ops/approvals"
 import { quoteApprovalInput, quoteEditLockReason } from "@/lib/ops/handlers/custom_item"
+import { PAYMENT_METHOD_LABEL, PAYMENT_METHODS } from "@/lib/ops/payment-methods"
 import { OFFLINE_METHODS, recordOfflinePayment } from "@/lib/ops/payments"
 import { getSettings } from "@/lib/ops/settings"
 import { check } from "@/lib/ops/types"
@@ -20,7 +21,6 @@ import { MAX_DAYS_UNTIL_DUE, voidInvoiceForQuote } from "@/lib/stripe/invoice"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 const Id = z.string().uuid()
-const LOCKED = new Set(["accepted", "declined"])
 
 const ItemSchema = z.object({
   id: Id.optional(),
@@ -76,7 +76,7 @@ export async function saveQuote(quoteId: string, input: SaveQuoteInput): Promise
 
     const quote = check(await db.from("quotes").select("*").eq("id", id).maybeSingle(), "saveQuote(quote)")
     if (!quote) return { ok: false, error: "Quote not found." }
-    const locked = quoteEditLockReason(quote.status)
+    const locked = quoteEditLockReason(quote)
     if (locked) return { ok: false, error: locked }
 
     const existing = check(await db.from("quote_items").select("*").eq("quote_id", id), "saveQuote(items)") ?? []
@@ -176,7 +176,8 @@ async function sendWith(quoteId: string, how: SendMethod): Promise<ActionResult>
     const db = requireSupabaseAdmin()
     const quote = check(await db.from("quotes").select("*").eq("id", id).maybeSingle(), "sendQuote(quote)")
     if (!quote) return { ok: false, error: "Quote not found." }
-    if (LOCKED.has(quote.status)) return { ok: false, error: `This quote is ${quote.status}.` }
+    if (quote.paid_at) return { ok: false, error: "This quote is already paid." }
+    if (quote.status === "declined") return { ok: false, error: "This quote is declined." }
     const [itemsRes, customerRes] = await Promise.all([
       db.from("quote_items").select("*").eq("quote_id", id).order("sort_order", { ascending: true }),
       db.from("customers").select("id,name,email").eq("id", quote.customer_id).maybeSingle(),
@@ -204,7 +205,7 @@ async function sendWith(quoteId: string, how: SendMethod): Promise<ActionResult>
     if (!res.ok) return { ok: false, error: `Approved, but sending failed: ${res.error}` }
     return {
       ok: true,
-      message: how.method === "invoice" ? `Stripe emailed the invoice to ${customer.email}` : `Payment link emailed to ${customer.email}`,
+      message: how.method === "invoice" ? `Stripe emailed the invoice to ${customer.email}` : `Card payment link emailed to ${customer.email}`,
     }
   } catch (e) {
     return { ok: false, error: errorMessage(e) }
@@ -240,7 +241,7 @@ export async function reviseQuote(quoteId: string): Promise<ActionResult> {
     const quote = check(await db.from("quotes").select("id,status,stripe_invoice_id,stripe_invoice_url").eq("id", id).maybeSingle(), "reviseQuote(quote)")
     if (!quote) return { ok: false, error: "Quote not found." }
     if (quote.status !== "sent") {
-      return { ok: false, error: quote.status === "accepted" ? "This quote is paid; refund it instead." : `This quote is ${quote.status}; there's nothing to revise.` }
+      return { ok: false, error: `This quote is ${quote.status === "accepted" ? "confirmed" : quote.status}; there's nothing to revise.` }
     }
     await expireOpenCheckout(db, id)
     if (quote.stripe_invoice_id) await voidInvoiceForQuote(db, id)
@@ -312,14 +313,49 @@ export async function refundQuoteAction(quoteId: string, reason: string): Promis
     const id = Id.parse(quoteId)
     const why = z.string().trim().min(1, "Add a reason for the refund").max(450).parse(reason)
     const db = requireSupabaseAdmin()
-    const quote = check(await db.from("quotes").select("status,stripe_payment_intent_id").eq("id", id).maybeSingle(), "refund(quote)")
+    const quote = check(await db.from("quotes").select("status,paid_at,stripe_payment_intent_id").eq("id", id).maybeSingle(), "refund(quote)")
     if (!quote) return { ok: false, error: "Quote not found." }
-    if (quote.status !== "accepted" || !quote.stripe_payment_intent_id) {
-      return { ok: false, error: "Only paid (accepted) quotes can be refunded." }
+    if (!quote.stripe_payment_intent_id) {
+      return { ok: false, error: "Only quotes paid by card (Stripe) can be refunded here." }
     }
     const res = await refundQuote(db, id, { reason: why })
     revalidateQuote(id)
     return { ok: true, message: res.jobCancelled ? "Refunded and the job was cancelled" : "Refunded" }
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) }
+  }
+}
+
+/**
+ * How the customer said they'll pay (cash, check, or a card link after the job). Normally set when you
+ * confirm the booking on the schedule; change it here if they tell you something different later.
+ */
+export async function setPaymentMethod(quoteId: string, method: string): Promise<ActionResult> {
+  const session = await requireOwner()
+  try {
+    const id = Id.parse(quoteId)
+    const m = z.enum(PAYMENT_METHODS).safeParse(method)
+    if (!m.success) return { ok: false, error: "Pick cash, check or card." }
+    const db = requireSupabaseAdmin()
+    const quote = check(await db.from("quotes").select("*").eq("id", id).maybeSingle(), "setPaymentMethod(quote)")
+    if (!quote) return { ok: false, error: "Quote not found." }
+    if (quote.paid_at) return { ok: false, error: "This quote is already paid." }
+    const settings = await getSettings(db)
+    const feeTotal = m.data === "stripe" ? fee(quote.price_total, settings) : 0
+    check(
+      await db
+        .from("quotes")
+        .update({
+          payment_method: m.data,
+          fee_total: feeTotal,
+          profit_total: moneyRound(quote.price_total - quote.labor_total - feeTotal),
+          rationale: `${quote.rationale ? `${quote.rationale}\n` : ""}[${new Date().toISOString().slice(0, 10)}] Will pay by ${PAYMENT_METHOD_LABEL[m.data].toLowerCase()} after the job (noted by ${actorOf(session)}).`,
+        })
+        .eq("id", id),
+      "setPaymentMethod(update)",
+    )
+    revalidateQuote(id)
+    return { ok: true, message: `Noted: pays by ${PAYMENT_METHOD_LABEL[m.data].toLowerCase()} after the job` }
   } catch (e) {
     return { ok: false, error: errorMessage(e) }
   }

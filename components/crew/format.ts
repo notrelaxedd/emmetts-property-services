@@ -38,16 +38,16 @@ type BadgeVariant = "default" | "secondary" | "outline" | "success" | "warning" 
 
 export const JOB_STATUS_LABEL: Record<JobStatus, { label: string; variant: BadgeVariant }> = {
   unscheduled: { label: "Unscheduled", variant: "outline" },
-  proposed: { label: "Waiting on crew", variant: "outline" },
-  crew_confirmed: { label: "Crew confirmed", variant: "secondary" },
-  booked: { label: "Booked", variant: "success" },
+  proposed: { label: "Waiting on the customer", variant: "outline" },
+  crew_confirmed: { label: "Waiting on the customer", variant: "secondary" },
+  booked: { label: "Confirmed", variant: "success" },
   in_progress: { label: "In progress", variant: "warning" },
   done: { label: "Done", variant: "secondary" },
   cancelled: { label: "Cancelled", variant: "destructive" },
 }
 
 export const ASSIGNMENT_STATUS_LABEL: Record<AssignmentStatus, { label: string; variant: BadgeVariant }> = {
-  offered: { label: "Offer — answer it", variant: "warning" },
+  offered: { label: "Are you free? Answer it", variant: "warning" },
   accepted: { label: "You're on it", variant: "success" },
   declined: { label: "Declined", variant: "outline" },
   swap_offered: { label: "Swap offer", variant: "warning" },

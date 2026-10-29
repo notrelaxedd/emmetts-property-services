@@ -1,16 +1,19 @@
 /**
- * `quote` (role quotes): lead → priced quote + approval card.
+ * `quote` (role quotes): lead → estimated quote + a job on the "Needs a day" rail.
  *
  * Geocode (if needed) → parcel lookup → estimate hours per requested service → price → write
- * `quotes` + `quote_items` → `quote` approval (autopilot may send it) and a `custom_item` approval
- * per item the owner must price. Idempotent per lead: a re-run updates the existing quote in place
- * and never touches items the owner already resolved.
+ * `quotes` + `quote_items` → the job (unscheduled, unpaid: est. minutes + crew from the billed lines)
+ * so the owner can drag it onto /admin/schedule, plus a `custom_item` approval per item the owner must
+ * price. Nothing is emailed to the customer: the owner calls them once a day is picked (lib/ops/booking.ts).
+ * Idempotent per lead: a re-run updates the existing quote in place and never touches items the owner
+ * already resolved.
  */
 import type { Customer, Quote, QuoteItem, Service, Settings } from "../../lib/db/types";
 import { geocode, lookupParcel } from "../../lib/geo";
-import { applyApproval, createApproval, requestApproval } from "../../lib/ops/approvals";
+import { createApproval } from "../../lib/ops/approvals";
 import "../../lib/ops/handlers";
-import { billableItems, quoteApprovalInput, quoteItemInputs } from "../../lib/ops/handlers/custom_item";
+import { billableItems, quoteItemInputs } from "../../lib/ops/handlers/custom_item";
+import { ensureJobForQuote } from "../../lib/ops/jobs";
 import { getSettings } from "../../lib/ops/settings";
 import { enqueueTask } from "../../lib/ops/tasks";
 import { check, one } from "../../lib/ops/types";
@@ -33,8 +36,8 @@ export type QuoteResult = {
   price_total: number;
   items: number;
   custom_items: number;
-  approval_id: string | null;
-  auto_sent: boolean;
+  /** The job waiting on the schedule's rail (null while nothing on the quote has a price). */
+  job_id: string | null;
   skipped?: string;
 };
 
@@ -120,7 +123,7 @@ export async function runQuote(ctx: TaskContext, payload: QuotePayload): Promise
   if (existing && !OPEN_STATUSES.has(existing.status)) {
     return {
       quote_id: existing.id, status: existing.status, price_total: existing.price_total, items: 0, custom_items: 0,
-      approval_id: null, auto_sent: false, skipped: `quote already ${existing.status}`,
+      job_id: null, skipped: `quote already ${existing.status}`,
     };
   }
 
@@ -226,35 +229,14 @@ export async function runQuote(ctx: TaskContext, payload: QuotePayload): Promise
     });
   }
 
-  let approvalId: string | null = null;
-  let autoSent = false;
-  if (billableItems(items).length > 0) {
-    const input = quoteApprovalInput(saved, items, customer.name, ctx.worker);
-    if (status === "needs_owner") {
-      // Never autopilot a quote that still has an unpriced item; the owner sees it next to the custom card.
-      approvalId = (await createApproval(db, input)).id;
-    } else {
-      const { approval, autoApproved } = await requestApproval(db, input, settings);
-      approvalId = approval.id;
-      if (autoApproved) {
-        try {
-          autoSent = await applyApproval(db, approval, { siteUrl: ctx.siteUrl, actor: ctx.worker });
-        } catch (e) {
-          // Put it back in the inbox instead of failing the task (a retry would pile up approvals).
-          const note = `autopilot send failed: ${errorMessage(e)}`.slice(0, 500);
-          ctx.log.warn("autopilot quote send failed", { quote: saved.id, err: note });
-          check(
-            await db.from("approvals").update({ status: "pending", decided_at: null, decided_by: null, decision_note: note }).eq("id", approval.id),
-            "quote(revert autopilot)",
-          );
-        }
-      }
-    }
-  }
+  // ---- the job ----
+  // As soon as something on the quote has a price the job exists (unscheduled, unpaid) and shows on the
+  // schedule's "Needs a day" rail. Custom lines the owner prices later refresh its estimate.
+  const job = billableItems(items).length > 0 ? await ensureJobForQuote(db, saved.id) : null;
 
   check(await db.from("leads").update({ status: "quoted" }).eq("id", lead.id), "quote(lead status)");
   return {
-    quote_id: saved.id, status: autoSent ? "sent" : status, price_total: saved.price_total, items: items.length,
-    custom_items: ownerItems.length, approval_id: approvalId, auto_sent: autoSent,
+    quote_id: saved.id, status, price_total: saved.price_total, items: items.length,
+    custom_items: ownerItems.length, job_id: job?.id ?? null,
   };
 }

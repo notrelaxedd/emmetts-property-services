@@ -2,13 +2,14 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Banknote, Calculator, FileText, MapPin, Plus, RotateCcw, Save, Send, Trash2 } from "lucide-react"
+import { Banknote, CalendarDays, Calculator, CreditCard, FileText, MapPin, Plus, RotateCcw, Save, Trash2 } from "lucide-react"
 import {
   recordCashOrCheckPayment,
   reviseQuote,
   saveQuote,
   sendQuote,
   sendQuoteAsInvoice,
+  setPaymentMethod,
   type SaveQuoteInput,
 } from "@/app/admin/actions/quotes"
 import { ConfirmDialog } from "@/components/admin/inbox/confirm-dialog"
@@ -24,9 +25,13 @@ import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { NumberStepper } from "@/components/ui/number-stepper"
 import { Switch } from "@/components/ui/switch"
-import type { MinutesRule, Quote, QuoteItem, QuoteItemStatus, TreeCover } from "@/lib/db/types"
+import type { JobStatus, MinutesRule, PaymentMethod, Quote, QuoteItem, QuoteItemStatus, TreeCover } from "@/lib/db/types"
+import { PAYMENT_METHOD_LABEL, PAYMENT_METHODS } from "@/lib/ops/payment-methods"
 import { estimateHours, fee, moneyRound, priceQuote, type PricingSettings, type QuoteTotals } from "@/lib/pricing"
 import { cn } from "@/lib/utils"
+
+export type EditorJob = { id: string; status: JobStatus; start_at: string | null; completed_at: string | null }
+const dateFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric" })
 
 export type EditorService = { id: string; name: string; minutes_rule: MinutesRule }
 export type EditorProperty = {
@@ -91,6 +96,7 @@ export function QuoteEditor({
   pendingCustomItemIds,
   invoiceDaysDefault = 7,
   taxEnabled = false,
+  job = null,
 }: {
   quote: Quote
   items: QuoteItem[]
@@ -99,15 +105,19 @@ export function QuoteEditor({
   services: EditorService[]
   customerEmail: string | null
   pendingCustomItemIds: string[]
+  /** The job behind the quote (on the schedule's rail, on the calendar, or done). */
+  job?: EditorJob | null
   /** `settings.invoice_days_until_due`: starting value of the "Send as invoice" stepper. */
   invoiceDaysDefault?: number
   /** STRIPE_TAX_ENABLED on the server: Stripe adds Ohio sales tax on top of the total. */
   taxEnabled?: boolean
 }) {
   const { pending, run } = useActionRunner()
-  // Sent quotes are locked too: the customer already has a price. "Revise & re-send" expires the old
-  // Checkout session and returns the quote to draft so edits can't silently change what they pay.
-  const locked = quote.status === "accepted" || quote.status === "declined" || quote.status === "sent"
+  const paid = !!quote.paid_at
+  // Paid and declined quotes are locked; so is one with a pay link out ("Revise & re-send" expires the old
+  // Checkout session and returns the quote to draft so edits can't silently change what they pay). A quote
+  // confirmed by phone but not paid yet can still be edited: the price is settled when the job is done.
+  const locked = paid || quote.status === "declined" || quote.status === "sent"
 
   const [items, setItems] = React.useState<EditItem[]>(() => initialItems.map(toEdit))
   const [wage, setWage] = React.useState(quote.wage || settings.default_wage)
@@ -166,10 +176,12 @@ export function QuoteEditor({
       }),
     )
 
-  // A sent quote can be re-sent unchanged (customer lost the email); only accepted/declined block sending.
-  const sendBlocker = locked && quote.status !== "sent"
-    ? `Quote is ${quote.status}.`
-    : dirty
+  // A sent quote can be re-sent unchanged (customer lost the email); only paid / declined block sending.
+  const sendBlocker = paid
+    ? "Already paid."
+    : quote.status === "declined"
+      ? "Quote is declined."
+      : dirty
       ? "Save your changes first."
       : needsOwner
         ? "Price, refer or decline the custom item first."
@@ -185,7 +197,10 @@ export function QuoteEditor({
   const plusTax = taxEnabled ? " plus sales tax" : ""
 
   // Cash / check: the customer paid in person. No email needed, and an expired quote can still be paid.
-  const canPayOffline = quote.status !== "accepted" && quote.status !== "declined"
+  const canPayOffline = !paid && quote.status !== "declined"
+  const [method, setMethod] = React.useState<PaymentMethod>(quote.payment_method ?? "check")
+  const jobDone = job?.status === "done"
+  const scheduleHref = job ? `/admin/schedule?job=${job.id}` : "/admin/schedule"
   const offlineBlocker = dirty
     ? "Save your changes first."
     : needsOwner
@@ -460,6 +475,182 @@ export function QuoteEditor({
           </CardContent>
         </Card>
 
+        {/* Payment: collected after the job */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Banknote className="size-4" aria-hidden="true" /> Payment
+            </CardTitle>
+            <CardDescription>
+              Collected once the job is done. The customer tells you cash, check or card when you confirm the day by phone.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="rounded-md bg-paper px-3 py-2 text-sm text-ink">
+              {paid ? (
+                <>
+                  <span className="font-semibold">Paid</span>
+                  {quote.payment_method ? ` by ${PAYMENT_METHOD_LABEL[quote.payment_method].toLowerCase()}` : ""} on {dateFmt.format(new Date(quote.paid_at as string))}.
+                </>
+              ) : jobDone ? (
+                <>
+                  <span className="font-semibold">Job done{job?.completed_at ? ` ${dateFmt.format(new Date(job.completed_at))}` : ""}: collect {money(quote.price_total)}</span>
+                  {quote.payment_method ? ` by ${PAYMENT_METHOD_LABEL[quote.payment_method].toLowerCase()}` : ""}. Record cash or check below, or email the card link.
+                </>
+              ) : quote.status === "accepted" ? (
+                <>
+                  <span className="font-semibold">Confirmed by phone.</span>
+                  {job?.start_at ? ` Job on ${dateFmt.format(new Date(job.start_at))}.` : ""} Collect {money(quote.price_total)}
+                  {quote.payment_method ? ` by ${PAYMENT_METHOD_LABEL[quote.payment_method].toLowerCase()}` : ""} when it&apos;s done.
+                </>
+              ) : quote.status === "sent" ? (
+                <>
+                  <span className="font-semibold">Pay link out.</span> The customer can pay by card any time until it expires.
+                </>
+              ) : (
+                <>
+                  <span className="font-semibold">Not confirmed yet.</span> Put the job on the calendar and call the customer; you&apos;ll record how they&apos;ll pay then.
+                </>
+              )}
+            </p>
+
+            {!paid && quote.status !== "declined" ? (
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="grid gap-1.5">
+                  <Label htmlFor={`method-${quote.id}`}>Customer will pay by</Label>
+                  <NativeSelect id={`method-${quote.id}`} className="w-48" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)} disabled={pending}>
+                    {PAYMENT_METHODS.map((m) => (
+                      <option key={m} value={m}>
+                        {PAYMENT_METHOD_LABEL[m]}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </div>
+                <Button type="button" size="sm" variant="outline" disabled={pending || method === (quote.payment_method ?? null)} onClick={() => void run(() => setPaymentMethod(quote.id, method))}>
+                  Save
+                </Button>
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap items-center gap-2">
+              {canPayOffline ? (
+                <ConfirmDialog
+                  triggerVariant={jobDone && method !== "stripe" ? "cta-green" : "outline"}
+                  trigger={
+                    <>
+                      <Banknote aria-hidden="true" /> Record cash / check
+                    </>
+                  }
+                  disabled={pending || !!offlineBlocker}
+                  title="Record a cash or check payment?"
+                  description={
+                    <>
+                      Use this when the customer paid you in person. It marks the quote and job paid (no card fee) and closes any Stripe payment link or invoice they have.
+                      {taxEnabled ? " Stripe doesn't collect sales tax on cash or check, so account for it yourself." : ""}
+                    </>
+                  }
+                  confirmLabel="Record payment"
+                  confirmDisabled={!(payAmount > 0)}
+                  onConfirm={async () => {
+                    const res = await run(() =>
+                      recordCashOrCheckPayment(quote.id, {
+                        method: payMethod,
+                        amount: payAmount,
+                        check_number: payMethod === "check" && checkNumber.trim() ? checkNumber.trim() : null,
+                      }),
+                    )
+                    return res.ok
+                  }}
+                >
+                  <div className="grid gap-3">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor={payIds.method}>Paid by</Label>
+                      <NativeSelect id={payIds.method} value={payMethod} onChange={(e) => setPayMethod(e.target.value as "cash" | "check")}>
+                        <option value="check">Check</option>
+                        <option value="cash">Cash</option>
+                      </NativeSelect>
+                    </div>
+                    {payMethod === "check" ? (
+                      <div className="grid gap-1.5">
+                        <Label htmlFor={payIds.check}>Check number (optional)</Label>
+                        <Input id={payIds.check} maxLength={40} value={checkNumber} onChange={(e) => setCheckNumber(e.target.value)} />
+                      </div>
+                    ) : null}
+                    <NumberStepper label="Amount received" prefix="$" min={0} step={5} value={payAmount} onChange={setPayAmount} />
+                    {payAmount > 0 && Math.abs(payAmount - quote.price_total) >= 0.01 ? (
+                      <p className="text-xs text-amber-900">
+                        The quote total is {money(quote.price_total)}. The difference is noted on the quote.
+                      </p>
+                    ) : null}
+                  </div>
+                </ConfirmDialog>
+              ) : null}
+              <ConfirmDialog
+                triggerVariant={jobDone && method === "stripe" ? "cta-green" : "outline"}
+                trigger={
+                  <>
+                    <CreditCard aria-hidden="true" /> {quote.sent_at && !paid ? "Re-send card link" : "Email card link"}
+                  </>
+                }
+                disabled={pending || !!sendBlocker}
+                title="Email a card payment link?"
+                description={`Creates a Stripe Checkout link (test mode) for ${money(quote.price_total)}${plusTax} and emails it to ${customerEmail ?? "the customer"}.${quote.status === "accepted" ? " They confirmed by phone, so the email thanks them for the work and gives them the link." : ""}${hasInvoice ? " The open Stripe invoice is voided so only one can be paid." : ""}`}
+                confirmLabel="Send"
+                onConfirm={() => run(() => sendQuote(quote.id))}
+              />
+              <ConfirmDialog
+                triggerVariant="ghost"
+                trigger={
+                  <>
+                    <FileText aria-hidden="true" /> {hasInvoice ? "Re-send invoice" : "Send as invoice"}
+                  </>
+                }
+                disabled={pending || !!sendBlocker}
+                title={hasInvoice ? "Re-send the Stripe invoice?" : "Send a Stripe invoice?"}
+                description={
+                  <>
+                    Stripe (test mode) emails {customerEmail ?? "the customer"} an invoice for {money(quote.price_total)}
+                    {plusTax}, payable online by card or bank transfer. Good for commercial customers and net terms.
+                    {quote.stripe_checkout_url ? " The open Checkout link is closed so only one can be paid." : ""}
+                  </>
+                }
+                confirmLabel={hasInvoice ? "Re-send invoice" : "Send invoice"}
+                confirmDisabled={!Number.isInteger(invoiceDays) || invoiceDays < 1 || invoiceDays > 365}
+                onConfirm={async () => {
+                  const res = await run(() => sendQuoteAsInvoice(quote.id, invoiceDays))
+                  return res.ok
+                }}
+              >
+                <NumberStepper
+                  label="Due in"
+                  suffix={invoiceDays === 1 ? "day" : "days"}
+                  min={1}
+                  max={365}
+                  step={1}
+                  value={invoiceDays}
+                  onChange={(v) => setInvoiceDays(Math.round(v))}
+                />
+              </ConfirmDialog>
+              {quote.status === "sent" ? (
+                <ConfirmDialog
+                  triggerVariant="outline"
+                  trigger={
+                    <>
+                      <RotateCcw aria-hidden="true" /> Revise &amp; re-send
+                    </>
+                  }
+                  disabled={pending}
+                  title="Revise this quote?"
+                  description="Expires the payment link (or voids the Stripe invoice) the customer has, and unlocks the quote for editing. Send it again when you're done."
+                  confirmLabel="Unlock"
+                  onConfirm={() => run(() => reviseQuote(quote.id))}
+                />
+              ) : null}
+              {sendBlocker && !paid ? <span className="text-sm text-ink-muted">{sendBlocker}</span> : null}
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Actions */}
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -470,121 +661,21 @@ export function QuoteEditor({
             <Save aria-hidden="true" />
             {pending ? "Saving…" : dirty ? "Save" : "Saved"}
           </Button>
-          <ConfirmDialog
-            triggerVariant="cta-green"
-            trigger={
-              <>
-                <Send aria-hidden="true" /> {quote.status === "sent" ? "Re-send via Stripe" : "Send via Stripe"}
-              </>
-            }
-            disabled={pending || !!sendBlocker}
-            title="Send the payment link?"
-            description={`Creates a Stripe Checkout link (test mode) for ${money(quote.price_total)}${plusTax} and emails it to ${customerEmail ?? "the customer"}.${hasInvoice ? " The open Stripe invoice is voided so only one can be paid." : ""}`}
-            confirmLabel="Send"
-            onConfirm={() => run(() => sendQuote(quote.id))}
-          />
-          <ConfirmDialog
-            triggerVariant="outline"
-            trigger={
-              <>
-                <FileText aria-hidden="true" /> {hasInvoice ? "Re-send invoice" : "Send as invoice"}
-              </>
-            }
-            disabled={pending || !!sendBlocker}
-            title={hasInvoice ? "Re-send the Stripe invoice?" : "Send a Stripe invoice?"}
-            description={
-              <>
-                Stripe (test mode) emails {customerEmail ?? "the customer"} an invoice for {money(quote.price_total)}
-                {plusTax}, payable online by card or bank transfer. Good for repeat customers and net terms.
-                {quote.stripe_checkout_url ? " The open Checkout link is closed so only one can be paid." : ""}
-              </>
-            }
-            confirmLabel={hasInvoice ? "Re-send invoice" : "Send invoice"}
-            confirmDisabled={!Number.isInteger(invoiceDays) || invoiceDays < 1 || invoiceDays > 365}
-            onConfirm={async () => {
-              const res = await run(() => sendQuoteAsInvoice(quote.id, invoiceDays))
-              return res.ok
-            }}
-          >
-            <NumberStepper
-              label="Due in"
-              suffix={invoiceDays === 1 ? "day" : "days"}
-              min={1}
-              max={365}
-              step={1}
-              value={invoiceDays}
-              onChange={(v) => setInvoiceDays(Math.round(v))}
-            />
-          </ConfirmDialog>
-          {canPayOffline ? (
-            <ConfirmDialog
-              triggerVariant="outline"
-              trigger={
-                <>
-                  <Banknote aria-hidden="true" /> Record cash / check
-                </>
-              }
-              disabled={pending || !!offlineBlocker}
-              title="Record a cash or check payment?"
-              description={
-                <>
-                  Use this when the customer paid you in person. It accepts the quote with no card fee, books the job for
-                  scheduling and closes any Stripe payment link or invoice they have.
-                  {taxEnabled ? " Stripe doesn't collect sales tax on cash or check, so account for it yourself." : ""}
-                </>
-              }
-              confirmLabel="Record payment"
-              confirmDisabled={!(payAmount > 0)}
-              onConfirm={async () => {
-                const res = await run(() =>
-                  recordCashOrCheckPayment(quote.id, {
-                    method: payMethod,
-                    amount: payAmount,
-                    check_number: payMethod === "check" && checkNumber.trim() ? checkNumber.trim() : null,
-                  }),
-                )
-                return res.ok
-              }}
-            >
-              <div className="grid gap-3">
-                <div className="grid gap-1.5">
-                  <Label htmlFor={payIds.method}>Paid by</Label>
-                  <NativeSelect id={payIds.method} value={payMethod} onChange={(e) => setPayMethod(e.target.value as "cash" | "check")}>
-                    <option value="check">Check</option>
-                    <option value="cash">Cash</option>
-                  </NativeSelect>
-                </div>
-                {payMethod === "check" ? (
-                  <div className="grid gap-1.5">
-                    <Label htmlFor={payIds.check}>Check number (optional)</Label>
-                    <Input id={payIds.check} maxLength={40} value={checkNumber} onChange={(e) => setCheckNumber(e.target.value)} />
-                  </div>
-                ) : null}
-                <NumberStepper label="Amount received" prefix="$" min={0} step={5} value={payAmount} onChange={setPayAmount} />
-                {payAmount > 0 && Math.abs(payAmount - quote.price_total) >= 0.01 ? (
-                  <p className="text-xs text-amber-900">
-                    The quote total is {money(quote.price_total)}. The difference is noted on the quote.
-                  </p>
-                ) : null}
-              </div>
-            </ConfirmDialog>
+          <Button asChild variant={job && (job.status === "unscheduled" || job.status === "proposed" || job.status === "crew_confirmed") ? "cta-green" : "outline"}>
+            <Link href={scheduleHref}>
+              <CalendarDays aria-hidden="true" />
+              {!job
+                ? "Schedule"
+                : job.status === "unscheduled"
+                  ? "Put it on the calendar"
+                  : job.status === "proposed" || job.status === "crew_confirmed"
+                    ? "Call & confirm on the schedule"
+                    : "Open on the schedule"}
+            </Link>
+          </Button>
+          {!job && !needsOwner && !dirty && quote.status !== "declined" ? (
+            <span className="text-sm text-ink-muted">The job appears on the schedule&apos;s rail once something here has a price.</span>
           ) : null}
-          {quote.status === "sent" ? (
-            <ConfirmDialog
-              triggerVariant="outline"
-              trigger={
-                <>
-                  <RotateCcw aria-hidden="true" /> Revise &amp; re-send
-                </>
-              }
-              disabled={pending}
-              title="Revise this quote?"
-              description="Expires the payment link (or voids the Stripe invoice) the customer has, and unlocks the quote for editing. Send it again when you're done."
-              confirmLabel="Unlock"
-              onConfirm={() => run(() => reviseQuote(quote.id))}
-            />
-          ) : null}
-          {sendBlocker && !locked ? <span className="text-sm text-ink-muted">{sendBlocker}</span> : null}
         </div>
       </div>
     </div>

@@ -11,6 +11,7 @@ import { requireOwner } from "@/lib/auth/session"
 import type { Approval, ApprovalKind } from "@/lib/db/types"
 import { applyRejection, decideApproval, type ApprovalDecision } from "@/lib/ops/approvals"
 import { isInfoBookingPayload, setOwnerHold } from "@/lib/ops/jobs"
+import { PAYMENT_METHODS } from "@/lib/ops/payment-methods"
 import { getSettings } from "@/lib/ops/settings"
 import { check } from "@/lib/ops/types"
 import type { Db } from "@/lib/ops/types"
@@ -40,7 +41,8 @@ const PATCH_SCHEMAS: Record<ApprovalKind, z.ZodType<Record<string, unknown>>> = 
   followup: z.object({ subject: text(300).min(1), body: text(10000).min(1) }).partial().strict(),
   weather_hold: z.object({ job_ids: z.array(z.string().uuid()).min(1).max(200) }).partial().strict(),
   ai_cap: z.object({ new_cap: money.nullable() }).partial().strict(),
-  booking: z.object({}).strict(),
+  // "Call to confirm": how the customer will pay once the job is done, and who goes.
+  booking: z.object({ payment_method: z.enum(PAYMENT_METHODS), crew_ids: z.array(z.string().uuid()).max(20) }).partial().strict(),
   crew_change: z.object({}).strict(),
   drop: z.object({}).strict(),
 }
@@ -56,7 +58,7 @@ async function applyQuoteTotal(db: Db, approval: Approval, priceTotal: number): 
   const quoteId = approval.ref_table === "quotes" ? approval.ref_id : String(approval.payload.quote_id ?? "")
   const quote = check(await db.from("quotes").select("*").eq("id", quoteId).maybeSingle(), "decide(quote)")
   if (!quote) throw new Error("The quote for this approval no longer exists.")
-  if (quote.status === "accepted") throw new Error("This quote is already paid; refund it instead of changing the total.")
+  if (quote.paid_at) throw new Error("This quote is already paid; refund it instead of changing the total.")
   const settings = await getSettings(db)
   const price = moneyRound(priceTotal)
   const feeTotal = fee(price, settings)

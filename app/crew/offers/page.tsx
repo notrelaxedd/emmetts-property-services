@@ -53,7 +53,7 @@ export default async function CrewOffersPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Offers" description="Jobs waiting for your yes or no." />
+      <PageHeader title="Offers" description="Are you free? Say yes or no; the owner confirms the day with the customer, then picks who goes." />
 
       {error ? (
         <Alert variant="destructive">
@@ -69,7 +69,7 @@ export default async function CrewOffersPage() {
           description={
             profile.paused
               ? "You're paused, so no new jobs are being offered. Turn it off in Hours."
-              : "When the scheduler picks you for a job, it shows up here."
+              : "When a job goes on the calendar on a day you could work, it shows up here (and in your email)."
           }
         />
       ) : null}
@@ -82,7 +82,13 @@ export default async function CrewOffersPage() {
             key={offer.id}
             job={job}
             showDay
-            eyebrow={swap ? `Swap — ${from ?? "a teammate"} can’t make it. First to take it gets it.` : undefined}
+            eyebrow={
+              swap
+                ? `Swap — ${from ?? "a teammate"} can’t make it. First to take it gets it.`
+                : job.status === "booked"
+                  ? "Confirmed with the customer"
+                  : "Not confirmed with the customer yet"
+            }
           >
             {job.notes ? <p className="whitespace-pre-line text-sm text-ink">{job.notes}</p> : null}
             <OfferActions assignmentId={offer.id} swap={swap} />

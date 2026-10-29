@@ -1,21 +1,37 @@
 "use server"
 
+// Registers the per-kind side effects before anything calls `applyApproval`.
+import "@/lib/ops/handlers"
+
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { checkMove } from "@/app/admin/schedule/conflicts"
+import { siteUrl } from "@/components/admin/inbox/server"
 import { requireOwner } from "@/lib/auth/session"
-import type { AssignmentStatus, JobStatus } from "@/lib/db/types"
-import { check, clearWeatherHold, decideApproval, enqueueSchedule, holdForWeather, setOwnerHold, transitionJob, tryTransitionJob } from "@/lib/ops"
+import type { JobStatus } from "@/lib/db/types"
+import {
+  askCrewAgain,
+  bookJob,
+  check,
+  clearQueuedReminder,
+  clearWeatherHold,
+  decideApproval,
+  enqueueSchedule,
+  holdForWeather,
+  PAYMENT_METHODS,
+  scheduleJobAt,
+  setOwnerHold,
+  transitionJob,
+  unplaceJob as unplaceJobCore,
+  withdrawCallToConfirm,
+} from "@/lib/ops"
 import type { Db } from "@/lib/ops"
-import { HOLDING_ASSIGNMENT_STATUSES } from "@/lib/scheduler/capacity"
 import { localDate } from "@/lib/scheduler/time"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; reason: string }
 
 const idSchema = z.string().regex(/^[0-9a-f-]{36}$/i, "Bad id")
-/** Rows that hold a crew member on a job (a `swap_offered` row is only a candidate). */
-const ACTIVE: readonly AssignmentStatus[] = HOLDING_ASSIGNMENT_STATUSES
 const LOCKED: JobStatus[] = ["in_progress", "done", "cancelled"]
 
 function fail(e: unknown): ActionResult {
@@ -27,29 +43,27 @@ function revalidate() {
   revalidatePath("/admin", "layout")
 }
 
-/** Reject any pending booking approval for this job: its slot/crew no longer stands. */
-async function retireBookingApprovals(db: Db, jobId: string, actor: string, note: string) {
+function actorOf(session: Awaited<ReturnType<typeof requireOwner>>): string {
+  return session.email ?? session.profile.name ?? "owner"
+}
+
+/** Reject any pending legacy "Book" card for this job: its slot/crew no longer stands. The call card is handled by the core. */
+async function retireLegacyBookingApprovals(db: Db, jobId: string, actor: string, note: string) {
   const pending = check(
     await db.from("approvals").select("*").eq("kind", "booking").eq("status", "pending").eq("ref_id", jobId),
     "booking approvals",
   )
   for (const a of pending ?? []) {
+    if (a.payload.call_to_confirm === true || a.payload.unschedulable === true || a.payload.needs_cover === true) continue
     await decideApproval(db, a.id, "rejected", { decidedBy: actor, note })
   }
 }
 
-/** Drop a not-yet-run day-before reminder; a new booking re-enqueues it at the right time. */
-async function clearQueuedReminder(db: Db, jobId: string) {
-  check(
-    await db.from("fleet_tasks").delete().eq("dedupe_key", `reminder:${jobId}`).eq("status", "queued"),
-    "clear reminder",
-  )
-}
-
 /**
- * Drag-to-move. Re-checks owner hours and every assigned crew member (free, available that
- * weekday, no approved time off). A `booked` / `crew_confirmed` job goes back to `proposed` and
- * accepted crew are re-asked (assignments back to `offered`).
+ * Drag a quote from the "Needs a day" rail onto the calendar, or drag a placed job to another time.
+ * Checks your open hours (not the crew: everyone who could work the new slot is asked by email and
+ * says so themselves). A job the customer already confirmed goes back to "call to confirm" for the
+ * new day.
  */
 export async function moveJob(jobId: string, newStartISO: string): Promise<ActionResult> {
   const session = await requireOwner()
@@ -60,7 +74,6 @@ export async function moveJob(jobId: string, newStartISO: string): Promise<Actio
     const job = check(await db.from("jobs").select("*").eq("id", jobId).maybeSingle(), "job")
     if (!job) return { ok: false, reason: "Job not found." }
     if (LOCKED.includes(job.status)) return { ok: false, reason: `A ${job.status.replace("_", " ")} job can't be moved.` }
-    if (job.status === "unscheduled") return { ok: false, reason: "Let the scheduler place this job and pick its crew first." }
 
     const start = new Date(parsed.data.start)
     const minutes =
@@ -70,89 +83,105 @@ export async function moveJob(jobId: string, newStartISO: string): Promise<Actio
     const end = new Date(start.getTime() + minutes * 60_000)
     if (job.start_at && Date.parse(job.start_at) === start.getTime()) return { ok: true, message: "No change." }
 
-    const assignments =
-      check(await db.from("job_assignments").select("*").eq("job_id", jobId).in("status", ACTIVE), "assignments") ?? []
-    const crewIds = Array.from(new Set(assignments.map((a) => a.crew_id)))
     const date = localDate(start)
-
-    // Jobs that overlap the new slot (any crew); then which of our crew are on them.
-    const overlapping =
-      check(
-        await db
-          .from("jobs")
-          .select("id,start_at,end_at")
-          .neq("id", jobId)
-          .not("status", "in", "(cancelled,done)")
-          .lt("start_at", end.toISOString())
-          .gt("end_at", start.toISOString()),
-        "overlapping jobs",
-      ) ?? []
-    const jobTimes = new Map(overlapping.map((j) => [j.id, j]))
-    const none = Promise.resolve({ data: [], error: null })
-
-    const [crew, windows, ownerExceptions, blocks, crewExceptions, others] = await Promise.all([
-      crewIds.length ? db.from("profiles").select("id,name").in("id", crewIds) : none,
+    const [windows, ownerExceptions] = await Promise.all([
       db.from("owner_windows").select("*"),
       db.from("owner_exceptions").select("*").eq("date", date),
-      crewIds.length ? db.from("crew_availability").select("*").in("crew_id", crewIds) : none,
-      crewIds.length
-        ? db.from("crew_exceptions").select("*").in("crew_id", crewIds).eq("status", "approved").lte("date_from", date).gte("date_to", date)
-        : none,
-      crewIds.length && jobTimes.size
-        ? db.from("job_assignments").select("crew_id,job_id,status").in("crew_id", crewIds).in("status", ACTIVE).in("job_id", Array.from(jobTimes.keys()))
-        : none,
     ])
-    const otherRows = (check(others, "other assignments") ?? []) as { crew_id: string; job_id: string; status: AssignmentStatus }[]
-
     const reason = checkMove({
       jobId,
       start,
       end,
-      crew: (check(crew, "crew") ?? []) as { id: string; name: string }[],
+      crew: [],
       ownerWindows: check(windows, "owner windows") ?? [],
       ownerExceptions: check(ownerExceptions, "owner exceptions") ?? [],
-      crewAvailability: check(blocks, "crew availability") ?? [],
-      crewExceptions: check(crewExceptions, "crew exceptions") ?? [],
-      otherAssignments: otherRows
-        .filter((a) => jobTimes.has(a.job_id))
-        .map((a) => ({ ...a, start_at: jobTimes.get(a.job_id)!.start_at, end_at: jobTimes.get(a.job_id)!.end_at })),
+      crewAvailability: [],
+      crewExceptions: [],
+      otherAssignments: [],
     })
     if (reason) return { ok: false, reason }
 
-    const reconfirm = job.status === "booked" || job.status === "crew_confirmed"
-    const accepted = assignments.filter((a) => a.status === "accepted")
-    const slot = { start_at: start.toISOString(), end_at: end.toISOString() }
-    const actor = session.profile.name || "owner"
-    let updated: boolean
-    if (reconfirm) {
-      // booked / crew_confirmed → proposed: the crew have to accept the new time.
-      updated = !!(await tryTransitionJob(db, jobId, "proposed", { actor, from: job.status, patch: slot }))
-    } else {
-      // Same status (proposed): only the slot changes.
-      const rows = check(await db.from("jobs").update(slot).eq("id", jobId).eq("status", job.status).select("id"), "move job")
-      updated = !!rows?.length
-    }
-    if (!updated) return { ok: false, reason: "The job changed while you were moving it. Refresh and try again." }
-
-    if (accepted.length) {
-      check(
-        await db
-          .from("job_assignments")
-          .update({ status: "offered", responded_at: null })
-          .in("id", accepted.map((a) => a.id)),
-        "re-offer crew",
-      )
-    }
-    // Swap offers were for the old time; the holder is being re-asked anyway.
-    check(await db.from("job_assignments").delete().eq("job_id", jobId).eq("status", "swap_offered"), "withdraw swaps")
-    if (reconfirm) await retireBookingApprovals(db, jobId, actor, "Job moved on the schedule; crew re-asked.")
-    await clearQueuedReminder(db, jobId)
-
+    const actor = actorOf(session)
+    const wasPlaced = job.status !== "unscheduled"
+    const res = await scheduleJobAt(db, jobId, start, end, { actor, siteUrl: siteUrl() })
+    await retireLegacyBookingApprovals(db, jobId, actor, "Job moved on the schedule; crew re-asked.")
     revalidate()
+
+    const crewLine =
+      res.asked === 0
+        ? "No crew member can work that slot (hours, time off or another job), so nobody was asked."
+        : `${res.asked} crew member${res.asked === 1 ? "" : "s"} asked${res.emailed ? ` (${res.emailed} emailed)` : ""}.`
+    const next = res.reconfirm
+      ? " The customer had confirmed the old day: call them to re-confirm."
+      : " Call the customer to confirm the quote and the day."
+    return { ok: true, message: `${wasPlaced ? "Job moved." : "On the calendar."} ${crewLine}${next}` }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+const ConfirmSchema = z.object({
+  jobId: idSchema,
+  payment_method: z.enum(PAYMENT_METHODS),
+  crew_ids: z.array(z.string().uuid()).max(20),
+  note: z.string().trim().max(500).optional(),
+})
+export type ConfirmBookingInput = z.infer<typeof ConfirmSchema>
+
+/**
+ * "Confirmed with the customer": you called, they said yes to the price and the day, and told you how
+ * they'll pay once the job is done. Puts the chosen crew on the job, books it, accepts the quote
+ * (unpaid), closes the call card and emails the customer a confirmation.
+ */
+export async function confirmBooking(input: ConfirmBookingInput): Promise<ActionResult> {
+  const session = await requireOwner()
+  const parsed = ConfirmSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, reason: parsed.error.issues.map((i) => i.message).join("; ") }
+  try {
+    const db = requireSupabaseAdmin()
+    const res = await bookJob(db, parsed.data.jobId, {
+      paymentMethod: parsed.data.payment_method,
+      crewIds: parsed.data.crew_ids,
+      actor: actorOf(session),
+      siteUrl: siteUrl(),
+      note: parsed.data.note ?? null,
+    })
+    revalidate()
+    revalidatePath(`/admin/quotes/${res.job.quote_id ?? ""}`)
+    const who = parsed.data.crew_ids.length ? `${parsed.data.crew_ids.length} crew on it` : "just you on it"
     return {
       ok: true,
-      message: reconfirm || accepted.length ? "Job moved. The crew will be re-asked." : "Job moved.",
+      message: `Booked, ${who}. ${res.confirmationSent ? "Confirmation emailed to the customer." : "No confirmation went out (no email on file)."} Payment is collected after the job.`,
     }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+/** Take a placed job back onto the rail (the customer wants a different day, or you do). */
+export async function unplaceJob(jobId: string): Promise<ActionResult> {
+  const session = await requireOwner()
+  if (!idSchema.safeParse(jobId).success) return { ok: false, reason: "Invalid job." }
+  try {
+    const db = requireSupabaseAdmin()
+    const actor = actorOf(session)
+    await unplaceJobCore(db, jobId, { actor })
+    await retireLegacyBookingApprovals(db, jobId, actor, "Taken off the calendar.")
+    revalidate()
+    return { ok: true, message: "Back on the rail. Crew offers withdrawn; drag it onto another day when you're ready." }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+/** Email the crew who haven't answered the availability request again. */
+export async function remindCrew(jobId: string): Promise<ActionResult> {
+  await requireOwner()
+  if (!idSchema.safeParse(jobId).success) return { ok: false, reason: "Invalid job." }
+  try {
+    const n = await askCrewAgain(requireSupabaseAdmin(), jobId, { siteUrl: siteUrl() })
+    revalidate()
+    return { ok: true, message: n ? `Asked again: ${n} email${n === 1 ? "" : "s"} sent.` : "Nobody left to ask (everyone answered, or no email on file)." }
   } catch (e) {
     return fail(e)
   }
@@ -175,15 +204,15 @@ export async function setWeatherHold(jobId: string, hold: boolean): Promise<Acti
       await clearWeatherHold(db, jobId)
     }
     revalidate()
-    return { ok: true, message: hold ? "Weather hold set. The scheduler will re-plan it." : "Weather hold cleared." }
+    return { ok: true, message: hold ? "Weather hold set. The job comes back to the rail for a new day." : "Weather hold cleared." }
   } catch (e) {
     return fail(e)
   }
 }
 
 /**
- * Release an owner hold (set when you rejected a proposed slot or marked a scheduler card handled):
- * the scheduler may place / cover the job again.
+ * Release an owner hold (set when you took a job off the calendar or marked a scheduler card handled):
+ * the scheduler may place / cover the job again when it runs.
  */
 export async function releaseJob(jobId: string): Promise<ActionResult> {
   await requireOwner()
@@ -192,36 +221,51 @@ export async function releaseJob(jobId: string): Promise<ActionResult> {
     const db = requireSupabaseAdmin()
     await setOwnerHold(db, jobId, false)
     revalidate()
-    return { ok: true, message: "Released. The scheduler will look at it again." }
+    return { ok: true, message: "Released. The scheduler may suggest a slot for it." }
   } catch (e) {
     return fail(e)
   }
 }
 
-/** Cancel a job (refunds are a separate step on the quote). */
+/**
+ * Cancel a job. An unpaid quote behind it is marked declined and its lead lost (the deal is off); a paid
+ * one is left for the Refund button on the quote page.
+ */
 export async function cancelJob(jobId: string): Promise<ActionResult> {
   const session = await requireOwner()
   if (!idSchema.safeParse(jobId).success) return { ok: false, reason: "Invalid job." }
   try {
     const db = requireSupabaseAdmin()
-    const actor = session.profile.name || "owner"
-    await transitionJob(db, jobId, "cancelled", { actor })
-    await retireBookingApprovals(db, jobId, actor, "Job cancelled.")
+    const actor = actorOf(session)
+    const job = await transitionJob(db, jobId, "cancelled", { actor })
+    await retireLegacyBookingApprovals(db, jobId, actor, "Job cancelled.")
+    await withdrawCallToConfirm(db, jobId, "rejected", { actor, note: "Job cancelled." })
     await clearQueuedReminder(db, jobId)
+    let quoteNote = ""
+    if (job.quote_id) {
+      const quote = check(await db.from("quotes").select("*").eq("id", job.quote_id).maybeSingle(), "cancel(quote)")
+      if (quote && !quote.paid_at && quote.status !== "declined") {
+        check(await db.from("quotes").update({ status: "declined" }).eq("id", quote.id), "cancel(decline quote)")
+        check(await db.from("leads").update({ status: "lost" }).eq("id", quote.lead_id), "cancel(lead)")
+        quoteNote = " The quote is marked declined."
+      } else if (quote?.paid_at) {
+        quoteNote = " The quote is paid: refund it from the quote page if you need to."
+      }
+    }
     revalidate()
-    return { ok: true, message: "Job cancelled." }
+    return { ok: true, message: `Job cancelled.${quoteNote}` }
   } catch (e) {
     return fail(e)
   }
 }
 
-/** Ask the scheduler worker to run now (de-duped per 15 minutes). */
+/** Ask the scheduler worker to suggest slots for everything on the rail now (de-duped per 15 minutes). */
 export async function runScheduler(): Promise<ActionResult> {
   await requireOwner()
   try {
     await enqueueSchedule(requireSupabaseAdmin(), "owner_requested")
     revalidate()
-    return { ok: true, message: "The scheduler will run shortly." }
+    return { ok: true, message: "The scheduler will suggest slots shortly; each one asks the crew and raises a call card." }
   } catch (e) {
     return fail(e)
   }

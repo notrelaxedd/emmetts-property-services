@@ -11,6 +11,7 @@ import type {
   CrewException,
   JobStatus,
   Message,
+  PaymentMethod,
   Quote,
   QuoteItem,
 } from "@/lib/db/types"
@@ -55,7 +56,7 @@ export const REJECT_EFFECTS: Record<ApprovalKind, string> = {
   ad: "The draft ad is deleted.",
   quote: "Nothing is sent; the quote is marked declined and the lead lost.",
   custom_item: "Nothing is sent and the item stays unpriced on the quote.",
-  booking: "The crew is released and the job goes back to unscheduled.",
+  booking: "The job comes off the calendar and back to the rail; crew offers are withdrawn. The quote stands.",
   followup: "The message is cancelled and never sent.",
   crew_change: "The request is declined.",
   drop: "They stay on the job.",
@@ -111,8 +112,11 @@ export type BookingContext = Ctx<
     scheduleReason: string | null
     customer: CustomerSummary | null
     /** `swapFrom` is set on `swap_offered` rows: the crew member handing the job over. */
-    crew: { name: string; status: AssignmentStatus; swapFrom: string | null }[]
+    crew: { id: string; name: string; status: AssignmentStatus; swapFrom: string | null }[]
     services: string[]
+    /** The quote behind the job (price, how they said they'd pay, whether a line still needs a price). */
+    quote: { id: string; price_total: number; payment_method: PaymentMethod | null; paid_at: string | null; needs_owner: boolean } | null
+    crewSize: number
   }
 >
 export type FollowupContext = Ctx<"followup", { messages: MessageSummary[]; recipients: { name: string; email: string | null }[] }>

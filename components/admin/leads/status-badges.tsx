@@ -27,5 +27,5 @@ export function LeadStatusBadge({ status }: { status: LeadStatus }) {
 }
 
 export function QuoteStatusBadge({ status }: { status: QuoteStatus }) {
-  return <Badge variant={QUOTE[status]}>{status === "needs_owner" ? "Needs you" : label(status)}</Badge>
+  return <Badge variant={QUOTE[status]}>{status === "needs_owner" ? "Needs you" : status === "accepted" ? "Confirmed" : status === "draft" ? "Estimated" : label(status)}</Badge>
 }

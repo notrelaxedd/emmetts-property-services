@@ -15,6 +15,9 @@ const taxNote = () => (taxConfig().enabled ? " + sales tax" : "");
 /** Told to every customer: the owner records these on the quote page (lib/ops/payments.ts). */
 export const CASH_OR_CHECK_LINE = "Rather pay by cash or check? Just reply to this email or give us a call and we'll set it up.";
 
+/** When the pay link goes out: before anything is agreed (legacy), or after the job the customer confirmed by phone. */
+export type PayLinkStage = "quote" | "after_job";
+
 /** Billed items (priced + positive price), in display order. */
 function billedItems(items: QuoteItem[]): QuoteItem[] {
   return items
@@ -31,8 +34,31 @@ export function fallbackQuoteEmail(input: {
   validDays: number;
   /** Stripe Tax is on: sales tax is added at checkout. */
   plusTax?: boolean;
+  stage?: PayLinkStage;
 }): { subject: string; body: string } {
   const lines = input.items.map((i) => `- ${i.description}: ${money(i.price)}`).join("\n");
+  const total = `Total: ${money(input.total)}${input.plusTax ? " plus Ohio sales tax (calculated at checkout)" : ""}`;
+  if (input.stage === "after_job") {
+    const body = [
+      `Hi ${input.firstName},`,
+      "",
+      "Thanks for having Emmett's Property Services out. As agreed, here is your card payment link for the work we did:",
+      "",
+      lines,
+      "",
+      total,
+      "",
+      `Pay securely online by card: ${input.checkoutUrl}`,
+      CASH_OR_CHECK_LINE,
+      `The link stays open for ${input.validDays} days.`,
+      "",
+      `Questions? Call us at ${siteConfig.phone.display}.`,
+      "",
+      "Thanks,",
+      "Emmett's Property Services",
+    ].join("\n");
+    return { subject: "Your payment link from Emmett's Property Services", body };
+  }
   const body = [
     `Hi ${input.firstName},`,
     "",
@@ -40,7 +66,7 @@ export function fallbackQuoteEmail(input: {
     "",
     lines,
     "",
-    `Total: ${money(input.total)}${input.plusTax ? " plus Ohio sales tax (calculated at checkout)" : ""}`,
+    total,
     "",
     `To accept, pay securely online by card: ${input.checkoutUrl}`,
     CASH_OR_CHECK_LINE,
@@ -59,6 +85,10 @@ export function fallbackQuoteEmail(input: {
  * to the customer, and mark the quote `sent`. Any owner edits (e.g. a `price_total` override) were
  * already written to the quote by the admin UI, so nothing is re-priced here.
  *
+ * In the phone-confirmed flow the quote is already `accepted` (unpaid) when the owner emails the card
+ * link after the job: the status stays `accepted`, the email says "thanks for having us out", and the
+ * webhook's payment sets `paid_at`.
+ *
  * `payload.method === "invoice"` (admin "Send as invoice"): create + finalize a Stripe invoice and let
  * Stripe email it (no email of ours), logging a `messages` row with the hosted invoice URL.
  * Stripe is TEST MODE ONLY (see lib/stripe/client.ts).
@@ -67,10 +97,11 @@ export const quoteHandler: ApprovalHandler = async (db, approval, ctx) => {
   const quoteId = approval.ref_table === "quotes" ? approval.ref_id : String(approval.payload.quote_id ?? approval.ref_id);
   const quote = check(await db.from("quotes").select("*").eq("id", quoteId).maybeSingle(), "quoteHandler(quote)");
   if (!quote) throw new Error(`quoteHandler: quote ${quoteId} not found`);
-  if (quote.status === "accepted") {
-    console.warn(`[approvals] quote ${quoteId} is already accepted; not sending again`);
+  if (quote.paid_at) {
+    console.warn(`[approvals] quote ${quoteId} is already paid; not sending again`);
     return;
   }
+  const stage: PayLinkStage = quote.status === "accepted" ? "after_job" : "quote";
   const customer = check(
     await db.from("customers").select("*").eq("id", quote.customer_id).maybeSingle(),
     "quoteHandler(customer)",
@@ -114,7 +145,7 @@ export const quoteHandler: ApprovalHandler = async (db, approval, ctx) => {
   await createCheckoutForQuote(db, quoteId, { siteUrl: ctx.siteUrl });
   const payUrl = `${ctx.siteUrl.replace(/\/$/, "")}/quote/pay/${quoteId}`;
 
-  const draft = await draftQuoteEmail(db, quote, customer.name, items, payUrl, settings.quote_valid_days);
+  const draft = await draftQuoteEmail(db, quote, customer.name, items, payUrl, settings.quote_valid_days, stage);
 
   // Reuse an unsent quote message (a retry after a partial failure) instead of piling up duplicates.
   const pending = check(
@@ -151,7 +182,8 @@ export const quoteHandler: ApprovalHandler = async (db, approval, ctx) => {
     await db
       .from("quotes")
       .update({
-        status: "sent",
+        // A phone-confirmed quote stays accepted; the link is just how it gets paid.
+        status: stage === "after_job" ? "accepted" : "sent",
         sent_at: now.toISOString(),
         expires_at: new Date(now.getTime() + settings.quote_valid_days * 86_400_000).toISOString(),
       })
@@ -167,6 +199,7 @@ async function draftQuoteEmail(
   items: QuoteItem[],
   checkoutUrl: string,
   validDays: number,
+  stage: PayLinkStage = "quote",
 ): Promise<{ subject: string; body: string }> {
   const priced = items.map((i) => ({ description: i.description, price: i.price as number }));
   const fallback = fallbackQuoteEmail({
@@ -176,6 +209,7 @@ async function draftQuoteEmail(
     checkoutUrl,
     validDays,
     plusTax: taxConfig().enabled,
+    stage,
   });
   try {
     const draft = await draftMessage(db, {
@@ -186,6 +220,9 @@ async function draftQuoteEmail(
         price_total: `${money(quote.price_total)}${taxConfig().enabled ? " plus sales tax (calculated at checkout)" : ""}`,
         items: priced.map((i) => `${i.description}: ${money(i.price)}`).join("; "),
         other_ways_to_pay: CASH_OR_CHECK_LINE,
+        ...(stage === "after_job"
+          ? { timing: "The work is already done and the customer agreed on the phone to pay by card afterwards: thank them for having us out and give them the link. Do not describe this as a quote to accept." }
+          : {}),
       },
     });
     // The link is the whole point: never send a quote email without it. Same for the cash / check option.
