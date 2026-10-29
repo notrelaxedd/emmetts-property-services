@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { requireOwner } from "@/lib/auth/session"
+import { opsConfig } from "@/lib/config"
+import type { Customer } from "@/lib/db/types"
+import { geocode } from "@/lib/geo"
 import { check, formatPhone, normalizePhone, upsertCustomer } from "@/lib/ops"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
@@ -35,6 +38,90 @@ export async function updateCustomer(id: string, patch: CustomerPatch): Promise<
     revalidatePath(`/admin/customers/${id}`)
     revalidatePath("/admin/customers")
     return { ok: true, message: "Customer saved." }
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+const contactSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(120),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(254)
+    .refine((s) => s === "" || z.string().email().safeParse(s).success, "That email doesn't look right"),
+  phone: z.string().trim().max(40),
+  address: z.string().trim().max(300),
+  parcel_id: z.string().trim().max(80),
+})
+
+export type CustomerContact = z.input<typeof contactSchema>
+
+/**
+ * Owner edits to who the customer is and where they live. A changed address is re-geocoded
+ * (when a geocoder is configured) so scheduling distances follow it; otherwise its old
+ * coordinates are cleared rather than left pointing at the previous address.
+ */
+export async function updateCustomerContact(id: string, input: CustomerContact): Promise<ActionResult> {
+  await requireOwner()
+  if (!idSchema.safeParse(id).success) return { ok: false, reason: "Invalid customer." }
+  const parsed = contactSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, reason: parsed.error.issues[0]?.message ?? "Invalid values." }
+  const v = parsed.data
+  const digits = normalizePhone(v.phone)
+  if (v.phone && digits.length !== 10) return { ok: false, reason: "Enter a 10-digit phone number, or leave it blank." }
+  try {
+    const db = requireSupabaseAdmin()
+    const current = check(await db.from("customers").select("address").eq("id", id).maybeSingle(), "load customer")
+    if (!current) return { ok: false, reason: "Customer not found." }
+    const address = v.address || null
+    const data: Partial<Customer> = {
+      name: v.name,
+      email: v.email || null,
+      phone: digits || null,
+      address,
+      parcel_id: v.parcel_id || null,
+    }
+    if (address !== current.address) {
+      let coords: { lat: number; lng: number } | null = null
+      if (address && opsConfig.geocoder !== "none") {
+        try {
+          coords = await Promise.race([geocode(address), new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000))])
+        } catch (e) {
+          console.error("[customers] geocode failed:", e instanceof Error ? e.message : e)
+        }
+      }
+      data.lat = coords?.lat ?? null
+      data.lng = coords?.lng ?? null
+    }
+    check(await db.from("customers").update(data).eq("id", id), "update customer contact")
+    revalidatePath(`/admin/customers/${id}`)
+    revalidatePath("/admin/customers")
+    return { ok: true, message: "Contact info saved." }
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/**
+ * Delete a customer and everything hanging off them (leads, quotes, jobs, messages, price log).
+ * Jobs with crew payouts on record can't be removed, so neither can their customer.
+ */
+export async function deleteCustomer(id: string): Promise<ActionResult> {
+  await requireOwner()
+  if (!idSchema.safeParse(id).success) return { ok: false, reason: "Invalid customer." }
+  try {
+    const db = requireSupabaseAdmin()
+    const res = await db.from("customers").delete().eq("id", id).select("id")
+    if (res.error?.code === "23503") {
+      return { ok: false, reason: "This customer has jobs with crew payouts on record, so they can't be deleted." }
+    }
+    const rows = check(res, "delete customer")
+    if (!rows?.length) return { ok: false, reason: "Customer not found." }
+    revalidatePath("/admin/customers")
+    revalidatePath("/admin/customers/log")
+    return { ok: true, message: "Customer deleted." }
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : String(e) }
   }

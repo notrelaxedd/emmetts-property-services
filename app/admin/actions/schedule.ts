@@ -21,6 +21,7 @@ import {
   PAYMENT_METHODS,
   scheduleJobAt,
   setOwnerHold,
+  slotMinutes,
   transitionJob,
   unplaceJob as unplaceJobCore,
   withdrawCallToConfirm,
@@ -79,7 +80,7 @@ export async function moveJob(jobId: string, newStartISO: string): Promise<Actio
     const minutes =
       job.start_at && job.end_at
         ? Math.round((Date.parse(job.end_at) - Date.parse(job.start_at)) / 60_000)
-        : Math.max(30, job.est_minutes)
+        : slotMinutes(job.est_minutes)
     const end = new Date(start.getTime() + minutes * 60_000)
     if (job.start_at && Date.parse(job.start_at) === start.getTime()) return { ok: true, message: "No change." }
 
