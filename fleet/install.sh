@@ -7,6 +7,8 @@
 #   - installs git, curl and Node 22 (NodeSource) if missing or older (supabase-js needs native WebSocket)
 #   - creates the `fleet` system user, clones/updates /opt/fleet (branch: main)
 #   - installs the systemd unit; /etc/fleet/all.env holds FLEET_ROLE=all + the keys
+#   - installs fleet-update.timer: from then on the box pulls the branch itself every 10 minutes
+#     (fleet/update.sh) and restarts the workers, so this script only needs running once per box
 #   - caps journald at 50 MB (small flash drives), no local logs or DB
 set -euo pipefail
 
@@ -49,6 +51,8 @@ npm ci --omit=dev --no-audit --no-fund --loglevel=error
 npm cache clean --force >/dev/null 2>&1 || true
 # The worker only reads the code (ReadOnlyPaths in the unit); it never needs to own it.
 chmod -R a+rX "$ROOT"
+# What fleet/update.sh compares against: this commit is installed, dependencies and all.
+git -C "$ROOT" rev-parse HEAD > "$ROOT/.fleet-installed"
 
 echo "==> environment file"
 mkdir -p "$ENV_DIR"
@@ -60,12 +64,24 @@ else
   NEW_ENV=0
 fi
 
+if [ ! -f "$ENV_DIR/update.conf" ]; then
+  cat > "$ENV_DIR/update.conf" <<CONF
+# Read by fleet/update.sh (fleet-update.timer). Which branch the box follows, and whether it follows at all.
+FLEET_BRANCH=$BRANCH
+FLEET_AUTO_UPDATE=1
+CONF
+  chmod 0644 "$ENV_DIR/update.conf"
+fi
+
 echo "==> systemd"
 install -m 0644 "$ROOT/fleet/systemd/fleet-worker@.service" /etc/systemd/system/fleet-worker@.service
+install -m 0644 "$ROOT/fleet/systemd/fleet-update.service" /etc/systemd/system/fleet-update.service
+install -m 0644 "$ROOT/fleet/systemd/fleet-update.timer" /etc/systemd/system/fleet-update.timer
 mkdir -p /etc/systemd/journald.conf.d
 printf '[Journal]\nSystemMaxUse=50M\nRuntimeMaxUse=20M\n' > /etc/systemd/journald.conf.d/fleet.conf
 systemctl restart systemd-journald
 systemctl daemon-reload
+systemctl enable -q --now fleet-update.timer
 
 if [ "$NEW_ENV" -eq 1 ]; then
   cat <<MSG
@@ -84,4 +100,5 @@ else
   systemctl --no-pager --lines=5 status fleet-worker@"$ROLE" || true
   echo
   echo "Updated and restarted. Logs: journalctl -fu fleet-worker@$ROLE"
+  echo "From now on the box updates itself from '$BRANCH' every 10 minutes (journalctl -u fleet-update)."
 fi

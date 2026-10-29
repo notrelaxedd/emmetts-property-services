@@ -1,0 +1,14 @@
+# EOD Lawns fleet: check for updates every 10 minutes (and 2 minutes after boot).
+#   sudo systemctl enable --now fleet-update.timer      sudo systemctl list-timers fleet-update.timer
+[Unit]
+Description=EOD Lawns fleet update check
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+RandomizedDelaySec=1min
+Persistent=true
+Unit=fleet-update.service
+
+[Install]
+WantedBy=timers.target

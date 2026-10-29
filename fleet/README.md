@@ -30,7 +30,15 @@ journalctl -fu fleet-worker@all       # Ctrl+C to stop watching; the service kee
 The service starts on boot, restarts itself on crashes or network loss, logs to journald (capped at 50 MB) and
 writes nothing else to disk. `/admin/fleet` shows five rows named `<role>-<hostname>`.
 
-**Update later** (pulls `main`, reinstalls deps, restarts): re-run the same `curl … | sudo bash` line.
+**Updates are automatic.** The installer also enables `fleet-update.timer`: every 10 minutes (and 2 minutes
+after boot) the box fetches `main`, and when it moved it resets `/opt/fleet` to it, runs `npm ci` only if
+`package.json` / `package-lock.json` changed, and restarts the worker (`fleet/update.sh`). Merging to `main` is
+the deploy; the Fleet page's version column shows the new commit within about ten minutes.
+
+- Force it now: `sudo systemctl start fleet-update` · watch: `journalctl -u fleet-update -f`
+- Pause it: set `FLEET_AUTO_UPDATE=0` in `/etc/fleet/update.conf` (or `sudo systemctl disable --now fleet-update.timer`)
+- Follow another branch: `FLEET_BRANCH=<name>` in `/etc/fleet/update.conf`
+- A box installed before the timer existed needs the `curl … | sudo bash` line once more to pick it up.
 
 **Stop / start:** `sudo systemctl stop fleet-worker@all` / `start`. **Change keys:** edit `/etc/fleet/all.env`,
 then `sudo systemctl restart fleet-worker@all`.

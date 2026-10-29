@@ -1,0 +1,19 @@
+# EOD Lawns fleet: pull the installed branch (main) and restart the workers when it moved.
+# Started by fleet-update.timer; `sudo systemctl start fleet-update` forces a run now.
+[Unit]
+Description=EOD Lawns fleet update from git
+Documentation=file:///opt/fleet/fleet/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/fleet
+ExecStart=/usr/bin/bash /opt/fleet/fleet/update.sh
+# npm ci on a slow flash-drive box can take a while; keep it out of the workers' way.
+TimeoutStartSec=30min
+Nice=10
+IOSchedulingClass=idle
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fleet-update
