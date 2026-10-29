@@ -11,11 +11,13 @@ import { requireOwner } from "@/lib/auth/session"
 import type { QuoteItem, QuoteItemStatus } from "@/lib/db/types"
 import { createApproval, decideApproval } from "@/lib/ops/approvals"
 import { quoteApprovalInput, quoteEditLockReason } from "@/lib/ops/handlers/custom_item"
+import { ensureJobForQuote } from "@/lib/ops/jobs"
 import { PAYMENT_METHOD_LABEL, PAYMENT_METHODS } from "@/lib/ops/payment-methods"
 import { OFFLINE_METHODS, recordOfflinePayment } from "@/lib/ops/payments"
 import { getSettings } from "@/lib/ops/settings"
 import { check } from "@/lib/ops/types"
 import { fee, moneyRound, priceQuote } from "@/lib/pricing"
+import { formatTimeRange } from "@/lib/scheduler/time"
 import { expireOpenCheckout, refundQuote } from "@/lib/stripe/checkout"
 import { MAX_DAYS_UNTIL_DUE, voidInvoiceForQuote } from "@/lib/stripe/invoice"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
@@ -150,10 +152,22 @@ export async function saveQuote(quoteId: string, input: SaveQuoteInput): Promise
     )
     check(await db.from("customers").update(data.property).eq("id", quote.customer_id), "saveQuote(property)")
 
+    // The job's length follows the hours on the quote (rail card, or the slot on the calendar).
+    const before = check(
+      await db.from("jobs").select("end_at").eq("quote_id", id).order("created_at", { ascending: true }).limit(1).maybeSingle(),
+      "saveQuote(job)",
+    )
+    const job = await ensureJobForQuote(db, id)
+    const slot =
+      job && job.status !== "unscheduled" && job.start_at && job.end_at && before?.end_at && job.end_at !== before.end_at
+        ? { start: new Date(job.start_at), end: new Date(job.end_at), longer: Date.parse(job.end_at) > Date.parse(before.end_at) }
+        : null
+
     revalidateQuote(id)
     const notes = [
       totals.needs_owner ? "a custom item still needs your price" : null,
       data.total_override === null && totals.min_applied ? "the minimum job price applied" : null,
+      slot ? `the calendar slot is now ${formatTimeRange(slot.start, slot.end)}${slot.longer ? "; check the crew can stay longer" : ""}` : null,
     ].filter(Boolean)
     return { ok: true, message: notes.length ? `Quote saved (${notes.join("; ")})` : "Quote saved" }
   } catch (e) {

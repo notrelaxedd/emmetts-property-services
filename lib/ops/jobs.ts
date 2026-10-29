@@ -23,6 +23,14 @@ export function estimateFromItems(items: Pick<QuoteItem, "est_hours" | "crew_siz
   };
 }
 
+/** Calendar length for an estimate: the same 30-minute floor a job gets when it's dragged onto the calendar. */
+export function slotMinutes(estMinutes: number): number {
+  return Math.max(30, estMinutes);
+}
+
+/** Jobs whose length still follows their quote: not yet started, finished or cancelled. */
+const RESIZABLE: JobStatus[] = ["unscheduled", "proposed", "crew_confirmed", "booked"];
+
 /** Service names on a job (its quote's billed lines), in display order. Empty for a job without a quote. */
 export async function servicesForJob(db: Db, job: Pick<Job, "quote_id">): Promise<string[]> {
   if (!job.quote_id) return [];
@@ -33,8 +41,9 @@ export async function servicesForJob(db: Db, job: Pick<Job, "quote_id">): Promis
  * The job for a freshly estimated quote: created `unscheduled` and UNPAID as soon as the quote has a
  * billed line, so it shows on the "Needs a day" rail of /admin/schedule and the owner can drag it onto
  * the calendar. Payment is collected after the job (see lib/ops/payments.ts and the Stripe webhook).
- * Idempotent per quote. While the job is still unscheduled its estimate follows the quote (the owner
- * may price a custom line later); once it is on the calendar the slot's length stands.
+ * Idempotent per quote. The job's estimate follows the quote (the owner may price a custom line or
+ * change the hours later): on the rail only `est_minutes` / `crew_size` change; on the calendar the
+ * slot keeps its start and its end moves to fit. Started, done and cancelled jobs are left alone.
  * Returns null (and creates nothing) when the quote has no billed line yet.
  */
 export async function ensureJobForQuote(db: Db, quoteId: string): Promise<Job | null> {
@@ -48,9 +57,14 @@ export async function ensureJobForQuote(db: Db, quoteId: string): Promise<Job | 
   if (billed.length === 0) return existing;
   const estimate = estimateFromItems(billed);
   if (existing) {
-    if (existing.status !== "unscheduled") return existing;
+    if (!RESIZABLE.includes(existing.status)) return existing;
     if (existing.est_minutes === estimate.est_minutes && existing.crew_size === estimate.crew_size) return existing;
-    return one(await db.from("jobs").update(estimate).eq("id", existing.id).select("*").single(), "ensureJobForQuote(refresh)");
+    const patch: Partial<Job> = { ...estimate };
+    const onCalendar = existing.status !== "unscheduled" && existing.start_at;
+    if (onCalendar && existing.est_minutes !== estimate.est_minutes && estimate.est_minutes > 0) {
+      patch.end_at = new Date(Date.parse(onCalendar) + slotMinutes(estimate.est_minutes) * 60_000).toISOString();
+    }
+    return one(await db.from("jobs").update(patch).eq("id", existing.id).select("*").single(), "ensureJobForQuote(refresh)");
   }
   const inserted = await db
     .from("jobs")

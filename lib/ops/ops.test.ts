@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_AUTOPILOT } from "../db/types";
 import type { ApprovalKind, AutopilotRules, JobStatus } from "../db/types";
 import {
-  applyApproval, clearApprovalHandlers, createApproval, createJobFromQuote, decideApproval, enqueueSchedule,
+  applyApproval, clearApprovalHandlers, createApproval, createJobFromQuote, decideApproval, enqueueSchedule, ensureJobForQuote,
   enqueueTask, formatPhone, getSettings, isAutopiloted, normalizePhone, pendingCounts, registerApprovalHandler,
   requestApproval, taskRoleFor, transitionJob, updateSettings, upsertCustomer, JOB_TRANSITIONS,
   scheduleTaskKey, tryTransitionJob, releaseCrewFromJob, dropAssignmentKeepSlot, dropCrewFromOverlappingJobs,
@@ -273,6 +273,40 @@ describe("createJobFromQuote", () => {
   it("throws for a missing quote or a quote with nothing billable", async () => {
     await expect(createJobFromQuote(fakeDb(), "zz")).rejects.toThrow(/not found/);
     await expect(createJobFromQuote(fakeDb({ quotes: [{ id: "q1", customer_id: "c" }] }), "q1")).rejects.toThrow(/no priced items/);
+  });
+});
+
+describe("ensureJobForQuote", () => {
+  const item = (o: object) => ({
+    id: crypto.randomUUID(), quote_id: "q1", status: "auto", price: 50, est_hours: 1, crew_size: 1, sort_order: 0, ...o,
+  });
+  const setup = (job: object, hours = 3) =>
+    fakeDb({
+      quotes: [{ id: "q1", customer_id: "c1" }],
+      quote_items: [item({ est_hours: hours, crew_size: 2 }) as never],
+      jobs: [jobRow({ id: "j1", quote_id: "q1", customer_id: "c1", est_minutes: 120, crew_size: 2, ...job })],
+    });
+
+  it("updates the estimate of a job still on the rail", async () => {
+    const db = setup({ status: "unscheduled", start_at: null, end_at: null });
+    const job = await ensureJobForQuote(db, "q1");
+    expect(job).toMatchObject({ id: "j1", est_minutes: 180, start_at: null, end_at: null });
+  });
+  it("stretches or shrinks a job already on the calendar, keeping its start", async () => {
+    const start = "2026-11-02T14:00:00.000Z";
+    const db = setup({ status: "booked", start_at: start, end_at: "2026-11-02T16:00:00.000Z" });
+    expect(await ensureJobForQuote(db, "q1")).toMatchObject({ est_minutes: 180, start_at: start, end_at: "2026-11-02T17:00:00.000Z", status: "booked" });
+
+    db.tables.quote_items[0].est_hours = 0.25;
+    expect(await ensureJobForQuote(db, "q1")).toMatchObject({ est_minutes: 15, end_at: "2026-11-02T14:30:00.000Z" });
+  });
+  it("leaves a stale slot on an unscheduled job, and started / done jobs, alone", async () => {
+    const db = setup({ status: "unscheduled", start_at: "2026-11-02T14:00:00.000Z", end_at: "2026-11-02T16:00:00.000Z" });
+    expect(await ensureJobForQuote(db, "q1")).toMatchObject({ est_minutes: 180, end_at: "2026-11-02T16:00:00.000Z" });
+    for (const status of ["in_progress", "done", "cancelled"]) {
+      const d = setup({ status, start_at: "2026-11-02T14:00:00.000Z", end_at: "2026-11-02T16:00:00.000Z" });
+      expect(await ensureJobForQuote(d, "q1")).toMatchObject({ est_minutes: 120, end_at: "2026-11-02T16:00:00.000Z" });
+    }
   });
 });
 
