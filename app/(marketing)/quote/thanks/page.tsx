@@ -10,7 +10,7 @@ import { siteConfig } from "@/lib/site-config";
 
 export const metadata: Metadata = {
   title: "Quote Request Received",
-  description: "Thanks! Your quote request is in and your price is on the way.",
+  description: "Thanks! Your quote request is in. We'll call you with a price and pick a day together.",
   alternates: { canonical: "/quote/thanks" },
   robots: { index: false, follow: true },
 };

@@ -1,11 +1,13 @@
 /**
- * Phase 9 end-to-end pipeline, in process.
+ * End-to-end pipeline, in process: the phone-confirmed, pay-after-the-job flow.
  *
- *   form → quote task (auto quote + custom card) → owner prices the custom item → owner approves the
- *   quote (Stripe test checkout + email with /quote/pay/<id>) → Stripe `checkout.session.completed`
- *   → job + schedule task → scheduler proposes a slot + crew offers → crew accept → owner approves
- *   the booking (confirmation email + reminder task) → crew start / complete (payouts + review task)
+ *   form → quote task (auto quote + custom card; the job appears on the schedule's rail at once)
+ *   → owner prices the custom item (job estimate refreshed) → owner drags the job onto Monday
+ *   (crew emailed Available / Can't links, "Call Dana to confirm" card raised) → crew answer through
+ *   their email links → owner calls Dana, books it (check, both crew; confirmation email + reminder)
+ *   → crew start / complete (payouts + review task) → owner records the check (quote + job paid)
  *   → review request drafted (autopilot off: waits in the inbox) → autopilot on: sent by itself.
+ *   Plus: a card customer gets the Stripe link emailed after the job and the webhook marks it paid.
  *
  * Real modules all the way through (lib/ops, approval handlers, lib/stripe, lib/email, lib/ai,
  * lib/scheduler, the fleet task dispatcher) against the in-memory fake DB. Only the edges are fake:
@@ -13,7 +15,7 @@
  *   - `stripe`             → fake Checkout session; the webhook event is hand-built
  *   - global `fetch`       → captures what the Resend email provider would POST
  *   - `lib/geo`, `lib/weather` → nothing found
- * The clock is faked (Date only) so the scheduler, reminder timing and review delay are deterministic.
+ * The clock is faked (Date only) so reminder timing and the review delay are deterministic.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -71,17 +73,20 @@ import type {
 } from "../db/types";
 import {
   applyApproval,
+  assignmentByToken,
   decideApproval,
   enqueueTask,
   getSettings,
-  requestApproval,
+  recordCrewResponse,
+  scheduleJobAt,
   transitionJob,
   updateSettings,
   upsertCustomer,
 } from "../ops";
 import "../ops/handlers";
+import { recordOfflinePayment } from "../ops/payments";
 import { jobRow, settingsRow } from "../ops/test-utils";
-import { localDate, localTime, weekdayOf } from "../scheduler/time";
+import { zonedToUtc } from "../scheduler/time";
 import { resetStripeClient } from "../stripe/client";
 import { handleStripeEvent } from "../stripe/webhook";
 
@@ -114,8 +119,11 @@ const profile = (over: Partial<Profile>): Profile => ({
   max_hours_week: 40, paused: false, hourly_rate: 20, removed_at: null, lat: null, lng: null, ...over,
 });
 const OWNER_PROFILE = profile({ role: "owner", name: "Emmett", email: "owner@example.test", hourly_rate: 0 });
-const ANN = profile({ name: "Ann Lee", hourly_rate: 18 });
-const BO = profile({ name: "Bo Diaz", hourly_rate: 20 });
+const ANN = profile({ name: "Ann Lee", hourly_rate: 18, email: "ann@example.test" });
+const BO = profile({ name: "Bo Diaz", hourly_rate: 20, email: "bo@example.test" });
+/** Monday Oct 19 2026, 9:00–14:00 EDT: where the owner drags the job. */
+const MONDAY_9 = zonedToUtc("2026-10-19", "09:00");
+const MONDAY_14 = zonedToUtc("2026-10-19", "14:00");
 
 const ownerWindows: OwnerWindow[] = ([1, 2, 3, 4, 5, 6] as Weekday[]).map((weekday) => ({
   id: id(), created_at: T0, updated_at: T0, weekday, start_time: "09:00", end_time: "18:00",
@@ -144,8 +152,8 @@ function cannedToolInput(tool: string, prompt: string): Record<string, unknown> 
   if (tool === "submit_message") {
     const kind = /kind: (\w+)/.exec(prompt)?.[1] ?? "custom";
     const copy: Record<string, { subject: string; body: string }> = {
-      quote: { subject: "Your quote from Emmett's", body: "Hi Dana,\n\nThanks for reaching out. Your quote is ready." },
-      confirmation: { subject: "You're booked with Emmett's", body: "Hi Dana,\n\nYou're on the schedule. See you then!" },
+      quote: { subject: "Your card payment link from Emmett's", body: "Hi Dana,\n\nThanks for having us out. Here is your card link." },
+      confirmation: { subject: "You're booked with Emmett's", body: "Hi Dana,\n\nYou're on the schedule. See you then! We'll collect payment after the job." },
       review: { subject: "How did we do?", body: "Hi Dana,\n\nThanks for having us out. A quick review would mean a lot." },
       reminder: { subject: "See you tomorrow", body: "Hi Dana,\n\nJust a reminder that we're coming tomorrow." },
     };
@@ -224,20 +232,22 @@ async function decideAndApply(approvalId: string, patch?: Record<string, unknown
   return byId("approvals", approvalId);
 }
 
+/** Emails captured for the customer only (crew availability emails go to the crew). */
+const toDana = () => sent.filter((e) => e.to === "dana@example.com");
+
 // Flow state carried between steps.
 const flow = {
   customerId: "",
   leadId: "",
   quoteId: "",
-  quoteApprovalId: "",
   customItemId: "",
   customApprovalId: "",
   jobId: "",
-  bookingApprovalId: "",
+  callCardId: "",
   reviewApprovalId: "",
 };
 
-describe("Phase 9 ops flow: form → quote → pay → schedule → crew → book → complete → review", () => {
+describe("ops flow: form → estimate → drag onto calendar → crew answer → call & confirm → complete → collect → review", () => {
   beforeAll(() => {
     for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
     process.env.ANTHROPIC_API_KEY = "sk-ant-test";
@@ -304,15 +314,16 @@ describe("Phase 9 ops flow: form → quote → pay → schedule → crew → boo
     expect(rows("fleet_tasks").map((t) => t.type).sort()).toEqual(["custom_summary", "quote"]);
   });
 
-  it("(a) quote task: standard items auto-priced, custom item needs the owner, quote + custom_item cards raised", async () => {
+  it("(a) quote task: standard items auto-priced, custom item needs the owner, job already on the rail, nothing sent", async () => {
     const ctx = ctxFor("quotes", "quotes-1");
     const [result] = await runDue("quote", ctx);
-    expect(result).toMatchObject({ status: "needs_owner", items: 3, custom_items: 1, auto_sent: false });
+    expect(result).toMatchObject({ status: "needs_owner", items: 3, custom_items: 1 });
 
     const quote = rows("quotes").find((q) => q.lead_id === flow.leadId)!;
     flow.quoteId = quote.id;
     // 0.25 acre default lot, no tree cover: mowing 1 crew × 1 h, fall cleanup 2 crew × 2 h, $15/h, 50% margin.
     expect(quote).toMatchObject({ status: "needs_owner", price_total: 150, labor_total: 75, wage: 15, margin: 0.5 });
+    expect(quote.paid_at ?? null).toBeNull();
     expect(quote.rationale).toMatch(/custom request/i);
 
     const items = rows("quote_items").filter((i) => i.quote_id === quote.id).sort((a, b) => a.sort_order - b.sort_order);
@@ -323,12 +334,17 @@ describe("Phase 9 ops flow: form → quote → pay → schedule → crew → boo
     ]);
     flow.customItemId = items[2].id;
 
-    const [quoteCard] = approvalsOf("quote");
+    // The job exists from the estimate on: unpaid, waiting for a day, sized from the priced lines (60 + 120 min, crew 2).
+    const jobs = rows("jobs");
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ quote_id: quote.id, customer_id: flow.customerId, status: "unscheduled", paid: false, paid_at: null, est_minutes: 180, crew_size: 2 });
+    flow.jobId = jobs[0].id;
+    expect(result).toMatchObject({ job_id: flow.jobId });
+
+    // No "send the pay link" card: the owner calls the customer once a day is picked.
+    expect(approvalsOf("quote")).toHaveLength(0);
     const [customCard] = approvalsOf("custom_item");
-    expect(quoteCard).toMatchObject({ status: "pending", ref_table: "quotes", ref_id: quote.id, created_by: "quotes-1" });
-    expect(quoteCard.payload).toMatchObject({ needs_owner: true, price_total: 150 });
     expect(customCard).toMatchObject({ status: "pending", ref_table: "quote_items", ref_id: flow.customItemId });
-    flow.quoteApprovalId = quoteCard.id;
     flow.customApprovalId = customCard.id;
     expect(byId("leads", flow.leadId).status).toBe("quoted");
 
@@ -344,7 +360,7 @@ describe("Phase 9 ops flow: form → quote → pay → schedule → crew → boo
     expect(m.stripeCreate).not.toHaveBeenCalled();
   });
 
-  it("(b) owner prices the custom item → item priced, totals recomputed, quote card refreshed", async () => {
+  it("(b) owner prices the custom item → item priced, totals recomputed, the rail job's estimate refreshed", async () => {
     const decided = await decideAndApply(flow.customApprovalId, { action: "price", price: 120, est_hours: 2, crew_size: 2 });
     expect(decided.status).toBe("approved");
 
@@ -352,157 +368,98 @@ describe("Phase 9 ops flow: form → quote → pay → schedule → crew → boo
     const quote = byId("quotes", flow.quoteId);
     // 30 + 120 + 120; labor 15 + 60 + (2 crew × 2 h × $15 = 60); fee 2.9% + $0.30.
     expect(quote).toMatchObject({ status: "draft", price_total: 270, labor_total: 135, fee_total: 8.13, profit_total: 126.87 });
-
-    const quoteCards = approvalsOf("quote");
-    expect(quoteCards).toHaveLength(1); // refreshed in place, not duplicated
-    expect(quoteCards[0]).toMatchObject({ id: flow.quoteApprovalId, status: "pending", title: "Quote for Dana Whitfield — $270" });
-    expect(quoteCards[0].payload).toMatchObject({ needs_owner: false, price_total: 270 });
-    expect((quoteCards[0].payload.items as unknown[]).length).toBe(3);
-
+    // Still one job, still on the rail, now 60 + 120 + 120 minutes.
+    expect(rows("jobs")).toHaveLength(1);
+    expect(byId("jobs", flow.jobId)).toMatchObject({ status: "unscheduled", est_minutes: 300, crew_size: 2 });
+    expect(approvalsOf("quote")).toHaveLength(0);
     expect(sent).toHaveLength(0);
   });
 
-  it("(c) owner approves the quote → Stripe test checkout, email with /quote/pay/<id>, quote sent", async () => {
-    await decideAndApply(flow.quoteApprovalId);
-
-    expect(m.stripeCreate).toHaveBeenCalledTimes(1);
-    const [params, opts] = m.stripeCreate.mock.calls[0] as [Stripe.Checkout.SessionCreateParams, { idempotencyKey: string }];
-    expect(params.line_items?.map((l) => [l.price_data?.product_data?.name, l.price_data?.unit_amount])).toEqual([
-      ["Lawn mowing", 3000],
-      ["Fall leaf cleanup", 12000],
-      [CUSTOM_NOTE, 12000],
-    ]);
-    expect(params).toMatchObject({ mode: "payment", customer_email: "dana@example.com", client_reference_id: flow.quoteId });
-    expect(params.metadata).toMatchObject({ quote_id: flow.quoteId, customer_id: flow.customerId });
-    expect(params.success_url).toContain(`${SITE}/quote/paid`);
-    expect(opts.idempotencyKey).toMatch(new RegExp(`^quote-${flow.quoteId}-`));
-
-    const quote = byId("quotes", flow.quoteId);
-    expect(quote).toMatchObject({ status: "sent", stripe_checkout_id: "cs_test_flow" });
-    expect(quote.sent_at).toBe(SUNDAY.toISOString());
-    expect(Date.parse(quote.expires_at!) - SUNDAY.getTime()).toBe(14 * 86_400_000);
-
-    expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ to: "dana@example.com", subject: "Your quote from Emmett's" });
-    expect(sent[0].text).toContain(`${SITE}/quote/pay/${flow.quoteId}`);
-    expect(sent[0].text).toContain("/unsubscribe?token=");
-    const msg = rows("messages").find((x) => x.quote_id === flow.quoteId && x.kind === "quote")!;
-    expect(msg).toMatchObject({ status: "sent", provider_id: "re_1" });
-  });
-
-  it("(d) Stripe checkout.session.completed → quote accepted, lead won, paid job, schedule task queued", async () => {
-    const event = {
-      id: "evt_test_flow_paid",
-      object: "event",
-      type: "checkout.session.completed",
-      data: {
-        object: {
-          id: "cs_test_flow", object: "checkout.session", payment_status: "paid", status: "complete",
-          payment_intent: "pi_test_flow", client_reference_id: flow.quoteId,
-          metadata: { quote_id: flow.quoteId, customer_id: flow.customerId },
-        },
-      },
-    } as unknown as Stripe.Event;
-
-    expect(await handleStripeEvent(db, event, { siteUrl: SITE })).toEqual({ duplicate: false, processed: true });
-    expect(byId("quotes", flow.quoteId)).toMatchObject({
-      status: "accepted", stripe_payment_intent_id: "pi_test_flow", accepted_at: SUNDAY.toISOString(),
-    });
-    expect(byId("leads", flow.leadId).status).toBe("won");
-
-    const jobs = rows("jobs");
-    expect(jobs).toHaveLength(1);
-    // 60 + 120 + 120 minutes; biggest item crew is 2.
-    expect(jobs[0]).toMatchObject({
-      quote_id: flow.quoteId, customer_id: flow.customerId, status: "unscheduled", paid: true, est_minutes: 300, crew_size: 2,
-    });
-    flow.jobId = jobs[0].id;
-    const schedule = rows("fleet_tasks").filter((t) => t.type === "schedule");
-    expect(schedule).toHaveLength(1);
-    expect(schedule[0]).toMatchObject({ status: "queued", role: "scheduler", payload: { reason: "job_paid", job_ids: [flow.jobId] } });
-
-    // Stripe redelivers: no second job, no second schedule task.
-    expect(await handleStripeEvent(db, event, { siteUrl: SITE })).toEqual({ duplicate: true, processed: true });
-    expect(rows("jobs")).toHaveLength(1);
-    expect(rows("stripe_events")).toHaveLength(1);
-    expect(rows("stripe_events")[0].processed_at).not.toBeNull();
-  });
-
-  it("(e) schedule task on a Sunday → job proposed inside an owner window, offers to 2 crew", async () => {
-    const [result] = await runDue("schedule", ctxFor("scheduler", "scheduler-1"));
-    expect(result).toMatchObject({ proposed: 1, unschedulable: 0, considered: 1 });
+  it("(c) owner drags the job onto Monday 9am → crew emailed Available / Can't links, 'Call Dana to confirm' card raised", async () => {
+    // Mirrors app/admin/actions/schedule.ts moveJob (owner-hours check passed: Mon 09:00–18:00).
+    const res = await scheduleJobAt(db, flow.jobId, MONDAY_9, MONDAY_14, { actor: OWNER, siteUrl: SITE });
+    expect(res).toMatchObject({ asked: 2, emailed: 2, reconfirm: false });
 
     const job = byId("jobs", flow.jobId);
-    expect(job.status).toBe("proposed");
-    expect(job.schedule_reason).toBeTruthy();
-    const start = new Date(job.start_at!);
-    const end = new Date(job.end_at!);
-    expect(end.getTime() - start.getTime()).toBe(300 * 60_000);
-    // Earliest slot: Sunday is closed for the owner, so Monday 9:00–14:00 local.
-    expect(localDate(start)).toBe("2026-10-19");
-    const weekday = weekdayOf(localDate(start));
-    const win = ownerWindows.find((w) => w.weekday === weekday)!;
-    expect(win).toBeDefined();
-    expect(localTime(start) >= win.start_time && localTime(end) <= win.end_time).toBe(true);
-    expect(localTime(start)).toBe("09:00");
+    expect(job).toMatchObject({ status: "proposed", start_at: MONDAY_9.toISOString(), end_at: MONDAY_14.toISOString(), schedule_reason: `Placed by ${OWNER}` });
 
     const offers = rows("job_assignments").filter((a) => a.job_id === flow.jobId);
-    expect(offers).toHaveLength(2);
-    expect(offers.every((a) => a.status === "offered")).toBe(true);
-    expect(offers.map((a) => a.crew_id).sort()).toEqual([ANN.id, BO.id].sort());
-    expect(approvalsOf("booking")).toHaveLength(0);
-  });
-
-  it("(f) both crew accept → job crew_confirmed, booking card pending (autopilot off)", async () => {
-    // Mirrors app/crew/actions/offers.ts respondToOffer + maybeConfirmJob.
-    for (const a of rows("job_assignments").filter((x) => x.job_id === flow.jobId)) {
-      const res = await db
-        .from("job_assignments")
-        .update({ status: "accepted", responded_at: new Date().toISOString() })
-        .eq("id", a.id)
-        .eq("crew_id", a.crew_id)
-        .eq("status", "offered")
-        .select("id");
-      expect(res.data).toHaveLength(1);
-    }
-    const job = byId("jobs", flow.jobId);
-    const live = rows("job_assignments").filter((a) => a.job_id === flow.jobId && a.status !== "declined" && a.status !== "dropped");
-    expect(live.length >= job.crew_size && live.every((a) => a.status === "accepted")).toBe(true);
-
-    await transitionJob(db, flow.jobId, "crew_confirmed", { actor: "crew-app" });
-    const { approval, autoApproved } = await requestApproval(
-      db,
-      {
-        kind: "booking", ref_table: "jobs", ref_id: flow.jobId, payload: { job_id: flow.jobId },
-        title: "Book Dana Whitfield — Mon Oct 19", summary: job.schedule_reason, created_by: "crew-app",
-      },
-      await getSettings(db),
+    expect(offers.map((a) => [a.crew_id, a.status, !!a.notified_at]).sort()).toEqual(
+      [
+        [ANN.id, "offered", true],
+        [BO.id, "offered", true],
+      ].sort(),
     );
-    expect(autoApproved).toBe(false);
-    expect(approval.status).toBe("pending");
-    flow.bookingApprovalId = approval.id;
-    expect(byId("jobs", flow.jobId).status).toBe("crew_confirmed");
-    expect(sent).toHaveLength(1);
+    // Two crew emails, each with that crew member's own one-tap links; never the price.
+    expect(sent.map((e) => e.to).sort()).toEqual(["ann@example.test", "bo@example.test"]);
+    for (const email of sent) {
+      const offer = offers.find((a) => a.crew_id === (email.to === "ann@example.test" ? ANN.id : BO.id))!;
+      expect(email.subject).toBe("Are you free Mon Oct 19? Lawn mowing, Fall leaf cleanup, Please also haul away the old brush pile behind the garage. for Dana Whitfield");
+      expect(email.text).toContain(`${SITE}/respond/${offer.respond_token}?r=available`);
+      expect(email.text).toContain(`${SITE}/respond/${offer.respond_token}?r=cant`);
+      expect(email.text).toContain("Mon Oct 19, 9:00am–2:00pm (5h)");
+      expect(email.text).not.toContain("$");
+    }
+    expect(toDana()).toHaveLength(0);
+
+    const [card] = approvalsOf("booking");
+    expect(card).toMatchObject({ status: "pending", ref_table: "jobs", ref_id: flow.jobId, created_by: OWNER, title: "Call Dana Whitfield: Mon Oct 19, 9:00am–2:00pm" });
+    expect(card.payload).toMatchObject({ job_id: flow.jobId, call_to_confirm: true, phone: "4405550199", price_total: 270 });
+    expect(card.summary).toBe("$270, collected after the job · 2 crew, 5h · 0 of 2 crew asked said they're free");
+    flow.callCardId = card.id;
   });
 
-  it("(g) owner approves the booking → job booked, confirmation emailed, day-before reminder queued", async () => {
-    await decideAndApply(flow.bookingApprovalId);
-    const job = byId("jobs", flow.jobId);
-    expect(job.status).toBe("booked");
+  it("(d) crew answer through their email links → crew_confirmed, the same card refreshed; nothing goes to the customer", async () => {
+    // Mirrors app/respond/[token]: look the offer up by its token, record the answer.
+    const offers = rows("job_assignments").filter((a) => a.job_id === flow.jobId);
+    const ann = (await assignmentByToken(db, offers.find((a) => a.crew_id === ANN.id)!.respond_token))!;
+    const bo = (await assignmentByToken(db, offers.find((a) => a.crew_id === BO.id)!.respond_token))!;
+    expect(await recordCrewResponse(db, ann, "accepted", { siteUrl: SITE, actor: "crew-email" })).toMatchObject({ changed: true, confirmed: false });
+    expect(byId("jobs", flow.jobId).status).toBe("proposed");
+    expect(await recordCrewResponse(db, bo, "accepted", { siteUrl: SITE, actor: "crew-email" })).toMatchObject({ changed: true, confirmed: true });
+    expect(byId("jobs", flow.jobId).status).toBe("crew_confirmed");
 
-    expect(sent).toHaveLength(2);
-    expect(sent[1]).toMatchObject({ to: "dana@example.com", subject: "You're booked with Emmett's" });
+    expect(approvalsOf("booking")).toHaveLength(1); // refreshed in place, not duplicated
+    const card = byId("approvals", flow.callCardId);
+    expect(card.status).toBe("pending");
+    expect(card.summary).toMatch(/2 of 2 crew asked said they're free/);
+    expect(toDana()).toHaveLength(0);
+    expect(byId("quotes", flow.quoteId).status).toBe("draft");
+  });
+
+  it("(e) owner calls Dana, books it (both crew, pays by check after the job) → booked, quote confirmed unpaid, lead won, confirmation + reminder", async () => {
+    // Mirrors approving the call card with payment_method + crew_ids (the schedule dialog does the same through bookJob).
+    const decided = await decideApproval(db, flow.callCardId, "edited", { decidedBy: OWNER, payloadPatch: { payment_method: "check", crew_ids: [ANN.id, BO.id] } });
+    expect(await applyApproval(db, decided, { siteUrl: SITE, actor: OWNER })).toBe(true);
+
+    const job = byId("jobs", flow.jobId);
+    expect(job).toMatchObject({ status: "booked", crew_size: 2, paid: false, paid_at: null });
+    expect(rows("job_assignments").filter((a) => a.job_id === flow.jobId).map((a) => a.status)).toEqual(["accepted", "accepted"]);
+
+    const quote = byId("quotes", flow.quoteId);
+    expect(quote).toMatchObject({ status: "accepted", payment_method: "check", fee_total: 0, profit_total: 135, accepted_at: SUNDAY.toISOString() });
+    expect(quote.paid_at ?? null).toBeNull();
+    expect(quote.rationale).toMatch(/Confirmed by phone \(owner-user\): Mon Oct 19, 9:00am–2:00pm, pays by check after the job\./);
+    expect(byId("leads", flow.leadId).status).toBe("won");
+
+    expect(toDana()).toHaveLength(1);
+    expect(toDana()[0]).toMatchObject({ to: "dana@example.com", subject: "You're booked with Emmett's" });
     expect(rows("messages").find((x) => x.job_id === flow.jobId && x.kind === "confirmation")).toMatchObject({ status: "sent" });
 
     const reminders = rows("fleet_tasks").filter((t) => t.type === "followup_reminder");
     expect(reminders).toHaveLength(1);
-    expect(reminders[0]).toMatchObject({
-      status: "queued", role: "followup", dedupe_key: `reminder:${flow.jobId}`, payload: { job_id: flow.jobId },
-    });
-    expect(Date.parse(reminders[0].run_after)).toBe(Date.parse(job.start_at!) - 86_400_000);
+    expect(reminders[0]).toMatchObject({ status: "queued", role: "followup", dedupe_key: `reminder:${flow.jobId}`, payload: { job_id: flow.jobId } });
+    expect(Date.parse(reminders[0].run_after)).toBe(MONDAY_9.getTime() - 86_400_000);
+    expect(m.stripeCreate).not.toHaveBeenCalled();
   });
 
-  it("(h) crew start + complete → done with actual minutes, payouts, review task queued", async () => {
+  it("(f) the scheduler sweep leaves the owner's calendar alone (auto_schedule off) and nothing else is waiting", async () => {
+    const [result] = await runDue("schedule", ctxFor("scheduler", "scheduler-1")).then((r) => (r.length ? r : [{ auto_place: false, proposed: 0 }]));
+    expect(result).toMatchObject({ auto_place: false, proposed: 0 });
+    expect(byId("jobs", flow.jobId)).toMatchObject({ status: "booked", start_at: MONDAY_9.toISOString() });
+  });
+
+  it("(g) crew start + complete → done with actual minutes, payouts, review task queued; the quote is still to collect", async () => {
     const job0 = byId("jobs", flow.jobId);
     vi.setSystemTime(Date.parse(job0.start_at!) + 5 * 60_000);
     await transitionJob(db, flow.jobId, "in_progress", { actor: `crew:${ANN.id}` });
@@ -528,7 +485,7 @@ describe("Phase 9 ops flow: form → quote → pay → schedule → crew → boo
     });
 
     const job = byId("jobs", flow.jobId);
-    expect(job).toMatchObject({ status: "done", actual_minutes: 290 });
+    expect(job).toMatchObject({ status: "done", actual_minutes: 290, paid: false });
     expect(job.started_at).toBe(new Date(Date.parse(job0.start_at!) + 5 * 60_000).toISOString());
     expect(job.completed_at).toBe(new Date().toISOString());
     expect(rows("payouts").map((p) => [p.crew_id, p.hours, p.amount]).sort()).toEqual(
@@ -537,8 +494,27 @@ describe("Phase 9 ops flow: form → quote → pay → schedule → crew → boo
         [BO.id, 4.83, 96.6],
       ].sort(),
     );
+    expect(byId("quotes", flow.quoteId).status).toBe("accepted");
+    expect(byId("quotes", flow.quoteId).paid_at ?? null).toBeNull();
     // Not due yet: the worker loop leaves it alone.
     expect(await runDue("followup_review", ctxFor("followup", "followup-1"))).toEqual([]);
+  });
+
+  it("(h) Dana hands over a check → quote paid (no card fee), job paid; nothing emailed, nothing scheduled", async () => {
+    // Mirrors the quote page's "Record cash / check".
+    const before = rows("fleet_tasks").length;
+    const res = await recordOfflinePayment(db, flow.quoteId, { method: "check", amount: 270, checkNumber: "1042", recordedBy: OWNER });
+    expect(res.jobId).toBe(flow.jobId);
+    const quote = byId("quotes", flow.quoteId);
+    expect(quote).toMatchObject({ status: "accepted", payment_method: "check", fee_total: 0, profit_total: 135 });
+    expect(quote.paid_at).toBe(new Date().toISOString());
+    expect(quote.accepted_at).toBe(SUNDAY.toISOString()); // the phone confirmation stands
+    expect(quote.rationale).toMatch(/Paid by check #1042: \$270\.00, recorded by owner-user\./);
+    expect(byId("jobs", flow.jobId)).toMatchObject({ status: "done", paid: true });
+    expect(rows("jobs")).toHaveLength(1);
+    expect(rows("fleet_tasks")).toHaveLength(before); // a done job is not sent to the scheduler
+    expect(toDana()).toHaveLength(1);
+    expect(m.stripeCreate).not.toHaveBeenCalled();
   });
 
   it("(i) review task a day later → review drafted + followup card pending, nothing sent", async () => {
@@ -552,7 +528,7 @@ describe("Phase 9 ops flow: form → quote → pay → schedule → crew → boo
     expect(card).toMatchObject({ status: "pending", ref_table: "messages", created_by: "followup-1" });
     expect(card.payload).toMatchObject({ message_id: review.id, kind: "review", job_id: flow.jobId });
     flow.reviewApprovalId = card.id;
-    expect(sent).toHaveLength(2);
+    expect(toDana()).toHaveLength(1);
   });
 
   it("(j) with followup autopilot on, a second finished job's review request is sent by itself", async () => {
@@ -571,10 +547,58 @@ describe("Phase 9 ops flow: form → quote → pay → schedule → crew → boo
     expect(review.status).toBe("sent");
     const card = approvalsOf("followup").find((a) => a.ref_id === review.id)!;
     expect(card).toMatchObject({ status: "approved", decided_by: "autopilot" });
-    expect(sent).toHaveLength(3);
-    expect(sent[2]).toMatchObject({ to: "dana@example.com", subject: "How did we do?" });
+    expect(toDana()).toHaveLength(2);
+    expect(toDana()[1]).toMatchObject({ to: "dana@example.com", subject: "How did we do?" });
     // The first job's review is still waiting for the owner.
     expect(byId("approvals", flow.reviewApprovalId).status).toBe("pending");
+  });
+
+  it("(k) a card customer: the Stripe link is emailed after the job and the webhook marks the quote paid", async () => {
+    // A second, phone-confirmed quote whose customer said "card". Its job is done; the owner emails the link.
+    const q2 = (
+      await db
+        .from("quotes")
+        .insert({
+          lead_id: flow.leadId, customer_id: flow.customerId, status: "accepted", price_total: 90, labor_total: 45, fee_total: 2.91, profit_total: 42.09,
+          margin: 0.5, wage: 15, payment_method: "stripe", accepted_at: new Date().toISOString(), paid_at: null, sent_at: null, expires_at: null, rationale: null,
+          stripe_checkout_id: null, stripe_checkout_url: null, stripe_payment_intent_id: null, stripe_invoice_id: null, stripe_invoice_url: null,
+        })
+        .select("*")
+        .single()
+    ).data!;
+    await db.from("quote_items").insert({ quote_id: q2.id, service_id: MOWING.id, description: "Lawn mowing", is_custom: false, crew_size: 1, est_hours: 1, price: 90, status: "auto", sort_order: 0 });
+    const job2 = jobRow({ customer_id: flow.customerId, quote_id: q2.id, status: "done", paid: false, paid_at: null, completed_at: new Date().toISOString(), est_minutes: 60 });
+    await db.from("jobs").insert(job2);
+
+    // Mirrors the quote page's "Email card link": a quote approval approved by the owner, handled by quoteHandler.
+    const { approval } = { approval: (await db.from("approvals").insert({ kind: "quote", ref_table: "quotes", ref_id: q2.id, payload: { quote_id: q2.id, method: "checkout" }, title: "Card link", summary: null, created_by: OWNER, status: "pending", decided_at: null, decided_by: null, decision_note: null }).select("*").single()).data! };
+    const decided = await decideApproval(db, approval.id, "approved", { decidedBy: OWNER });
+    expect(await applyApproval(db, decided, { siteUrl: SITE, actor: OWNER })).toBe(true);
+    expect(m.stripeCreate).toHaveBeenCalledTimes(1);
+    const link = toDana()[toDana().length - 1];
+    expect(link.subject).toBe("Your card payment link from Emmett's");
+    expect(link.text).toContain(`${SITE}/quote/pay/${q2.id}`);
+    expect(byId("quotes", q2.id)).toMatchObject({ status: "accepted", paid_at: null, stripe_checkout_id: "cs_test_flow" });
+
+    // The card payment lands.
+    const event = {
+      id: "evt_test_flow_card",
+      object: "event",
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_test_flow", object: "checkout.session", payment_status: "paid", status: "complete", amount_total: 9000,
+          payment_intent: "pi_test_flow", client_reference_id: q2.id, metadata: { quote_id: q2.id, customer_id: flow.customerId },
+        },
+      },
+    } as unknown as Stripe.Event;
+    expect(await handleStripeEvent(db, event, { siteUrl: SITE })).toEqual({ duplicate: false, processed: true });
+    expect(byId("quotes", q2.id)).toMatchObject({ status: "accepted", payment_method: "stripe", stripe_payment_intent_id: "pi_test_flow" });
+    expect(byId("quotes", q2.id).paid_at).toBe(new Date().toISOString());
+    expect(byId("jobs", job2.id)).toMatchObject({ status: "done", paid: true });
+    expect(rows("jobs").filter((j) => j.quote_id === q2.id)).toHaveLength(1); // no second job for the payment
+    // Redelivery is a no-op.
+    expect(await handleStripeEvent(db, event, { siteUrl: SITE })).toEqual({ duplicate: true, processed: true });
   });
 
   it("ledger: every AI call is logged in ai_usage, and nothing reached the customer without an approved card", () => {
@@ -584,16 +608,17 @@ describe("Phase 9 ops flow: form → quote → pay → schedule → crew → boo
     expect(usage).toHaveLength(calls);
     expect(usage.map((u) => [u.task, u.worker])).toEqual([
       ["summarize_custom_request", "quotes-1"],
-      ["draft_message_quote", null],
       ["draft_message_confirmation", null],
       ["draft_message_review", "followup-1"],
       ["draft_message_review", "followup-1"],
+      ["draft_message_quote", null],
     ]);
     expect(usage.every((u) => u.model === "claude-sonnet-5-5" && u.input_tokens === 1200 && u.est_cost > 0)).toBe(true);
 
+    // Crew availability emails are not customer messages (and carry no price); everything to Dana is.
     const sentMessages = rows("messages").filter((x) => x.status === "sent");
-    expect(sentMessages).toHaveLength(sent.length);
-    for (const email of sent) {
+    expect(sentMessages).toHaveLength(toDana().length);
+    for (const email of toDana()) {
       const msg = sentMessages.find((x) => x.subject === email.subject && email.text.startsWith(x.body.trim()));
       expect(msg, `captured email "${email.subject}" has no sent message row`).toBeDefined();
       const card =
@@ -611,9 +636,9 @@ describe("Phase 9 ops flow: form → quote → pay → schedule → crew → boo
     expect(drafts[0]).toMatchObject({ kind: "review", job_id: flow.jobId });
     expect(drafts[0].sent_at ?? null).toBeNull();
     expect(drafts[0].provider_id ?? null).toBeNull();
-    // Every card in the inbox is accounted for.
+    // Every card in the inbox is accounted for: the call card was approved with the booking.
     expect(rows("approvals").map((a) => `${a.kind}:${a.status}`).sort()).toEqual(
-      ["booking:approved", "custom_item:approved", "followup:approved", "followup:pending", "quote:approved"].sort(),
+      ["booking:edited", "custom_item:approved", "followup:approved", "followup:pending", "quote:approved"].sort(),
     );
   });
 });

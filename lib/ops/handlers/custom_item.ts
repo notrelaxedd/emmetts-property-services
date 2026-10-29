@@ -4,8 +4,8 @@ import { sendMessage } from "../../email";
 import { priceQuote } from "../../pricing";
 import type { QuoteItemInput } from "../../pricing";
 import { siteConfig } from "../../site-config";
-import { createApproval } from "../approvals";
 import type { ApprovalHandler, CreateApprovalInput } from "../approvals";
+import { ensureJobForQuote } from "../jobs";
 import { getSettings } from "../settings";
 import { check, one } from "../types";
 import type { Db } from "../types";
@@ -104,17 +104,17 @@ const OPEN_QUOTE_STATUSES = new Set<Quote["status"]>(["draft", "needs_owner"]);
 export const SENT_QUOTE_ERROR = "Quote already sent; decline/refund and re-quote";
 
 /**
- * Why the owner's quote editor (`saveQuote`) must refuse a quote in this status, or null when it may
- * be edited. Once the link has gone out (`sent`) or been paid (`accepted`) an edit would silently
- * change what the customer pays: a sent quote goes through "Revise & re-send" (expires the Stripe
- * session, back to `draft`), a paid one through Refund.
+ * Why the owner's quote editor (`saveQuote`) must refuse a quote, or null when it may be edited. Once a
+ * pay link has gone out (`sent`) or the money is in (`paid_at`) an edit would silently change what the
+ * customer pays: a sent quote goes through "Revise & re-send" (expires the Stripe session, back to
+ * `draft`), a paid one through Refund. A quote the customer confirmed by phone but hasn't paid yet
+ * (`accepted`, no `paid_at`) may still be edited: the price is settled when the job is done.
  */
-export function quoteEditLockReason(status: Quote["status"]): string | null {
-  switch (status) {
+export function quoteEditLockReason(quote: Pick<Quote, "status"> & Partial<Pick<Quote, "paid_at">>): string | null {
+  if (quote.paid_at) return "This quote is paid. Refund it and create a new quote instead of editing it.";
+  switch (quote.status) {
     case "sent":
       return "This quote has been sent. Use “Revise & re-send” to change it (the old payment link stops working).";
-    case "accepted":
-      return "This quote is paid. Refund it and create a new quote instead of editing it.";
     case "declined":
       return "This quote is declined and can't be edited.";
     default:
@@ -231,8 +231,8 @@ async function emailCustomer(
  *  - refer:   status `referred`, referral email to the customer (partner from settings).
  *  - decline: status `declined`, decline email to the customer.
  * Then the quote is re-totalled. When no item is left `needs_owner`, the quote goes back to `draft` and its
- * `quote` approval is created / refreshed so the owner can send it; if nothing billable is left the quote
- * is marked `declined`.
+ * job (the "Needs a day" rail on the schedule) is created or its estimate refreshed, ready to be dragged
+ * onto the calendar; if nothing billable is left the quote is marked `declined`.
  * Only while the quote is `draft` / `needs_owner`: once it has been sent, `price` is refused (throws
  * SENT_QUOTE_ERROR before touching anything) and refer / decline update the item + email the customer
  * but leave the quote's totals and status alone.
@@ -306,9 +306,6 @@ export const custom_itemHandler: ApprovalHandler = async (db, approval, ctx) => 
     check(await db.from("quotes").update({ status: "declined" }).eq("id", quoteId), "custom_itemHandler(quote declined)");
     return;
   }
-  const draft = one(
-    await db.from("quotes").update({ status: "draft" }).eq("id", quoteId).select("*").single(),
-    "custom_itemHandler(quote draft)",
-  );
-  await createApproval(db, quoteApprovalInput(draft, fresh.items, customer.name, ctx.actor));
+  one(await db.from("quotes").update({ status: "draft" }).eq("id", quoteId).select("*").single(), "custom_itemHandler(quote draft)");
+  await ensureJobForQuote(db, quoteId);
 };

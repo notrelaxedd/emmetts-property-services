@@ -27,7 +27,7 @@ export function OfferActions({ assignmentId, swap = false }: { assignmentId: str
         onClick={() => run("accept", () => respondToOffer(assignmentId, "accepted"))}
       >
         {busyKey === "accept" ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Check aria-hidden="true" />}
-        {swap ? "Take it" : "Accept"}
+        {swap ? "Take it" : "I’m available"}
       </Button>
     </div>
   )

@@ -226,9 +226,11 @@ async function acceptPayment(db: Db, ctx: DispatchCtx, p: PaidQuote): Promise<vo
 
   // A second, different payment for a quote that is already paid (by Stripe, or by cash / check the owner
   // recorded): keep the first payment on the quote (refunds and the job hang off it) and make the owner
-  // refund this one by hand.
-  const paidOffline = quote.status === "accepted" && (quote.payment_method === "cash" || quote.payment_method === "check");
-  const secondStripe = quote.status === "accepted" && !!quote.stripe_payment_intent_id && quote.stripe_payment_intent_id !== pi;
+  // refund this one by hand. `accepted` alone is not "paid": the customer confirms by phone and pays after
+  // the job, so only `paid_at` says the money is here.
+  const alreadyPaid = quote.paid_at !== null;
+  const paidOffline = alreadyPaid && (quote.payment_method === "cash" || quote.payment_method === "check");
+  const secondStripe = alreadyPaid && !!quote.stripe_payment_intent_id && quote.stripe_payment_intent_id !== pi;
   if (pi && (paidOffline || secondStripe)) {
     const how = paidOffline ? `; it was paid by ${quote.payment_method}` : "";
     const note = `WARNING: second payment ${pi}${paid !== null ? ` (${usd(paid)})` : ""} received for this already-paid quote (${p.source}${how}) — refund manually in Stripe.`;
@@ -269,8 +271,10 @@ async function acceptPayment(db: Db, ctx: DispatchCtx, p: PaidQuote): Promise<vo
       .update({
         status: "accepted",
         accepted_at: quote.accepted_at ?? now,
+        paid_at: quote.paid_at ?? now,
         stripe_payment_intent_id: pi ?? quote.stripe_payment_intent_id,
-        payment_method: quote.payment_method ?? "stripe",
+        // The money came by card, whatever the customer said on the phone.
+        payment_method: "stripe",
         ...(rationale !== quote.rationale ? { rationale } : {}),
       })
       .eq("id", quoteId),
@@ -286,7 +290,7 @@ async function acceptPayment(db: Db, ctx: DispatchCtx, p: PaidQuote): Promise<vo
     });
   }
   check(await db.from("leads").update({ status: "won" }).eq("id", quote.lead_id), "stripe(lead won)");
-  await createJobFromQuote(db, quoteId); // idempotent; enqueues the `schedule` task
+  await createJobFromQuote(db, quoteId); // idempotent: marks the existing job paid
 }
 
 /**
@@ -307,7 +311,7 @@ async function onInvoiceProblem(
   const live = quote.stripe_invoice_id === invoice.id && !!quote.stripe_invoice_url;
   if (kind === "voided" && !live) return; // we voided it ourselves (revise / re-send / switch to Checkout)
 
-  const decline = kind === "voided" && quote.status === "sent";
+  const decline = kind === "voided" && quote.status === "sent" && !quote.paid_at;
   const note =
     kind === "payment_failed"
       ? `Invoice ${invoice.id} payment failed (attempt ${invoice.attempt_count}, ${usd(invoice.amount_due)} due). Stripe emails the customer; nothing to do unless it keeps failing.`
@@ -334,7 +338,7 @@ async function onCheckoutExpired(db: Db, session: Stripe.Checkout.Session): Prom
   // Only the quote's *current* session counts (we expire superseded sessions ourselves). A Checkout session
   // expiring (24 h) does NOT expire the quote: the emailed /quote/pay/<id> link mints a new session until
   // `quotes.expires_at`, which the host worker enforces. Just drop the stale URL.
-  if (!quote || quote.status !== "sent" || quote.stripe_checkout_id !== session.id) return;
+  if (!quote || quote.paid_at || quote.stripe_checkout_id !== session.id) return;
   check(await db.from("quotes").update({ stripe_checkout_url: null }).eq("id", quoteId), "stripe(clear stale checkout url)");
 }
 

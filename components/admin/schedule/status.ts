@@ -1,10 +1,21 @@
-import type { JobStatus } from "@/lib/db/types"
+import type { AssignmentStatus, JobStatus } from "@/lib/db/types"
 
 export const STATUS_LABEL: Record<JobStatus, string> = {
-  unscheduled: "Unscheduled",
-  proposed: "Proposed",
-  crew_confirmed: "Crew confirmed",
-  booked: "Booked",
+  unscheduled: "Needs a day",
+  proposed: "On the calendar · call to confirm",
+  crew_confirmed: "Crew free · call to confirm",
+  booked: "Confirmed with customer",
+  in_progress: "In progress",
+  done: "Done",
+  cancelled: "Cancelled",
+}
+
+/** Short form for tight spots (badges, legend). */
+export const STATUS_SHORT: Record<JobStatus, string> = {
+  unscheduled: "Needs a day",
+  proposed: "Call to confirm",
+  crew_confirmed: "Crew free, call to confirm",
+  booked: "Confirmed",
   in_progress: "In progress",
   done: "Done",
   cancelled: "Cancelled",
@@ -26,7 +37,17 @@ export const HATCH_STYLE = {
 } as const
 
 /** Jobs in these states can't be dragged / moved. */
-export const LOCKED_STATUSES: readonly JobStatus[] = ["unscheduled", "in_progress", "done", "cancelled"]
+export const LOCKED_STATUSES: readonly JobStatus[] = ["in_progress", "done", "cancelled"]
+
+/** How a crew member's answer reads on the schedule. */
+export const CREW_ANSWER: Record<AssignmentStatus, { label: string; variant: "success" | "warning" | "outline" | "secondary" | "destructive" }> = {
+  offered: { label: "No answer yet", variant: "outline" },
+  accepted: { label: "Available", variant: "success" },
+  declined: { label: "Can't make it", variant: "destructive" },
+  swap_offered: { label: "Swap offered", variant: "warning" },
+  drop_requested: { label: "Wants to drop", variant: "warning" },
+  dropped: { label: "Dropped", variant: "outline" },
+}
 
 export function fmtMinutes(min: number): string {
   const h = Math.floor(min / 60)
@@ -45,4 +66,16 @@ export function fmtDuration(minutes: number): string {
   if (h && m) return `${h}h ${m}m`
   if (h) return `${h}h`
   return `${m}m`
+}
+
+export function fmtPhone(digits: string): string {
+  const d = digits.replace(/\D/g, "")
+  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`
+  if (d.length === 11 && d.startsWith("1")) return fmtPhone(d.slice(1))
+  return digits
+}
+
+export function telHref(digits: string): string {
+  const d = digits.replace(/\D/g, "")
+  return `tel:${d.length === 10 ? `+1${d}` : d.startsWith("1") && d.length === 11 ? `+${d}` : digits}`
 }

@@ -118,6 +118,8 @@ export function assignment(
     status: "accepted" as AssignmentStatus,
     responded_at: null,
     swap_to_crew_id: null,
+    respond_token: `tok-${jobId}-${crewId}`,
+    notified_at: null,
     start_at,
     end_at,
     est_minutes: Math.round((Date.parse(end_at) - Date.parse(start_at)) / 60_000),

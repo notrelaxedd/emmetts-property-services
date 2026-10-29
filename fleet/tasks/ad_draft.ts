@@ -24,6 +24,8 @@ import type { AdDraftPayload } from "./schemas";
 
 export const AD_CHANNELS: AdChannel[] = ["facebook", "instagram", "nextdoor"];
 
+const SEASONS: readonly Season[] = ["spring", "summer", "fall", "winter"];
+
 const SEASON_OFFER: Record<Season, string> = {
   spring: "Spring cleanup and weekly mowing",
   summer: "Weekly mowing and edging",
@@ -66,12 +68,15 @@ async function freeUtmCode(db: Db, base: string): Promise<{ code: string; reuse:
 export async function runAdDraft(ctx: TaskContext, payload: AdDraftPayload): Promise<Record<string, unknown>> {
   const { db } = ctx;
   const now = ctx.now();
+  // No offer given (the admin form's optional field): lead with what the site is leading with.
+  const season = (SEASONS as readonly string[]).includes(payload.season) ? (payload.season as Season) : seasonOf(now);
+  const offer = payload.offer.trim() || currentOffer(season);
   const base = `${payload.channel}-${payload.season}-${yyyymmdd(now)}`.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
   const { code, reuse } = await freeUtmCode(db, base);
 
   let draft;
   try {
-    draft = await ctx.ai.draftAd(db, { channel: payload.channel, season: payload.season, offer: payload.offer });
+    draft = await ctx.ai.draftAd(db, { channel: payload.channel, season: payload.season, offer });
   } catch (e) {
     if (e instanceof AiCapExceededError) return { skipped: "ai_cap" };
     throw e;
@@ -81,7 +86,7 @@ export async function runAdDraft(ctx: TaskContext, payload: AdDraftPayload): Pro
   const center = { lat: settings.base_lat ?? opsConfig.defaultBase.lat, lng: settings.base_lng ?? opsConfig.defaultBase.lng };
   const fields = {
     channel: payload.channel, headline: draft.headline, body: draft.body, cta: draft.cta, season: payload.season,
-    offer: payload.offer, utm_code: code, status: "draft" as const,
+    offer, utm_code: code, status: "draft" as const,
     // Targeting is a starting point for the owner in Ads Manager; radius etc. are set there.
     targeting: { center },
   };
@@ -97,7 +102,7 @@ export async function runAdDraft(ctx: TaskContext, payload: AdDraftPayload): Pro
       ref_id: ad.id,
       payload: { ad_id: ad.id, channel: ad.channel, headline: ad.headline, body: ad.body, cta: ad.cta },
       title: `${ad.channel} ad: ${ad.headline}`,
-      summary: `${payload.season} · ${payload.offer} · utm ${ad.utm_code}`,
+      summary: `${payload.season} · ${offer} · utm ${ad.utm_code}`,
       created_by: ctx.worker,
     },
     settings,

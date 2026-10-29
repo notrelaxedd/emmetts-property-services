@@ -175,13 +175,13 @@ export const content = {
     cta: "Get a quote",
     eyebrow: "No obligation",
     headline: ["Get your", "free quote"],
-    body: "Tell us about your yard and what you need. We'll look it over and send you a price. No pressure, and you can always call us instead.",
+    body: "Tell us about your yard and what you need. We'll look it over and call you with a price and a day. No pressure, and you can always call us instead.",
     steps: {
       heading: "What happens next",
       items: [
         "We look at your address and what you asked for.",
-        "We send your price by email or text.",
-        "You pick a day that works and we show up.",
+        "We call you with your price and pick a day together.",
+        "We show up and do the work. You pay by cash, check or card once it's done.",
       ],
     },
     form: {
@@ -254,13 +254,13 @@ export const content = {
     },
     thanks: {
       eyebrow: "Request received",
-      headline: ["Your quote", "is on the way"],
-      body: "Thanks! We've got your request and we're taking a look. We'll send your price as soon as it's ready.",
+      headline: ["We'll call", "you shortly"],
+      body: "Thanks! We've got your request and we're working out your price. We'll call the number you gave us to go over it and pick a day that works for you.",
       nextHeading: "What happens next",
       next: [
         "We look at your address and what you asked for.",
-        "We send your price by email or text.",
-        "Say yes, pick a day, and we'll take care of the rest.",
+        "We call you with your price and pick a day together.",
+        "We show up and do the work. You pay by cash, check or card once it's done.",
       ],
       soonerPrompt: "Need it sooner? Call the crew.",
       back: "Back to home",
@@ -276,7 +276,7 @@ export const content = {
     paid: {
       eyebrow: "You're all set",
       headline: ["Payment", "received"],
-      body: "Thank you! Your payment went through and your spot is saved. We'll be in touch soon to schedule your job, and a receipt from Stripe is on its way to your email.",
+      body: "Thank you! Your payment went through and a receipt from Stripe is on its way to your email. If the work isn't done yet, your spot is saved and we'll see you on the day we agreed.",
       callPrompt: "Need to change something or have a question? Give us a call.",
     },
     // A pay link that's past its date or already paid (/quote/expired).

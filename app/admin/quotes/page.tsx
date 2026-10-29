@@ -19,12 +19,13 @@ export const metadata = { title: "Quotes" }
 const STATUSES: QuoteStatus[] = ["needs_owner", "draft", "sent", "accepted", "expired", "declined"]
 const LABELS: Record<QuoteStatus, string> = {
   needs_owner: "Needs you",
-  draft: "Draft",
-  sent: "Sent",
-  accepted: "Accepted",
+  draft: "Estimated",
+  sent: "Pay link out",
+  accepted: "Confirmed",
   expired: "Expired",
   declined: "Declined",
 }
+const PAY_LABEL: Record<string, string> = { cash: "cash", check: "check", stripe: "card" }
 const LIMIT = 300
 
 export default async function QuotesPage({ searchParams }: { searchParams: { status?: string } }) {
@@ -51,10 +52,12 @@ export default async function QuotesPage({ searchParams }: { searchParams: { sta
   const counts = Object.fromEntries(STATUSES.map((s) => [s, quotes.filter((q) => q.status === s).length])) as Record<QuoteStatus, number>
   const shown = status === "all" ? quotes : quotes.filter((q) => q.status === status)
   const sum = (s: QuoteStatus) => quotes.filter((q) => q.status === s).reduce((a, q) => a + q.price_total, 0)
+  const toCollect = quotes.filter((q) => q.status === "accepted" && !q.paid_at)
+  const paid = quotes.filter((q) => !!q.paid_at)
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Quotes" description={`Newest first (last ${LIMIT}).`} />
+      <PageHeader title="Quotes" description={`Newest first (last ${LIMIT}). Estimated quotes wait on the schedule's rail; you confirm them by phone and collect after the job.`} />
       {error ? (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
@@ -62,8 +65,8 @@ export default async function QuotesPage({ searchParams }: { searchParams: { sta
       ) : null}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Needs you" value={counts.needs_owner} hint={money(sum("needs_owner"))} />
-        <Stat label="Out for payment" value={counts.sent} hint={money(sum("sent"))} />
-        <Stat label="Accepted" value={counts.accepted} hint={money(sum("accepted"))} />
+        <Stat label="Confirmed, to collect" value={toCollect.length} hint={money(toCollect.reduce((a, q) => a + q.price_total, 0))} />
+        <Stat label="Paid" value={paid.length} hint={money(paid.reduce((a, q) => a + q.price_total, 0))} />
         <Stat label="Expired / declined" value={counts.expired + counts.declined} />
       </div>
       <UrlFilterChips
@@ -86,7 +89,7 @@ export default async function QuotesPage({ searchParams }: { searchParams: { sta
                 <TableHead className="text-right">Labor</TableHead>
                 <TableHead className="text-right">Profit</TableHead>
                 <TableHead className="text-right">Price</TableHead>
-                <TableHead>Sent</TableHead>
+                <TableHead>Payment</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -107,7 +110,15 @@ export default async function QuotesPage({ searchParams }: { searchParams: { sta
                     <TableCell className="text-right tabular-nums">{money(q.labor_total)}</TableCell>
                     <TableCell className="text-right tabular-nums">{money(q.profit_total)}</TableCell>
                     <TableCell className="text-right font-semibold tabular-nums text-ink">{money(q.price_total)}</TableCell>
-                    <TableCell className="whitespace-nowrap text-ink-muted">{q.sent_at ? dateTime(q.sent_at) : "—"}</TableCell>
+                    <TableCell className="whitespace-nowrap text-ink-muted">
+                      {q.paid_at
+                        ? `Paid${q.payment_method ? ` by ${PAY_LABEL[q.payment_method] ?? q.payment_method}` : ""} · ${dateTime(q.paid_at)}`
+                        : q.status === "accepted"
+                          ? `After the job${q.payment_method ? ` by ${PAY_LABEL[q.payment_method] ?? q.payment_method}` : ""}`
+                          : q.sent_at
+                            ? `Link sent ${dateTime(q.sent_at)}`
+                            : "—"}
+                    </TableCell>
                   </TableRow>
                 )
               })}
@@ -115,7 +126,7 @@ export default async function QuotesPage({ searchParams }: { searchParams: { sta
           </Table>
         </div>
       ) : (
-        <EmptyState icon={Receipt} title="No quotes here" description="The quotes worker drafts one for every lead." />
+        <EmptyState icon={Receipt} title="No quotes here" description="The quotes worker estimates one for every lead; it then waits on the schedule's rail for a day." />
       )}
     </div>
   )

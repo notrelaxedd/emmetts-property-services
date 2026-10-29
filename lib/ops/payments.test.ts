@@ -87,8 +87,21 @@ describe("recordOfflinePayment", () => {
     expect(draft.tables.quotes[0].status).toBe("accepted");
   });
 
+  it("the usual case: a quote confirmed by phone, job done, check handed over → paid, job marked paid, nothing re-scheduled", async () => {
+    const db = world({ status: "accepted", accepted_at: "2026-01-02T00:00:00Z", payment_method: "check", paid_at: null, fee_total: 0 });
+    db.tables.jobs = [{ id: "j1", quote_id: "q1", customer_id: "c1", status: "done", paid: false, paid_at: null, est_minutes: 60, crew_size: 1 }];
+    const res = await recordOfflinePayment(db, "q1", check());
+    expect(res.jobId).toBe("j1");
+    expect(db.tables.quotes[0]).toMatchObject({ status: "accepted", accepted_at: "2026-01-02T00:00:00Z", payment_method: "check", fee_total: 0 });
+    expect(db.tables.quotes[0].paid_at).toBeTruthy();
+    expect(db.tables.jobs).toHaveLength(1);
+    expect(db.tables.jobs[0]).toMatchObject({ status: "done", paid: true });
+    expect(db.tables.jobs[0].paid_at).toBeTruthy();
+    expect(db.tables.fleet_tasks ?? []).toHaveLength(0);
+  });
+
   it("refuses a paid or declined quote and a zero amount", async () => {
-    await expect(recordOfflinePayment(world({ status: "accepted" }), "q1", check())).rejects.toThrow(/already paid/);
+    await expect(recordOfflinePayment(world({ status: "accepted", paid_at: "2026-01-02T00:00:00Z" }), "q1", check())).rejects.toThrow(/already paid/);
     await expect(recordOfflinePayment(world({ status: "declined" }), "q1", check())).rejects.toThrow(/declined/);
     await expect(recordOfflinePayment(world(), "q1", check({ amount: 0 }))).rejects.toThrow(/more than \$0/);
   });

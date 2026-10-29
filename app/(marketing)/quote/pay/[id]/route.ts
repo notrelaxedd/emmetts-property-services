@@ -17,11 +17,13 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const home = new URL("/quote/expired", siteConfig.url);
   if (!db || !/^[0-9a-f-]{36}$/i.test(params.id)) return NextResponse.redirect(home);
 
-  const { data: quote } = await db.from("quotes").select("id,status,expires_at,stripe_invoice_url").eq("id", params.id).maybeSingle();
+  const { data: quote } = await db.from("quotes").select("id,status,paid_at,sent_at,expires_at,stripe_invoice_url").eq("id", params.id).maybeSingle();
   if (!quote) return NextResponse.redirect(home);
-  if (quote.status === "accepted") return NextResponse.redirect(new URL("/quote/paid", siteConfig.url));
-  if (quote.status === "sent" && quote.stripe_invoice_url) return NextResponse.redirect(quote.stripe_invoice_url);
-  const stillValid = quote.status === "sent" && (!quote.expires_at || new Date(quote.expires_at) > new Date());
+  if (quote.paid_at) return NextResponse.redirect(new URL("/quote/paid", siteConfig.url));
+  // `sent`: the legacy pay-first link. `accepted` + sent_at: the card link emailed after a phone-confirmed job.
+  const linkOut = quote.status === "sent" || (quote.status === "accepted" && !!quote.sent_at);
+  if (linkOut && quote.stripe_invoice_url) return NextResponse.redirect(quote.stripe_invoice_url);
+  const stillValid = linkOut && (!quote.expires_at || new Date(quote.expires_at) > new Date());
   if (!stillValid) return NextResponse.redirect(home);
 
   try {

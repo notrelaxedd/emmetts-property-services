@@ -1,4 +1,5 @@
-import { Inbox } from "lucide-react"
+import Link from "next/link"
+import { CalendarDays, Inbox, Phone } from "lucide-react"
 import { DecidedList } from "@/components/admin/inbox/decided-list"
 import { InboxCard } from "@/components/admin/inbox/inbox-card"
 import { UrlFilterChips } from "@/components/admin/inbox/inbox-filters"
@@ -49,10 +50,12 @@ export default async function InboxPage({ searchParams }: { searchParams: { filt
   let decided: Approval[] = []
   let counts: Record<ApprovalKind, number> | null = null
   let loadError: string | null = null
+  let needsDay = 0
+  let toCollect = 0
   try {
     let q = db.from("approvals").select("*").eq("status", "pending").order("created_at", { ascending: true })
     if (filter !== "all") q = q.in("kind", FILTER_KINDS[filter])
-    const [pendingRes, decidedRes, c] = await Promise.all([
+    const [pendingRes, decidedRes, c, railRes, collectRes] = await Promise.all([
       q,
       db
         .from("approvals")
@@ -61,10 +64,16 @@ export default async function InboxPage({ searchParams }: { searchParams: { filt
         .order("decided_at", { ascending: false, nullsFirst: false })
         .limit(DECIDED_LIMIT),
       pendingCounts(db),
+      // Estimated quotes waiting for a day on the schedule's rail.
+      db.from("jobs").select("id", { count: "exact", head: true }).eq("status", "unscheduled"),
+      // Finished jobs whose quote hasn't been paid yet.
+      db.from("quotes").select("id", { count: "exact", head: true }).eq("status", "accepted").is("paid_at", null),
     ])
     pending = check(pendingRes, "inbox(pending)") ?? []
     decided = check(decidedRes, "inbox(decided)") ?? []
     counts = c
+    needsDay = railRes.error ? 0 : (railRes.count ?? 0)
+    toCollect = collectRes.error ? 0 : (collectRes.count ?? 0)
   } catch (e) {
     loadError = e instanceof Error ? e.message : String(e)
   }
@@ -87,6 +96,38 @@ export default async function InboxPage({ searchParams }: { searchParams: { filt
         <Alert variant="destructive">
           <AlertDescription>Couldn&apos;t load approvals: {loadError}</AlertDescription>
         </Alert>
+      ) : null}
+      {needsDay || toCollect ? (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {needsDay ? (
+            <Link
+              href="/admin/schedule"
+              className="flex items-center gap-3 rounded-lg border border-brand-green-dark/40 bg-brand-green/15 px-4 py-3 text-sm text-ink hover:bg-brand-green/25"
+            >
+              <CalendarDays className="size-5 shrink-0" aria-hidden="true" />
+              <span>
+                <span className="font-semibold">
+                  {needsDay} quote{needsDay === 1 ? "" : "s"} waiting for a day.
+                </span>{" "}
+                Drag {needsDay === 1 ? "it" : "them"} onto the calendar; the crew get emailed, then you call the customer.
+              </span>
+            </Link>
+          ) : null}
+          {toCollect ? (
+            <Link
+              href="/admin/quotes?status=accepted"
+              className="flex items-center gap-3 rounded-lg border border-amber-400 bg-amber-100 px-4 py-3 text-sm text-amber-950 hover:bg-amber-200/70"
+            >
+              <Phone className="size-5 shrink-0" aria-hidden="true" />
+              <span>
+                <span className="font-semibold">
+                  {toCollect} confirmed quote{toCollect === 1 ? "" : "s"} not paid yet.
+                </span>{" "}
+                Collected after the job: record cash / check or email the card link from the quote.
+              </span>
+            </Link>
+          ) : null}
+        </div>
       ) : null}
       <Tabs defaultValue={searchParams.view === "decided" ? "decided" : "pending"}>
         <TabsList>

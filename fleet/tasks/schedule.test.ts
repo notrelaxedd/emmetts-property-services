@@ -21,7 +21,7 @@ const solveMock = vi.mocked(solve);
 
 function seed() {
   return fleetDb({
-    settings: [settingsRow({ drop_notice_hours: 24 })],
+    settings: [settingsRow({ drop_notice_hours: 24, auto_schedule: true })],
     profiles: [crew("A", "Ann Lee"), crew("B", "Bo Diaz"), crew("C", "Cy Park")],
     owner_windows: OWNER_MON_FRI,
     owner_exceptions: [
@@ -113,8 +113,33 @@ describe("schedule task", () => {
     // (j4, A) is unique: the dropped row is re-offered, not duplicated; the swap candidate row is gone.
     expect(rows.filter(([j]) => j === "j4")).toEqual([["j4", "A", "offered"]]);
 
-    expect(db.tables.approvals).toHaveLength(0);
-    expect(res).toMatchObject({ resolved: 2, reset: 1, considered: 2, proposed: 2, unschedulable: 0, covers: 0, no_cover: 0 });
+    // Each proposal raises the "call to confirm" card for the owner (one per job, refreshed in place).
+    expect(db.tables.approvals.map((a) => [a.kind, a.ref_id, (a.payload as { call_to_confirm?: boolean }).call_to_confirm]).sort()).toEqual([
+      ["booking", "j1", true],
+      ["booking", "j4", true],
+    ]);
+    expect(String(db.tables.approvals.find((a) => a.ref_id === "j1")!.title)).toMatch(/^Call Pat Smith: Mon Oct 12/);
+    expect(res).toMatchObject({ auto_place: true, resolved: 2, reset: 1, considered: 2, proposed: 2, unschedulable: 0, covers: 0, no_cover: 0 });
+  });
+
+  it("with auto_schedule off (the default) a sweep never places new jobs; 'Run scheduler now' still suggests slots", async () => {
+    const db = seed();
+    db.tables.settings[0].auto_schedule = false;
+    db.tables.approvals = [];
+    solveMock.mockReturnValue({
+      proposals: [{ job_id: "j1", start_at: at("2026-10-12", "09:00"), end_at: at("2026-10-12", "10:00"), crew_ids: ["A"], reason: "Earliest slot." }],
+      unschedulable: [],
+    });
+    const ctx = makeCtx(db, { now: () => NOW, role: "scheduler" });
+    const sweep = await runSchedule(ctx, { reason: "sweep" });
+    expect(solveMock).not.toHaveBeenCalled();
+    expect(db.tables.jobs.find((j) => j.id === "j1")).toMatchObject({ status: "unscheduled" });
+    expect(sweep).toMatchObject({ auto_place: false, considered: 0, proposed: 0 });
+
+    const asked = await runSchedule(ctx, { reason: "owner_requested" });
+    expect(solveMock).toHaveBeenCalledTimes(1);
+    expect(db.tables.jobs.find((j) => j.id === "j1")).toMatchObject({ status: "proposed", start_at: at("2026-10-12", "09:00") });
+    expect(asked).toMatchObject({ auto_place: true, proposed: 1 });
   });
 
   it("keeps a weather-held day closed on later sweeps until the job is re-placed, and doesn't repeat a card the owner saw", async () => {

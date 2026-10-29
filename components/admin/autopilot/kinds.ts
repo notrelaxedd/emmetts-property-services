@@ -9,8 +9,8 @@ export type AutopilotKind = keyof AutopilotInput
  */
 export const AUTOPILOT_KINDS: { kind: Exclude<AutopilotKind, "custom_item">; title: string; skips: string }[] = [
   { kind: "ad", title: "Ads", skips: "New ad drafts are approved without your review, ready to post." },
-  { kind: "quote", title: "Quotes", skips: "Standard quotes go straight to the customer with a Stripe pay link." },
-  { kind: "booking", title: "Appointments", skips: "Once every crew member accepts, the job is booked and the customer is confirmed." },
+  { kind: "quote", title: "Quote pay links", skips: "Only for the old pay-first flow: a Stripe pay link sent from the quote page goes out without a card. New quotes go to the schedule's rail and are confirmed by phone." },
+  { kind: "booking", title: "Appointments", skips: "Legacy: jobs the scheduler placed used to book themselves once every crew member accepted. Phone-confirmed bookings always need your call, so this does nothing for them." },
   { kind: "followup", title: "Follow-ups", skips: "Review requests, day-before reminders and snow-plan emails send on their own." },
   {
     kind: "crew_change",

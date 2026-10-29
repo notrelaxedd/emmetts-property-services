@@ -358,7 +358,7 @@ describe("transition edges used by the scheduler fixes", () => {
   it("has the edges the code uses and nothing else new", () => {
     expect(JOB_TRANSITIONS.crew_confirmed).toEqual(["booked", "proposed", "unscheduled", "cancelled"]);
     expect(JOB_TRANSITIONS.booked).toEqual(["in_progress", "proposed", "unscheduled", "cancelled"]);
-    expect(JOB_TRANSITIONS.proposed).toEqual(["crew_confirmed", "unscheduled", "cancelled"]);
+    expect(JOB_TRANSITIONS.proposed).toEqual(["crew_confirmed", "booked", "unscheduled", "cancelled"]); // booked: confirmed by phone
   });
   it("tryTransitionJob applies a patch, and returns null when the job is not in `from`", async () => {
     const job = jobRow({ status: "booked", start_at: "2026-02-01T10:00:00Z", end_at: "2026-02-01T11:00:00Z" });
@@ -442,7 +442,7 @@ describe("dropCrewFromOverlappingJobs (approved time off)", () => {
 });
 
 describe("maybeConfirmJob", () => {
-  it("ignores swap_offered rows when counting live crew, and raises the booking approval", async () => {
+  it("ignores swap_offered rows when counting available crew, and refreshes the call-to-confirm card", async () => {
     const db = fakeDb({
       settings: [settingsRow()],
       customers: [customerRow({ id: "c1", name: "Pat Smith" })],
@@ -452,12 +452,13 @@ describe("maybeConfirmJob", () => {
     expect(await maybeConfirmJob(db, "j1", { siteUrl: "https://x.test", actor: "crew-app" })).toBe(true);
     expect(db.tables.jobs[0].status).toBe("crew_confirmed");
     expect(db.tables.approvals).toHaveLength(1);
-    expect(db.tables.approvals[0]).toMatchObject({ kind: "booking", ref_id: "j1", payload: { job_id: "j1" }, summary: "why", status: "pending" });
-    expect(String(db.tables.approvals[0].title)).toMatch(/^Book Pat Smith — /);
+    expect(db.tables.approvals[0]).toMatchObject({ kind: "booking", ref_id: "j1", payload: { job_id: "j1", call_to_confirm: true }, status: "pending" });
+    expect(String(db.tables.approvals[0].title)).toMatch(/^Call Pat Smith: Tue Oct 20/);
+    expect(String(db.tables.approvals[0].summary)).toMatch(/2 of 2 crew asked said they're free/);
     // A second call is a no-op (already confirmed).
     expect(await maybeConfirmJob(db, "j1", { siteUrl: "https://x.test", actor: "crew-app" })).toBe(false);
   });
-  it("waits for every holding crew member and for enough of them", async () => {
+  it("waits for enough yeses (offers nobody answered don't count, nor do dropped / drop-requested rows)", async () => {
     const mk = (rows: never[], crew_size = 2) =>
       fakeDb({ settings: [settingsRow()], jobs: [jobRow({ id: "j1", status: "proposed", crew_size })], job_assignments: rows });
     expect(await maybeConfirmJob(mk([asg("1", "j1", "A", "accepted"), asg("2", "j1", "B", "offered")]), "j1", { siteUrl: "", actor: "t" })).toBe(false);

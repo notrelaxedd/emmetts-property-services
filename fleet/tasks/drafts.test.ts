@@ -4,6 +4,7 @@ import { registerApprovalHandler } from "../../lib/ops/approvals";
 import { customerRow, jobRow, settingsRow } from "../../lib/ops/test-utils";
 import { fakeAi, fleetDb, makeCtx } from "../test-helpers";
 import { runAdDraft } from "./ad_draft";
+import { payloadSchemas } from "./schemas";
 import { PermanentTaskError } from "../errors";
 import { MAX_DEFERS, runCustomSummary } from "./custom_summary";
 import { runFollowupReminder } from "./followup_reminder";
@@ -97,6 +98,17 @@ describe("ad_draft", () => {
     await runAdDraft(ctx, { channel: "nextdoor", season: "fall", offer: "Fall lawn cleanup" });
     expect(db.tables.ads.map((a) => a.utm_code)).toEqual(["nextdoor-fall-20261012", "nextdoor-fall-20261012-2"]);
     expect(res.ad_id).toBeTruthy();
+  });
+
+  it("a blank offer (the admin form's optional field) leads with the site's current headline and still validates", async () => {
+    expect(payloadSchemas.ad_draft.safeParse({ channel: "facebook", season: "fall", offer: "" }).success).toBe(true);
+    expect(payloadSchemas.ad_draft.safeParse({ channel: "facebook", season: "fall" }).success).toBe(true);
+    const db = fleetDb({ settings: [settingsRow()] });
+    const ai = fakeAi();
+    await runAdDraft(makeCtx(db, { ai, role: "ads", worker: "W1", now: () => NOW }), { channel: "facebook", season: "fall", offer: "" });
+    expect(ai.draftAd.mock.calls[0][1]).toMatchObject({ channel: "facebook", season: "fall", offer: "Fall lawn cleanup" });
+    expect(db.tables.ads[0]).toMatchObject({ offer: "Fall lawn cleanup" });
+    expect(String(db.tables.approvals[0].summary)).toContain("fall · Fall lawn cleanup");
   });
 
   it("autopilot marks the ad approved via the ad handler; the cap skips", async () => {

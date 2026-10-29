@@ -40,14 +40,15 @@ describe("custom_item handler", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
-  it("price: sets the owner's numbers, re-totals, and opens the quote approval", async () => {
+  it("price: sets the owner's numbers, re-totals, and puts the job on the schedule's rail (no pay-link card)", async () => {
     const db = seed();
     await custom_itemHandler(db, approval({ action: "price", price: "450", est_hours: 5, crew_size: 3 }), ctx);
     expect(db.tables.quote_items.find((i) => i.id === "Dead maple")).toMatchObject({ status: "priced", price: 450, est_hours: 5, crew_size: 3 });
     expect(db.tables.quotes[0]).toMatchObject({ status: "draft", price_total: 510, labor_total: 30 + 225 });
-    const qa = db.tables.approvals.find((a) => a.kind === "quote")!;
-    expect(qa).toMatchObject({ ref_table: "quotes", ref_id: "q1", status: "pending", title: "Quote for Pat Smith — $510", summary: "why" });
-    expect(qa.payload).toMatchObject({ quote_id: "q1", price_total: 510, needs_owner: false });
+    expect(db.tables.approvals ?? []).toHaveLength(0);
+    // Leaf cleanup 2 crew × 1 h + dead maple 3 crew × 5 h → 360 min, crew 3; unpaid, waiting for a day.
+    expect(db.tables.jobs).toHaveLength(1);
+    expect(db.tables.jobs[0]).toMatchObject({ quote_id: "q1", customer_id: "c1", status: "unscheduled", paid: false, est_minutes: 360, crew_size: 3 });
   });
 
   it("price is the default action when a price is given; a missing action is an error", async () => {
@@ -65,7 +66,8 @@ describe("custom_item handler", () => {
     expect(msg).toMatchObject({ kind: "referral", quote_id: "q1", status: "sent" });
     expect(String(msg.body)).toMatch(/Oak & Sons/);
     expect(db.tables.quotes[0]).toMatchObject({ status: "draft", price_total: 60 });
-    expect(db.tables.approvals.filter((a) => a.kind === "quote")).toHaveLength(1);
+    expect(db.tables.approvals ?? []).toHaveLength(0);
+    expect(db.tables.jobs[0]).toMatchObject({ status: "unscheduled", paid: false, est_minutes: 60, crew_size: 2 }); // the leaf cleanup alone
   });
 
   it("refer without a partner name says 'a trusted partner'; decline sends a decline email", async () => {

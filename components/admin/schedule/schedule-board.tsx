@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CloudLightning, Play } from "lucide-react"
+import { CloudLightning, GripVertical, Play } from "lucide-react"
 import { moveJob, releaseJob, runScheduler } from "@/app/admin/actions/schedule"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -12,7 +12,7 @@ import { useToast } from "@/components/ui/toast"
 import { zonedToUtc } from "@/lib/scheduler/time"
 import { cn } from "@/lib/utils"
 import { JobDialog } from "./job-dialog"
-import { fmtDuration, fmtMinutes, hhmm, HATCH_STYLE, LOCKED_STATUSES, STATUS_LABEL, STATUS_STYLE } from "./status"
+import { fmtDuration, fmtMinutes, hhmm, HATCH_STYLE, LOCKED_STATUSES, STATUS_LABEL, STATUS_SHORT, STATUS_STYLE } from "./status"
 import type { ScheduleDay, ScheduleJob } from "./types"
 
 const DAY_START = 7 * 60
@@ -52,39 +52,56 @@ function layoutDay(jobs: { job: ScheduleJob; startMin: number; endMin: number }[
 }
 
 const LEGEND: { label: string; className: string; hatch?: boolean }[] = [
-  { label: "Proposed", className: STATUS_STYLE.proposed },
-  { label: "Crew confirmed", className: STATUS_STYLE.crew_confirmed },
-  { label: "Booked", className: STATUS_STYLE.booked },
-  { label: "In progress", className: STATUS_STYLE.in_progress },
-  { label: "Done", className: STATUS_STYLE.done },
-  { label: "Cancelled", className: STATUS_STYLE.cancelled },
+  { label: STATUS_SHORT.proposed, className: STATUS_STYLE.proposed },
+  { label: STATUS_SHORT.crew_confirmed, className: STATUS_STYLE.crew_confirmed },
+  { label: STATUS_SHORT.booked, className: STATUS_STYLE.booked },
+  { label: STATUS_SHORT.in_progress, className: STATUS_STYLE.in_progress },
+  { label: STATUS_SHORT.done, className: STATUS_STYLE.done },
+  { label: STATUS_SHORT.cancelled, className: STATUS_STYLE.cancelled },
   { label: "Weather hold", className: "border border-ink/30 bg-white", hatch: true },
 ]
+
+const money = (n: number) => (Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`)
+
+/** How many crew said yes / were asked, for a block or rail tile. */
+function crewSummary(job: ScheduleJob): string | null {
+  const asked = job.crew.filter((c) => c.status === "offered" || c.status === "accepted")
+  if (!asked.length) return null
+  const yes = asked.filter((c) => c.status === "accepted").length
+  return `${yes}/${asked.length} free`
+}
 
 export function ScheduleBoard({
   days,
   jobs,
   unscheduled,
+  extra = [],
   hasWindows,
+  focusJobId = null,
 }: {
   days: ScheduleDay[]
   jobs: ScheduleJob[]
   unscheduled: ScheduleJob[]
+  /** A job linked from elsewhere that is in neither list (another week); only for the dialog. */
+  extra?: ScheduleJob[]
   hasWindows: boolean
+  focusJobId?: string | null
 }) {
   const { toast } = useToast()
   const [pending, startTransition] = React.useTransition()
-  const [selectedId, setSelectedId] = React.useState<string | null>(null)
+  const [selectedId, setSelectedId] = React.useState<string | null>(focusJobId)
   const [hover, setHover] = React.useState<{ date: string; startMin: number; endMin: number } | null>(null)
   const [moved, setMoved] = React.useState<Record<string, { date: string; startMin: number; endMin: number }>>({})
   const drag = React.useRef<{ id: string; grabPx: number; duration: number } | null>(null)
 
-  const allJobs = React.useMemo(() => [...jobs, ...unscheduled], [jobs, unscheduled])
+  const allJobs = React.useMemo(() => [...jobs, ...unscheduled, ...extra], [jobs, unscheduled, extra])
   const selected = allJobs.find((j) => j.id === selectedId) ?? null
+
+  const durationOf = (job: ScheduleJob) => (job.endMin ?? 0) - (job.startMin ?? 0) || Math.max(30, job.estMinutes) || SLOT
 
   const move = React.useCallback(
     (job: ScheduleJob, date: string, startMin: number) => {
-      const duration = (job.endMin ?? 0) - (job.startMin ?? 0) || job.estMinutes || SLOT
+      const duration = durationOf(job)
       if (job.date === date && job.startMin === startMin) return
       setMoved((m) => ({ ...m, [job.id]: { date, startMin, endMin: startMin + duration } }))
       startTransition(async () => {
@@ -95,8 +112,8 @@ export function ScheduleBoard({
           delete next[job.id]
           return next
         })
-        if (res.ok) toast({ title: res.message ?? "Job moved.", variant: "success" })
-        else toast({ title: "Can't move that job", description: res.reason, variant: "destructive" })
+        if (res.ok) toast({ title: job.date ? "Job moved" : "On the calendar", description: res.message, variant: "success", duration: 9000 })
+        else toast({ title: "Can't put the job there", description: res.reason, variant: "destructive" })
       })
     },
     [toast],
@@ -111,10 +128,16 @@ export function ScheduleBoard({
     return Math.min(latest, Math.max(DAY_START, raw))
   }
 
+  const startDrag = (e: React.DragEvent<HTMLElement>, job: ScheduleJob, grabPx: number) => {
+    drag.current = { id: job.id, grabPx, duration: durationOf(job) }
+    e.dataTransfer.effectAllowed = "move"
+    e.dataTransfer.setData("text/plain", job.id)
+  }
+
   const placedByDay = React.useMemo(() => {
     const map = new Map<string, Placed[]>()
     for (const d of days) {
-      const items = jobs
+      const items = [...jobs, ...unscheduled]
         .map((job) => {
           const m = moved[job.id]
           const date = m?.date ?? job.date
@@ -129,7 +152,7 @@ export function ScheduleBoard({
       map.set(d.date, layoutDay(items))
     }
     return map
-  }, [days, jobs, moved])
+  }, [days, jobs, unscheduled, moved])
 
   const release = (job: ScheduleJob) =>
     startTransition(async () => {
@@ -140,6 +163,8 @@ export function ScheduleBoard({
   const outsideGrid = jobs.filter(
     (j) => j.startMin !== null && j.endMin !== null && (j.endMin <= DAY_START || j.startMin >= DAY_END),
   )
+  const callsToMake = jobs.filter((j) => (j.status === "proposed" || j.status === "crew_confirmed") && !moved[j.id]).length
+  const railShown = unscheduled.filter((j) => !moved[j.id])
 
   return (
     <div className="space-y-4">
@@ -223,7 +248,7 @@ export function ScheduleBoard({
                         const id = drag.current?.id
                         drag.current = null
                         setHover(null)
-                        const job = jobs.find((j) => j.id === id)
+                        const job = allJobs.find((j) => j.id === id)
                         if (job && startMin !== null) move(job, d.date, startMin)
                       }}
                     >
@@ -270,21 +295,13 @@ export function ScheduleBoard({
                       {placed.map((p) => {
                         const locked = LOCKED_STATUSES.includes(p.job.status)
                         const height = ((p.endMin - p.startMin) / SLOT) * SLOT_H
+                        const summary = crewSummary(p.job)
                         return (
                           <button
                             key={p.job.id}
                             type="button"
                             draggable={!locked && !pending}
-                            onDragStart={(e) => {
-                              const rect = e.currentTarget.getBoundingClientRect()
-                              drag.current = {
-                                id: p.job.id,
-                                grabPx: e.clientY - rect.top,
-                                duration: (p.job.endMin ?? 0) - (p.job.startMin ?? 0) || p.job.estMinutes || SLOT,
-                              }
-                              e.dataTransfer.effectAllowed = "move"
-                              e.dataTransfer.setData("text/plain", p.job.id)
-                            }}
+                            onDragStart={(e) => startDrag(e, p.job, e.clientY - e.currentTarget.getBoundingClientRect().top)}
                             onDragEnd={() => {
                               drag.current = null
                               setHover(null)
@@ -307,25 +324,29 @@ export function ScheduleBoard({
                           >
                             <span className="flex items-center gap-1 font-semibold">
                               {p.job.weatherHold ? <span aria-label="Weather hold">⛈</span> : null}
+                              {p.job.status === "proposed" || p.job.status === "crew_confirmed" ? <span aria-label="Call to confirm">☎</span> : null}
                               <span className="truncate">{p.job.customerName}</span>
                             </span>
                             {height >= 40 && p.job.services.length ? (
                               <span className="block truncate opacity-90">{p.job.services.join(", ")}</span>
                             ) : null}
-                            {height >= 56 && p.job.crew.length ? (
-                              <span className="mt-0.5 flex gap-0.5">
-                                {p.job.crew.map((c) => (
-                                  <span
-                                    key={c.id}
-                                    title={`${c.name} (${c.status})`}
-                                    className={cn(
-                                      "inline-flex size-5 items-center justify-center rounded-full bg-ink/80 text-[9px] font-bold text-white no-underline",
-                                      c.status === "offered" && "bg-white text-ink ring-1 ring-ink/40",
-                                    )}
-                                  >
-                                    {c.initials}
-                                  </span>
-                                ))}
+                            {height >= 56 && (p.job.crew.length || summary) ? (
+                              <span className="mt-0.5 flex items-center gap-0.5">
+                                {p.job.crew
+                                  .filter((c) => c.status !== "declined")
+                                  .map((c) => (
+                                    <span
+                                      key={c.id}
+                                      title={`${c.name} (${c.status === "accepted" ? "available" : c.status === "offered" ? "no answer yet" : c.status})`}
+                                      className={cn(
+                                        "inline-flex size-5 items-center justify-center rounded-full bg-ink/80 text-[9px] font-bold text-white no-underline",
+                                        c.status === "offered" && "bg-white text-ink ring-1 ring-ink/40",
+                                      )}
+                                    >
+                                      {c.initials}
+                                    </span>
+                                  ))}
+                                {summary && p.job.status !== "booked" ? <span className="ml-1 opacity-80">{summary}</span> : null}
                               </span>
                             ) : null}
                           </button>
@@ -344,37 +365,58 @@ export function ScheduleBoard({
           ) : null}
         </Card>
 
-        {/* Unscheduled rail */}
+        {/* The rail: estimated quotes waiting for a day */}
         <Card className="h-fit">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Waiting for a slot</CardTitle>
-            <CardDescription>Paid jobs the scheduler hasn&apos;t placed yet.</CardDescription>
+            <CardTitle className="text-base">Needs a day</CardTitle>
+            <CardDescription>
+              Drag a quote onto the calendar. The crew get emailed to say if they&apos;re free, then you call the customer to confirm.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {unscheduled.length === 0 ? (
+            {railShown.length === 0 ? (
               <p className="text-sm text-ink-muted">Nothing waiting.</p>
             ) : (
-              unscheduled.map((j) => (
+              railShown.map((j) => (
                 <div key={j.id} className="space-y-1">
-                  <button
-                    type="button"
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    draggable={!pending && hasWindows}
+                    onDragStart={(e) => startDrag(e, j, 0)}
+                    onDragEnd={() => {
+                      drag.current = null
+                      setHover(null)
+                    }}
                     onClick={() => setSelectedId(j.id)}
-                    className={cn("block w-full rounded-md px-2.5 py-2 text-left text-sm", STATUS_STYLE.unscheduled)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault()
+                        setSelectedId(j.id)
+                      }
+                    }}
+                    className={cn(
+                      "flex w-full items-start gap-1.5 rounded-md px-2 py-2 text-left text-sm",
+                      STATUS_STYLE.unscheduled,
+                      hasWindows && !pending && "cursor-grab active:cursor-grabbing",
+                    )}
                     style={j.weatherHold ? HATCH_STYLE : undefined}
                   >
-                    <span className="flex items-center gap-1 font-semibold text-ink">
-                      {j.weatherHold ? <span aria-label="Weather hold">⛈</span> : null}
-                      {j.customerName}
-                      {j.ownerHold ? (
-                        <Badge variant="outline" className="ml-auto">
-                          Held
-                        </Badge>
-                      ) : null}
+                    <GripVertical className="mt-0.5 size-4 shrink-0 text-ink-muted" aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1 font-semibold text-ink">
+                        {j.weatherHold ? <span aria-label="Weather hold">⛈</span> : null}
+                        <span className="truncate">{j.customerName}</span>
+                        {j.quote ? <span className="ml-auto shrink-0 tabular-nums">{money(j.quote.priceTotal)}</span> : null}
+                      </span>
+                      <span className="block truncate text-xs text-ink-muted">{j.services.join(", ") || "Services"}</span>
+                      <span className="block text-xs text-ink-muted">
+                        {j.crewSize} crew · {fmtDuration(j.estMinutes)}
+                        {j.quote?.needsOwner ? " · needs your price" : ""}
+                        {j.ownerHold ? " · held" : ""}
+                      </span>
                     </span>
-                    <span className="block truncate text-xs text-ink-muted">
-                      {j.services.join(", ") || "Services"} · {fmtDuration(j.estMinutes)} · {j.crewSize} crew
-                    </span>
-                  </button>
+                  </div>
                   {j.ownerHold ? (
                     <Button
                       variant="ghost"
@@ -382,9 +424,9 @@ export function ScheduleBoard({
                       className="h-7 w-full text-xs"
                       disabled={pending}
                       onClick={() => release(j)}
-                      aria-label={`Release ${j.customerName} to the scheduler`}
+                      aria-label={`Let the scheduler suggest a slot for ${j.customerName}`}
                     >
-                      Release to scheduler
+                      Let the scheduler suggest a slot
                     </Button>
                   ) : null}
                 </div>
@@ -402,8 +444,14 @@ export function ScheduleBoard({
                 })
               }
             >
-              <Play /> Run scheduler now
+              <Play /> Suggest slots for everything
             </Button>
+            {callsToMake ? (
+              <p className="rounded-md bg-amber-100 px-2.5 py-2 text-xs text-amber-950">
+                <span className="font-semibold">{callsToMake} call{callsToMake === 1 ? "" : "s"} to make this week.</span> Open a ☎ job, call the
+                customer, then confirm the quote and the day.
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       </div>
@@ -436,19 +484,23 @@ export function ScheduleBoard({
                     <TableCell className="whitespace-nowrap">{j.whenLabel ?? "—"}</TableCell>
                     <TableCell className={cn("font-medium text-ink", j.status === "cancelled" && "line-through")}>{j.customerName}</TableCell>
                     <TableCell className="hidden max-w-[16rem] truncate md:table-cell">{j.services.join(", ") || "—"}</TableCell>
-                    <TableCell className="hidden sm:table-cell">{j.crew.map((c) => c.initials).join(" ") || "—"}</TableCell>
+                    <TableCell className="hidden sm:table-cell">
+                      {j.crew.filter((c) => c.status !== "declined").map((c) => c.initials).join(" ") || "—"}
+                      {crewSummary(j) && j.status !== "booked" ? <span className="ml-1 text-xs text-ink-muted">({crewSummary(j)})</span> : null}
+                    </TableCell>
                     <TableCell>
                       <span className="flex flex-wrap gap-1">
-                        <Badge variant={j.status === "booked" ? "success" : j.status === "proposed" ? "warning" : "outline"}>
-                          {STATUS_LABEL[j.status]}
+                        <Badge variant={j.status === "booked" ? "success" : j.status === "proposed" || j.status === "crew_confirmed" ? "warning" : "outline"}>
+                          {STATUS_SHORT[j.status]}
                         </Badge>
                         {j.weatherHold ? <Badge variant="outline">⛈ Hold</Badge> : null}
                         {j.ownerHold ? <Badge variant="outline">Held</Badge> : null}
+                        {j.status === "done" && j.quote && !j.quote.paidAt ? <Badge variant="warning">Collect {money(j.quote.priceTotal)}</Badge> : null}
                       </span>
                     </TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="sm" onClick={() => setSelectedId(j.id)}>
-                        Details
+                        {j.status === "proposed" || j.status === "crew_confirmed" ? "Call & confirm" : "Details"}
                       </Button>
                     </TableCell>
                   </TableRow>

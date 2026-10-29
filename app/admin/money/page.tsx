@@ -31,6 +31,9 @@ export const dynamic = "force-dynamic"
 export const metadata = { title: "Money" }
 
 type QuoteRow = MoneyQuote & { customer_id: string }
+/** The DB row: the math module's `accepted_at` is "when the money came in", which is now `paid_at`. */
+type PaidQuoteRow = Omit<QuoteRow, "accepted_at"> & { paid_at: string | null }
+const toQuoteRow = (q: PaidQuoteRow): QuoteRow => ({ ...q, accepted_at: q.paid_at })
 
 async function load(month: string) {
   const db = requireSupabaseAdmin()
@@ -39,10 +42,11 @@ async function load(month: string) {
   const toIso = zonedToUtc(to, "00:00").toISOString()
   const isCurrent = month === localDate(new Date()).slice(0, 7)
 
-  const quoteCols = "id,customer_id,price_total,fee_total,labor_total,accepted_at"
+  // Revenue counts when the money arrives (`paid_at`): customers confirm by phone and pay after the job.
+  const quoteCols = "id,customer_id,price_total,fee_total,labor_total,paid_at"
   const jobCols = "id,quote_id,customer_id,status,start_at,completed_at"
   const [accepted, completed, expenses, ai, flyerBatches] = await Promise.all([
-    db.from("quotes").select(quoteCols).gte("accepted_at", fromIso).lt("accepted_at", toIso),
+    db.from("quotes").select(quoteCols).gte("paid_at", fromIso).lt("paid_at", toIso),
     db.from("jobs").select(jobCols).eq("status", "done").gte("completed_at", fromIso).lt("completed_at", toIso),
     db.from("expenses").select("id,date,category,amount,note").gte("date", from).lt("date", to).order("date", { ascending: false }),
     isCurrent
@@ -52,7 +56,7 @@ async function load(month: string) {
   ])
   for (const r of [accepted, completed, expenses, flyerBatches]) if (r.error) throw new Error(r.error.message)
 
-  const acceptedQuotes = (accepted.data ?? []) as QuoteRow[]
+  const acceptedQuotes = ((accepted.data ?? []) as PaidQuoteRow[]).map(toQuoteRow)
   const acceptedIds = acceptedQuotes.map((q) => q.id)
   const paidJobs = acceptedIds.length ? await db.from("jobs").select(jobCols).in("quote_id", acceptedIds) : { data: [], error: null }
   if (paidJobs.error) throw new Error(paidJobs.error.message)
@@ -67,7 +71,7 @@ async function load(month: string) {
   if (missingQuotes.length) {
     const more = await db.from("quotes").select(quoteCols).in("id", missingQuotes)
     if (more.error) throw new Error(more.error.message)
-    for (const q of (more.data ?? []) as QuoteRow[]) quotesById.set(q.id, q)
+    for (const q of (more.data ?? []) as PaidQuoteRow[]) quotesById.set(q.id, toQuoteRow(q))
   }
 
   const jobIds = Array.from(allJobs.keys())

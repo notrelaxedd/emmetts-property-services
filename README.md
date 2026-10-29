@@ -7,21 +7,25 @@ Every section pushes toward one action: **the free quote form at `/quote`**. The
 Next.js 14 (App Router) · TypeScript · Tailwind CSS · shadcn/ui · Vercel · Supabase · Stripe · Anthropic
 
 The marketing site is still static and phone-first. On top of it sits an **operations system**
-(see `docs/PLAN.md`, `docs/AUDIT.md`, `docs/ENV.md`, `docs/STRIPE.md`):
+(see `docs/BOOKING.md` for the quote → calendar → phone call → pay-after flow, plus `docs/PLAN.md`,
+`docs/AUDIT.md`, `docs/ENV.md`, `docs/STRIPE.md`):
 
 | Where | What |
 | --- | --- |
-| `/quote` | Public quote form: services, "something else?" + photos, preferred days, consent. Creates a customer + lead and queues a quote task. |
-| `/admin` | Owner console. **Approval inbox** (every outbound action: ads, quotes, custom requests, bookings, follow-ups, crew changes, drops, weather holds, AI cap), Ads, Leads, Quotes (live pricing + Send via Stripe), Schedule (drag to move), Availability, Employees + cash payouts, flyer workers (per-worker QR flyers, conversion, pay per flyer), Customers + price log (who you talked to, about what, the price you gave, when to follow up), Money, Autopilot rules, Fleet status. |
-| `/crew` | Mobile crew app (installable PWA): today's jobs, offers (accept / can't), swap / drop, start / complete with hours + photos, weekly hours with multiple blocks per day, time off & extra days, pay. |
+| `/quote` | Public quote form: services, "something else?" + photos, preferred days, consent. Creates a customer + lead and queues a quote task; the thanks page says we'll call. |
+| `/admin` | Owner console. **Approval inbox** (custom requests, "call <customer> to confirm" cards, follow-ups, crew changes, drops, weather holds, AI cap), Ads, Leads, Quotes (live pricing, payment collected after the job: record cash / check or email a card link), **Schedule** (estimated quotes wait on the "Needs a day" rail; drag one onto the calendar → crew emailed Available / Can't → call the customer → book it with the payment method they named), Availability, Employees + cash payouts, flyer workers, Customers + price log, Money, Autopilot rules, Fleet status. |
+| `/crew` | Mobile crew app (installable PWA): today's jobs, offers ("are you free?" yes / no), swap / drop, start / complete with hours + photos, weekly hours with multiple blocks per day, time off & extra days, pay. |
+| `/respond/<token>` | The one-tap links in a crew availability email (no login): I'm available / Can't make it. |
 | `/f/<code>` | A flyer worker's QR code: logs the scan, remembers the code for 60 days, lands on `/quote` so the lead is credited to them (`lib/flyers/`). |
-| `/api/stripe/webhook` | Stripe Checkout (test mode) → paid quote becomes an unscheduled job and the scheduler runs. |
-| `lib/pricing.ts`, `lib/scheduler/` | Pure, unit-tested pricing and greedy scheduling. |
+| `/api/stripe/webhook` | Stripe Checkout (test mode) → the quote and its job are marked paid (the card link is emailed after the job). |
+| `lib/pricing.ts`, `lib/scheduler/` | Pure, unit-tested pricing and greedy scheduling (the scheduler only places jobs by itself when `settings.auto_schedule` is on). |
+| `lib/ops/booking.ts`, `lib/ops/crew-offers.ts` | Place a job, poll the crew by email, confirm by phone, pay after. |
 | `lib/ai/claude.ts` | The only place that calls the Anthropic API: ad drafts, customer messages, custom-request summaries, tree-cover estimates. Every call is logged to `ai_usage` and capped monthly. |
 | `supabase/migrations/` | Schema, RLS (crew never see prices or customer contact details), task queue (`claim_task` with `SKIP LOCKED`), seed. |
 | `fleet/` | One Node 22 worker binary for the Debian boxes (`ads`, `quotes`, `scheduler`, `followup`, `host`) + systemd units. Workers talk only to Supabase. |
 
 Everything AI-written or customer-facing lands in the approval inbox first; autopilot rules are all off by default.
+No customer is emailed a price or asked for money before the owner has called them.
 
 ## Run it locally
 

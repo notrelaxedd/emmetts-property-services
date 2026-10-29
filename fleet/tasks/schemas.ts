@@ -22,7 +22,8 @@ export const schedulePayload = z.looseObject({
 export const adDraftPayload = z.looseObject({
   channel: z.enum(["facebook", "instagram", "nextdoor"]),
   season: z.string().trim().min(1).max(40),
-  offer: z.string().trim().min(1).max(200),
+  /** Optional: the admin "Draft ad" form leaves it blank to mean "whatever the site is leading with". */
+  offer: z.string().trim().max(300).default(""),
 });
 export const followupReviewPayload = z.looseObject({ job_id: id });
 export const followupReminderPayload = z.looseObject({ job_id: id });

@@ -3,7 +3,7 @@
 import "@/lib/ops/handlers"
 import { z } from "zod"
 import type { JobAssignment } from "@/lib/db/types"
-import { maybeConfirmJob, requestResolve } from "@/lib/ops"
+import { maybeConfirmJob, recordCrewResponse } from "@/lib/ops"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 import { crewContext, errorMessage, fail, revalidateCrew, siteUrl, type ActionResult, type CrewContext } from "./shared"
 
@@ -15,11 +15,10 @@ const respondSchema = z.object({
 /**
  * Accept / decline a job offer or a swap offer.
  *
- * Normal offer (`offered`): updates my own row through RLS. Decline → the job is marked for cover
- * (`resolve_reason = 'declined'`) and the scheduler offers the slot to someone else.
- * Accept → when every live assignment on a `proposed` job is accepted (and there are enough of
- * them), the job moves to `crew_confirmed` and a `booking` approval `{ job_id }` is raised
- * (auto-approved + applied when the owner turned booking autopilot on). See `maybeConfirmJob`.
+ * Normal offer: an availability answer (see `recordCrewResponse`). Available / Can't can be changed
+ * while the owner is still confirming the day with the customer. Enough yeses move a `proposed` job to
+ * `crew_confirmed`; a "can't" on a short-handed job asks the scheduler for cover for the same slot.
+ * The owner picks the crew when booking.
  *
  * Swap offer (`swap_offered`, row `crew_id = me` = the candidate, `swap_to_crew_id` = the crew
  * member handing the job over): first to accept wins — the original holder's row becomes `dropped`,
@@ -47,29 +46,16 @@ export async function respondToOffer(assignmentId: string, response: "accepted" 
     if (assignment.status === "swap_offered") {
       return parsed.data.response === "accepted" ? await acceptSwap(ctx, assignment) : await declineSwap(ctx, assignment)
     }
-    if (assignment.status !== "offered") return fail("You've already answered this offer.")
-
-    const now = new Date().toISOString()
-    const { data: updated, error: upErr } = await ctx.supabase
-      .from("job_assignments")
-      .update({ status: parsed.data.response, responded_at: now })
-      .eq("id", assignment.id)
-      .eq("crew_id", ctx.me)
-      .eq("status", "offered")
-      .select("id")
-    if (upErr) throw new Error(upErr.message)
-    if (!updated || updated.length === 0) return fail("You've already answered this offer.")
-
-    const db = requireSupabaseAdmin()
-    if (parsed.data.response === "declined") {
-      await requestResolve(db, [assignment.job_id], "declined", "offer_declined")
-      revalidateCrew()
-      return { ok: true, message: "Thanks — we'll find someone else." }
-    }
-
-    const confirmed = await maybeConfirmJob(db, assignment.job_id, { siteUrl: siteUrl(), actor: "crew-app" })
+    // Ownership was checked above (RLS read); the write uses the service role so an answer can be changed.
+    const res = await recordCrewResponse(requireSupabaseAdmin(), assignment, parsed.data.response, { siteUrl: siteUrl(), actor: `crew:${ctx.me}` })
     revalidateCrew()
-    return { ok: true, message: confirmed ? "You're on it. The whole crew is confirmed." : "You're on it." }
+    if (!res.changed) {
+      return res.jobStatus === "booked" || res.jobStatus === "in_progress"
+        ? fail("This job is already confirmed. Use Drop or Swap on the job if you can't make it.")
+        : fail("You've already answered this offer.")
+    }
+    if (parsed.data.response === "declined") return { ok: true, message: "Thanks for letting us know." }
+    return { ok: true, message: res.confirmed ? "Thanks! Enough of the crew is free. You'll see it here once the owner confirms the day." : "Thanks! You'll see it here once the owner confirms the day." }
   } catch (e) {
     return fail(errorMessage(e))
   }

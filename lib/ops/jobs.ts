@@ -1,42 +1,105 @@
-import type { AssignmentStatus, CrewException, Job, JobAssignment, JobStatus } from "../db/types";
+import type { AssignmentStatus, CrewException, Job, JobAssignment, JobStatus, QuoteItem } from "../db/types";
 import { HOLDING_ASSIGNMENT_STATUSES } from "../scheduler/capacity";
-import { addDays, formatDayLabel, formatTimeRange, zonedToUtc } from "../scheduler/time";
-import { applyApproval, decideApproval, requestApproval } from "./approvals";
+import { addDays, zonedToUtc } from "../scheduler/time";
+import { decideApproval } from "./approvals";
 import { enqueueSchedule } from "./tasks";
 import { check, one } from "./types";
 import type { Db } from "./types";
 
+/** Billed quote items: `auto` / `priced` with a price (declined, referred and unpriced custom items are ignored). */
+export async function billedItemsForQuote(db: Db, quoteId: string): Promise<QuoteItem[]> {
+  const items = check(
+    await db.from("quote_items").select("*").eq("quote_id", quoteId).in("status", ["auto", "priced"]),
+    "billedItemsForQuote",
+  );
+  return (items ?? []).filter((i) => i.price !== null && i.price !== undefined).sort((a, b) => a.sort_order - b.sort_order);
+}
+
+/** What the job will take, from the billed items: minutes = sum of est_hours × 60; crew = the biggest line's crew. */
+export function estimateFromItems(items: Pick<QuoteItem, "est_hours" | "crew_size">[]): { est_minutes: number; crew_size: number } {
+  return {
+    est_minutes: Math.round(items.reduce((sum, i) => sum + i.est_hours * 60, 0)),
+    crew_size: Math.max(1, ...items.map((i) => i.crew_size)),
+  };
+}
+
+/** Service names on a job (its quote's billed lines), in display order. Empty for a job without a quote. */
+export async function servicesForJob(db: Db, job: Pick<Job, "quote_id">): Promise<string[]> {
+  if (!job.quote_id) return [];
+  return (await billedItemsForQuote(db, job.quote_id)).map((i) => i.description);
+}
+
 /**
- * Creates the job for a paid quote and asks the scheduler to place it. Idempotent per quote:
- * a second call (Stripe webhook retry) returns the existing job and does not duplicate it.
- * `est_minutes` = sum of billed items' est_hours * 60; `crew_size` = largest item crew size.
- * Billed items are `auto` / `priced` items that have a price (declined, referred and unpriced
- * custom items are ignored).
+ * The job for a freshly estimated quote: created `unscheduled` and UNPAID as soon as the quote has a
+ * billed line, so it shows on the "Needs a day" rail of /admin/schedule and the owner can drag it onto
+ * the calendar. Payment is collected after the job (see lib/ops/payments.ts and the Stripe webhook).
+ * Idempotent per quote. While the job is still unscheduled its estimate follows the quote (the owner
+ * may price a custom line later); once it is on the calendar the slot's length stands.
+ * Returns null (and creates nothing) when the quote has no billed line yet.
+ */
+export async function ensureJobForQuote(db: Db, quoteId: string): Promise<Job | null> {
+  const quote = check(await db.from("quotes").select("*").eq("id", quoteId).maybeSingle(), "ensureJobForQuote(quote)");
+  if (!quote) throw new Error(`ensureJobForQuote: quote ${quoteId} not found`);
+  const billed = await billedItemsForQuote(db, quoteId);
+  const existing = check(
+    await db.from("jobs").select("*").eq("quote_id", quoteId).order("created_at", { ascending: true }).limit(1).maybeSingle(),
+    "ensureJobForQuote(existing)",
+  );
+  if (billed.length === 0) return existing;
+  const estimate = estimateFromItems(billed);
+  if (existing) {
+    if (existing.status !== "unscheduled") return existing;
+    if (existing.est_minutes === estimate.est_minutes && existing.crew_size === estimate.crew_size) return existing;
+    return one(await db.from("jobs").update(estimate).eq("id", existing.id).select("*").single(), "ensureJobForQuote(refresh)");
+  }
+  const inserted = await db
+    .from("jobs")
+    .insert({
+      quote_id: quoteId,
+      customer_id: quote.customer_id,
+      status: "unscheduled",
+      start_at: null,
+      end_at: null,
+      ...estimate,
+      paid: false,
+      paid_at: null,
+      weather_hold: false,
+      deadline: null,
+      completion_photo_paths: [],
+    })
+    .select("*")
+    .single();
+  if (inserted.error && (inserted.error as { code?: string }).code === "23505") {
+    return one(await db.from("jobs").select("*").eq("quote_id", quoteId).limit(1).maybeSingle(), "ensureJobForQuote(after conflict)");
+  }
+  return one(inserted, "ensureJobForQuote(insert)");
+}
+
+/**
+ * The quote was PAID (Stripe webhook, or cash / check recorded by the owner): the job is marked paid.
+ * Normally the job already exists (created at estimate time, booked by phone, done); when a payment
+ * lands first (an old pay link, a customer paying up front) the job is created `unscheduled` and the
+ * scheduler is asked to look at it. Idempotent per quote: a webhook retry changes nothing.
  */
 export async function createJobFromQuote(db: Db, quoteId: string): Promise<Job> {
+  const now = new Date().toISOString();
   const existing = check(
     await db.from("jobs").select("*").eq("quote_id", quoteId).order("created_at", { ascending: true }).limit(1).maybeSingle(),
     "createJobFromQuote(existing)",
   );
   if (existing) {
+    const job = existing.paid
+      ? existing
+      : one(await db.from("jobs").update({ paid: true, paid_at: now }).eq("id", existing.id).select("*").single(), "createJobFromQuote(mark paid)");
     // Retry-safe: the enqueue is de-duped, and covers a crash between insert and enqueue.
-    if (existing.status === "unscheduled") await enqueueSchedule(db, "job_paid", [existing.id]);
-    return existing;
+    if (job.status === "unscheduled") await enqueueSchedule(db, "job_paid", [job.id]);
+    return job;
   }
 
   const quote = check(await db.from("quotes").select("*").eq("id", quoteId).maybeSingle(), "createJobFromQuote(quote)");
   if (!quote) throw new Error(`createJobFromQuote: quote ${quoteId} not found`);
-
-  const items = check(
-    await db.from("quote_items").select("*").eq("quote_id", quoteId).in("status", ["auto", "priced"]),
-    "createJobFromQuote(items)",
-  );
-  const billed = (items ?? []).filter((i) => i.price !== null && i.price !== undefined);
+  const billed = await billedItemsForQuote(db, quoteId);
   if (billed.length === 0) throw new Error(`createJobFromQuote: quote ${quoteId} has no priced items`);
-
-  const est_minutes = Math.round(billed.reduce((sum, i) => sum + i.est_hours * 60, 0));
-  const crew_size = Math.max(1, ...billed.map((i) => i.crew_size));
-  const now = new Date().toISOString();
 
   const inserted = await db
     .from("jobs")
@@ -46,8 +109,7 @@ export async function createJobFromQuote(db: Db, quoteId: string): Promise<Job> 
       status: "unscheduled",
       start_at: null,
       end_at: null,
-      est_minutes,
-      crew_size,
+      ...estimateFromItems(billed),
       paid: true,
       paid_at: now,
       weather_hold: false,
@@ -69,14 +131,14 @@ export async function createJobFromQuote(db: Db, quoteId: string): Promise<Job> 
   return job;
 }
 
-
 /**
  * Allowed job status moves. `done` and `cancelled` are terminal. Every edge has a caller:
- *  - unscheduled → proposed ........ scheduler places the job
- *  - proposed → crew_confirmed ..... every crew member accepted (`maybeConfirmJob`)
- *  - proposed / crew_confirmed → unscheduled ... owner rejects the proposed slot (`rejectBooking`),
- *                                    or a weather hold resets it for re-planning (scheduler)
- *  - crew_confirmed → booked ....... owner approves the booking (`bookingHandler`)
+ *  - unscheduled → proposed ........ the owner drags the job onto the calendar (`scheduleJobAt`), or
+ *                                    the scheduler places it (when `settings.auto_schedule` is on)
+ *  - proposed → crew_confirmed ..... enough crew said they are available (`maybeConfirmJob`)
+ *  - proposed / crew_confirmed → unscheduled ... owner takes it back off the calendar (`rejectBooking`,
+ *                                    `unplaceJob`), or a weather hold resets it for re-planning (scheduler)
+ *  - proposed / crew_confirmed → booked ... owner confirmed the day with the customer by phone (`bookJob`)
  *  - crew_confirmed → proposed ..... a crew member left (drop / time off) or the owner moved it:
  *                                    the new crew has to accept before it is re-confirmed
  *  - booked → proposed ............. owner moved it on the schedule (crew are re-asked)
@@ -86,7 +148,7 @@ export async function createJobFromQuote(db: Db, quoteId: string): Promise<Job> 
  */
 export const JOB_TRANSITIONS: Record<JobStatus, readonly JobStatus[]> = {
   unscheduled: ["proposed", "cancelled"],
-  proposed: ["crew_confirmed", "unscheduled", "cancelled"],
+  proposed: ["crew_confirmed", "booked", "unscheduled", "cancelled"],
   crew_confirmed: ["booked", "proposed", "unscheduled", "cancelled"],
   booked: ["in_progress", "proposed", "unscheduled", "cancelled"],
   in_progress: ["done", "cancelled"],
@@ -182,6 +244,15 @@ export function isInfoBookingPayload(payload: Record<string, unknown> | null | u
 }
 
 /**
+ * The "Call <customer> to confirm" card raised when a job goes on the calendar (lib/ops/booking.ts).
+ * It stays up while the job is on the calendar, whatever the crew answer: only booking, unplacing or
+ * cancelling the job closes it.
+ */
+export function isCallToConfirmPayload(payload: Record<string, unknown> | null | undefined): boolean {
+  return payload?.call_to_confirm === true;
+}
+
+/**
  * `owner_hold = true`: the scheduler leaves the job alone (no proposal, reset or cover) until the
  * owner releases it. Releasing asks the scheduler to look at it again.
  */
@@ -191,8 +262,8 @@ export async function setOwnerHold(db: Db, jobId: string, hold: boolean): Promis
 }
 
 /**
- * Withdraws pending "Book" cards for a job (its crew no longer stands). The scheduler's informational
- * cards are left alone. A card decided concurrently is skipped.
+ * Withdraws pending legacy "Book" cards for a job (its crew no longer stands). The scheduler's
+ * informational cards and the "call to confirm" card are left alone. A card decided concurrently is skipped.
  */
 export async function withdrawBookingRequests(db: Db, jobId: string, actor: string, note: string): Promise<number> {
   const pending =
@@ -202,7 +273,7 @@ export async function withdrawBookingRequests(db: Db, jobId: string, actor: stri
     ) ?? [];
   let n = 0;
   for (const a of pending) {
-    if (isInfoBookingPayload(a.payload)) continue;
+    if (isInfoBookingPayload(a.payload) || isCallToConfirmPayload(a.payload)) continue;
     try {
       await decideApproval(db, a.id, "rejected", { decidedBy: actor, note });
       n++;
@@ -375,53 +446,4 @@ export async function applyApprovedCrewException(
   );
   await enqueueSchedule(db, "crew_change", ids);
   return ids;
-}
-
-// ---------- Crew confirmation ----------
-
-/** Assignment statuses that count as "on the job" when confirming (a swap row is only a candidate). */
-const LIVE_FOR_CONFIRM: readonly AssignmentStatus[] = HOLDING_ASSIGNMENT_STATUSES;
-
-function slotText(job: Pick<Job, "start_at" | "end_at">): string {
-  if (!job.start_at) return "unscheduled";
-  const start = new Date(job.start_at);
-  if (!job.end_at) return formatDayLabel(start);
-  return `${formatDayLabel(start)} ${formatTimeRange(start, new Date(job.end_at))}`;
-}
-
-/**
- * If every live assignment on a `proposed` job is accepted (and there are at least `crew_size`), move
- * it to `crew_confirmed` and raise the `booking` approval `{ job_id }` (auto-approved + applied when
- * booking autopilot is on; import `lib/ops/handlers` before calling). `swap_offered` rows are
- * candidates, not crew, so they neither count nor block. Returns true when this call confirmed it.
- */
-export async function maybeConfirmJob(
-  db: Db,
-  jobId: string,
-  opts: { siteUrl: string; actor: string },
-): Promise<boolean> {
-  const job = check(await db.from("jobs").select("*").eq("id", jobId).maybeSingle(), "maybeConfirmJob(job)");
-  if (!job || job.status !== "proposed") return false;
-
-  const rows = check(await db.from("job_assignments").select("*").eq("job_id", jobId), "maybeConfirmJob(assignments)") ?? [];
-  const live = rows.filter((a) => LIVE_FOR_CONFIRM.includes(a.status));
-  const accepted = live.filter((a) => a.status === "accepted").length;
-  if (live.length === 0 || accepted !== live.length || accepted < job.crew_size) return false;
-
-  // Someone else confirming at the same moment wins the guarded update and raises the approval.
-  const confirmed = await tryTransitionJob(db, jobId, "crew_confirmed", { actor: opts.actor, from: "proposed" });
-  if (!confirmed) return false;
-
-  const customer = check(await db.from("customers").select("*").eq("id", job.customer_id).maybeSingle(), "maybeConfirmJob(customer)");
-  const { approval, autoApproved } = await requestApproval(db, {
-    kind: "booking",
-    ref_table: "jobs",
-    ref_id: jobId,
-    payload: { job_id: jobId },
-    title: `Book ${customer?.name ?? "job"} — ${slotText(job)}`,
-    summary: job.schedule_reason,
-    created_by: opts.actor,
-  });
-  if (autoApproved) await applyApproval(db, approval, { siteUrl: opts.siteUrl, actor: "autopilot" });
-  return true;
 }

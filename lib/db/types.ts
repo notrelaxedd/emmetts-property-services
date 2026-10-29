@@ -219,10 +219,16 @@ export type Quote = Base & {
   stripe_invoice_id: string | null;
   /** Hosted invoice page while that invoice is the live way to pay; cleared when it is voided by us. */
   stripe_invoice_url: string | null;
-  /** Null until paid. Cash / check payments carry no card fee and can't be refunded from the app. */
+  /**
+   * How the customer said they would pay when the owner confirmed the quote by phone (`stripe` = card
+   * link emailed after the job). Updated if the payment that lands differs. Cash / check carry no card fee.
+   */
   payment_method: PaymentMethod | null;
   sent_at: string | null;
+  /** When the customer agreed to the quote (confirmed by phone, or paid). */
   accepted_at: string | null;
+  /** When the money was received (Stripe webhook, or cash / check recorded by the owner). Null until then. */
+  paid_at: string | null;
   expires_at: string | null;
   /** Short "why" from the quotes worker, shown on the approval card. */
   rationale: string | null;
@@ -292,6 +298,10 @@ export type JobAssignment = Base & {
    * the holder keeps their own `accepted` row until a candidate accepts.
    */
   swap_to_crew_id: string | null;
+  /** Random token in the crew availability email: the Available / Can't links work without a login. */
+  respond_token: string;
+  /** When the availability email for this offer went out (null = not emailed). */
+  notified_at: string | null;
 };
 
 export type OwnerWindow = Base & {
@@ -435,6 +445,8 @@ export type Settings = Base & {
   quote_valid_days: number;
   /** Default net terms for "Send as invoice" (Stripe `days_until_due`). */
   invoice_days_until_due: number;
+  /** True: the scheduler places new jobs by itself. False (default): the owner drags them onto the calendar. */
+  auto_schedule: boolean;
   /** Service-area centre for weather + distance. */
   base_lat: number | null;
   base_lng: number | null;

@@ -7,7 +7,6 @@ vi.mock("../../lib/geo", () => ({
 
 import type { Service } from "../../lib/db/types";
 import { geocode, lookupParcel } from "../../lib/geo";
-import { registerApprovalHandler } from "../../lib/ops/approvals";
 import { customerRow, settingsRow } from "../../lib/ops/test-utils";
 import { estimateHours, priceItem, priceQuote } from "../../lib/pricing";
 import { fleetDb, makeCtx } from "../test-helpers";
@@ -40,7 +39,7 @@ function seed(leadOver: Record<string, unknown> = {}, settingsOver = {}) {
 describe("quote task", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("geocodes, prices standard items, flags the custom item and raises approvals", async () => {
+  it("geocodes, prices standard items, flags the custom item, raises its card and puts a job on the rail", async () => {
     const db = seed();
     const ctx = makeCtx(db);
     const res = await runQuote(ctx, { lead_id: "10000000-0000-4000-8000-000000000001" });
@@ -69,13 +68,12 @@ describe("quote task", () => {
 
     expect(db.tables.fleet_tasks.map((t) => [t.type, t.dedupe_key])).toEqual([["custom_summary", "custom_summary:10000000-0000-4000-8000-000000000001"]]);
     const kinds = db.tables.approvals.map((a) => [a.kind, a.status, a.title]);
-    expect(kinds).toContainEqual(["custom_item", "pending", "Custom request: Pat Smith"]);
-    expect(kinds).toContainEqual(["quote", "pending", `Quote for Pat Smith — $${totals.price_total}`]);
-    const qa = db.tables.approvals.find((a) => a.kind === "quote")!;
-    expect(qa.payload).toMatchObject({ quote_id: quote.id, price_total: totals.price_total, needs_owner: true });
-    expect((qa.payload as { items: unknown[] }).items).toHaveLength(3);
+    expect(kinds).toEqual([["custom_item", "pending", "Custom request: Pat Smith"]]); // no "send the pay link" card any more
+    // The job exists from the estimate on: unpaid, unscheduled, sized from the billed lines (leaf 2 crew × 1 h + edging 1 × 1 h).
+    expect(db.tables.jobs).toHaveLength(1);
+    expect(db.tables.jobs[0]).toMatchObject({ quote_id: quote.id, customer_id: customer.id, status: "unscheduled", paid: false, paid_at: null, est_minutes: 120, crew_size: 2 });
     expect(db.tables.leads[0].status).toBe("quoted");
-    expect(res).toMatchObject({ status: "needs_owner", custom_items: 1, auto_sent: false });
+    expect(res).toMatchObject({ status: "needs_owner", custom_items: 1, job_id: db.tables.jobs[0].id });
   });
 
   it("is idempotent: a re-run updates the same quote and keeps the owner's work", async () => {
@@ -93,7 +91,9 @@ describe("quote task", () => {
     );
     expect(db.tables.quote_items).toHaveLength(2); // edging dropped, custom kept
     expect(db.tables.quotes[0].status).toBe("draft");
-    expect(db.tables.approvals.filter((a) => a.kind === "quote")).toHaveLength(1);
+    // One job per quote; still on the rail, so its estimate follows the lines (leaf 2 × 1 h + custom 1 × 0 h).
+    expect(db.tables.jobs).toHaveLength(1);
+    expect(db.tables.jobs[0]).toMatchObject({ status: "unscheduled", est_minutes: 60, crew_size: 2 });
     expect(db.tables.fleet_tasks).toHaveLength(1);
   });
 
@@ -105,31 +105,24 @@ describe("quote task", () => {
     expect(res.skipped).toBe("quote already sent");
   });
 
-  it("standard-only quote is a draft; autopilot sends it through the quote handler", async () => {
-    const send = vi.fn();
-    registerApprovalHandler("quote", send);
+  it("standard-only quote is a draft with a job on the rail and nothing in the inbox, even with quote autopilot on", async () => {
     const db = seed({ custom_request: null, photo_paths: [] }, {
       autopilot: { ...settingsRow().autopilot, quote: { enabled: true, max_total: 500 } },
     });
     const res = await runQuote(makeCtx(db), { lead_id: "10000000-0000-4000-8000-000000000001" });
     expect(db.tables.quote_items.some((i) => i.is_custom)).toBe(false);
     expect(db.tables.fleet_tasks ?? []).toHaveLength(0);
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(db.tables.approvals[0]).toMatchObject({ kind: "quote", status: "approved", decided_by: "autopilot" });
-    expect(res.auto_sent).toBe(true);
+    expect(db.tables.approvals ?? []).toHaveLength(0); // the customer is called, never emailed a pay link
+    expect(db.tables.messages ?? []).toHaveLength(0);
+    expect(res).toMatchObject({ status: "draft", job_id: db.tables.jobs[0].id });
   });
 
-  it("a failed autopilot send goes back to the inbox instead of failing the task", async () => {
-    registerApprovalHandler("quote", () => {
-      throw new Error("STRIPE_SECRET_KEY is not set");
-    });
-    const db = seed({ custom_request: null, photo_paths: [] }, {
-      autopilot: { ...settingsRow().autopilot, quote: { enabled: true, max_total: null } },
-    });
+  it("a quote with nothing priced yet (only an owner-priced line) has no job until the owner prices it", async () => {
+    const db = seed({ custom_request: null, photo_paths: [], requested_service_ids: ["svc-gutter"] });
+    db.tables.services.push(service("svc-gutter", "Gutter cleaning", { auto_quote: false }) as never);
     const res = await runQuote(makeCtx(db), { lead_id: "10000000-0000-4000-8000-000000000001" });
-    expect(res.auto_sent).toBe(false);
-    expect(db.tables.approvals[0]).toMatchObject({ status: "pending", decided_by: null });
-    expect(String(db.tables.approvals[0].decision_note)).toMatch(/autopilot send failed: STRIPE_SECRET_KEY/);
+    expect(db.tables.jobs ?? []).toHaveLength(0);
+    expect(res.job_id).toBeNull();
   });
 
   it("a requested service without auto_quote becomes an owner-priced line", async () => {

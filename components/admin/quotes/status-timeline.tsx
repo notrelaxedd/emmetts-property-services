@@ -5,32 +5,40 @@ import { cn } from "@/lib/utils"
 
 type Step = { label: string; at: string | null; state: "done" | "current" | "todo" | "bad" }
 
-/** draft → needs_owner → sent → accepted / expired / declined, with timestamps where we have them. */
+const PAY: Record<string, string> = { cash: "cash", check: "check", stripe: "card" }
+
+/**
+ * estimated → (needs your price) → confirmed by phone → paid after the job, with timestamps where we
+ * have them. A pay link that went out (`sent_at`) shows as its own step; expired / declined end it.
+ */
 export function buildTimeline(quote: Quote, ownerCardAt: string | null): Step[] {
-  const order = ["draft", "needs_owner", "sent", "accepted", "expired", "declined"] as const
-  const rank = order.indexOf(quote.status)
-  const reachedSent = quote.sent_at !== null || rank >= 2
+  const confirmed = quote.status === "accepted" || quote.paid_at !== null
   const steps: Step[] = [
-    { label: "Draft", at: quote.created_at, state: "done" },
+    { label: "Estimated", at: quote.created_at, state: "done" },
     {
-      label: "Needs owner",
+      label: "Needs your price",
       at: ownerCardAt,
-      state: quote.status === "needs_owner" ? "current" : rank > 1 || ownerCardAt ? "done" : "todo",
+      state: quote.status === "needs_owner" ? "current" : ownerCardAt || confirmed ? "done" : "todo",
     },
-    { label: "Sent", at: quote.sent_at, state: quote.status === "sent" ? "current" : reachedSent ? "done" : "todo" },
   ]
+  if (quote.sent_at && !confirmed) {
+    steps.push({ label: "Pay link sent", at: quote.sent_at, state: quote.status === "sent" ? "current" : "done" })
+  }
+  steps.push({
+    label: quote.payment_method && !quote.paid_at ? `Confirmed by phone (pays by ${PAY[quote.payment_method] ?? quote.payment_method})` : "Confirmed by phone",
+    at: quote.accepted_at,
+    state: confirmed ? (quote.paid_at ? "done" : "current") : "todo",
+  })
+  if (quote.sent_at && confirmed) {
+    steps.push({ label: "Card link sent", at: quote.sent_at, state: quote.paid_at ? "done" : "current" })
+  }
   if (quote.status === "expired") steps.push({ label: "Expired", at: quote.expires_at, state: "bad" })
-  else if (quote.status === "declined") steps.push({ label: "Declined", at: quote.updated_at, state: "bad" })
+  else if (quote.status === "declined" && !quote.paid_at) steps.push({ label: "Declined", at: quote.updated_at, state: "bad" })
   else
     steps.push({
-      label:
-        quote.status !== "accepted"
-          ? "Accepted"
-          : quote.payment_method === "cash" || quote.payment_method === "check"
-            ? `Accepted (paid by ${quote.payment_method})`
-            : "Accepted (paid)",
-      at: quote.accepted_at,
-      state: quote.status === "accepted" ? "done" : "todo",
+      label: quote.paid_at ? `Paid${quote.payment_method ? ` by ${PAY[quote.payment_method] ?? quote.payment_method}` : ""}` : "Paid (after the job)",
+      at: quote.paid_at,
+      state: quote.paid_at ? "done" : "todo",
     })
   return steps
 }
