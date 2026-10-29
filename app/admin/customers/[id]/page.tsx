@@ -2,8 +2,9 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeft, UserRound } from "lucide-react"
 import { usd } from "@/app/admin/money/math"
+import { CustomerContactCard } from "@/components/admin/customers/customer-contact-card"
 import { CustomerEditForm } from "@/components/admin/customers/customer-edit-form"
-import { day, formatPhone, titleCase } from "@/components/admin/customers/format"
+import { day, titleCase } from "@/components/admin/customers/format"
 import { LogInteractionForm } from "@/components/admin/customers/log-interaction-form"
 import { PriceLogTable } from "@/components/admin/customers/price-log-table"
 import { Badge } from "@/components/ui/badge"
@@ -119,31 +120,18 @@ export default async function CustomerPage({ params }: { params: { id: string } 
         <>
           <PageHeader title={data.customer.name} description={data.customer.address ?? "No address on file"} />
           <div className="grid gap-5 lg:grid-cols-[20rem_1fr]">
-            <Card className="h-fit">
-              <CardHeader>
-                <CardTitle className="text-base">Contact</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <dl className="space-y-2 text-sm">
-                  <div>
-                    <dt className="text-xs text-ink-muted">Email</dt>
-                    <dd className="break-all text-ink">{data.customer.email ?? "—"}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-ink-muted">Phone</dt>
-                    <dd className="text-ink">{data.customer.phone ? formatPhone(data.customer.phone) : "—"}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-ink-muted">Parcel</dt>
-                    <dd className="text-ink">{data.customer.parcel_id ?? "—"}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-ink-muted">Customer since</dt>
-                    <dd className="text-ink">{day(data.customer.created_at)}</dd>
-                  </div>
-                </dl>
-              </CardContent>
-            </Card>
+            <CustomerContactCard
+              id={data.customer.id}
+              initial={{
+                name: data.customer.name,
+                email: data.customer.email,
+                phone: data.customer.phone,
+                address: data.customer.address,
+                parcel_id: data.customer.parcel_id,
+              }}
+              since={day(data.customer.created_at)}
+              counts={{ jobs: data.jobs.length, quotes: data.quotes.length, leads: data.leads.length }}
+            />
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Preferences &amp; property</CardTitle>
