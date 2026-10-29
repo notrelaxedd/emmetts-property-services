@@ -7,6 +7,7 @@ import { CustomerEditForm } from "@/components/admin/customers/customer-edit-for
 import { day, titleCase } from "@/components/admin/customers/format"
 import { LogInteractionForm } from "@/components/admin/customers/log-interaction-form"
 import { PriceLogTable } from "@/components/admin/customers/price-log-table"
+import { PaidJobForm, RemovePaidJobButton } from "@/components/admin/money/paid-job-form"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -14,6 +15,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { PageHeader } from "@/components/ui/page-header"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { requireOwner } from "@/lib/auth/session"
+import { MANUAL_SOURCE } from "@/lib/ops/manual-jobs"
 import type { CustomerInteraction, Job, Lead, Message, Quote } from "@/lib/db/types"
 import { formatDayLabel, formatTimeRange, localDate } from "@/lib/scheduler/time"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
@@ -56,8 +58,13 @@ async function load(id: string) {
     crewByJob.set(a.job_id, [...(crewByJob.get(a.job_id) ?? []), crewName.get(a.crew_id) ?? "Crew"])
   }
 
+  // Jobs added by hand ("Add a paid job") can be removed again; this maps them to their quote.
+  const manualLeads = new Set((leads.data ?? []).filter((l) => l.source === MANUAL_SOURCE).map((l) => l.id))
+  const manualQuoteIds = new Set((quotes.data ?? []).filter((q) => manualLeads.has(q.lead_id)).map((q) => q.id))
+
   return {
     customer: customer.data,
+    manualQuoteIds,
     leads: (leads.data ?? []) as Lead[],
     quotes: (quotes.data ?? []) as Quote[],
     jobs: (jobs.data ?? []) as Job[],
@@ -169,6 +176,15 @@ export default async function CustomerPage({ params }: { params: { id: string } 
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Add a paid job</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PaidJobForm today={today} customer={{ id: data.customer.id, name: data.customer.name }} />
+            </CardContent>
+          </Card>
+
           <Section title="Jobs" count={data.jobs.length}>
             <Table>
               <TableHeader>
@@ -177,6 +193,9 @@ export default async function CustomerPage({ params }: { params: { id: string } 
                   <TableHead>Status</TableHead>
                   <TableHead>Crew</TableHead>
                   <TableHead className="hidden sm:table-cell">Paid</TableHead>
+                  <TableHead className="text-right">
+                    <span className="sr-only">Remove</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -185,7 +204,9 @@ export default async function CustomerPage({ params }: { params: { id: string } 
                     <TableCell className="whitespace-nowrap">
                       {j.start_at && j.end_at
                         ? `${formatDayLabel(new Date(j.start_at))}, ${formatTimeRange(new Date(j.start_at), new Date(j.end_at))}`
-                        : "Not scheduled"}
+                        : j.completed_at
+                          ? day(j.completed_at)
+                          : "Not scheduled"}
                     </TableCell>
                     <TableCell>
                       <span className="flex flex-wrap gap-1">
@@ -195,6 +216,11 @@ export default async function CustomerPage({ params }: { params: { id: string } 
                     </TableCell>
                     <TableCell>{(data!.crewByJob.get(j.id) ?? []).join(", ") || "—"}</TableCell>
                     <TableCell className="hidden sm:table-cell">{j.paid ? day(j.paid_at) : "No"}</TableCell>
+                    <TableCell className="text-right">
+                      {j.quote_id && data!.manualQuoteIds.has(j.quote_id) ? (
+                        <RemovePaidJobButton quoteId={j.quote_id} label={`the job paid ${day(j.paid_at)}`} />
+                      ) : null}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
