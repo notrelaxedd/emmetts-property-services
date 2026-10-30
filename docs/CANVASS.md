@@ -224,6 +224,35 @@ tomorrow's suggested streets + windows through `lib/ai/claude.ts` (Sonnet, struc
 AI spend cap). Days with no knocks store a minimal summary without calling the model. The card sits at the top of
 the tab with a "Run now" button for testing.
 
+How it runs (`lib/canvass/summary.ts`):
+
+- `buildCanvassDigest(db, date)` collects the day's knocks in America/New_York (`dayBounds`), joins streets, knocker
+  and pitch names, counts QR scans that day and the planner's window label per street, and `digestFromRows` turns
+  them into an **aggregate-only** digest: counts by outcome, street, knocker, pitch and 2-hour bucket, the weather at
+  the knocks. No notes, no callback text, no owner names ever reach the model.
+- `runNightlySummary(db, date = yesterday)` stores `{ headline: "No knocks on <date>", ... }` when the day had no
+  knocks, otherwise calls `summarizeCanvassDay` (task `canvass_summary`, effort `low`, cap-checked by `runStructured`)
+  and upserts `canvass_summaries` on `for_date` (a re-run replaces the row; `model` records which model wrote it).
+- The route answers `401 { ok: false, error: "unauthorized" }` without the exact bearer token (also when
+  `CRON_SECRET` is unset), `503` when the service-role client is not configured, `500` with the error message when
+  the digest or the model fails, and `200 { ok: true, for_date, knocks, usedModel, summary }` otherwise. `?date=YYYY-MM-DD`
+  re-runs a specific day (handy with `curl -H "Authorization: Bearer $CRON_SECRET" https://<site>/api/cron/canvass-summary?date=2026-10-29`).
+- `vercel.json` holds the schedule; Vercel adds the `Authorization` header itself once `CRON_SECRET` is set in the
+  project's environment variables.
+
+## QR landing route and booking attribution
+
+`app/h/[code]/route.ts` mirrors the flyer route: it normalises the code, looks up an **active** `hanger_codes` row
+(unknown or inactive codes still redirect to `/quote`), sets the `hanger` cookie for 60 days, drops link-preview bots,
+rate-limits one client to 10 scan rows per 10 minutes per code, hashes `sha256(ip|user agent)` to 32 hex characters as
+the visitor and inserts a `hanger_events` `scan` through `recordHangerScan`. Then it 302s to
+`/quote?src=hanger&s=<code>&utm_source=hanger&utm_medium=qr&utm_campaign=<code>`.
+
+`app/actions/quote.ts` calls `recordHangerBooking(db, { utm, cookie, leadId })` (lib/canvass/hanger-events.ts) right
+after the lead row is inserted: the QR tags win, else the cookie, and a `booking` event is written for the code (even
+if the owner has since deactivated it, since the hanger was still on the door). Both helpers log and swallow every
+error, so attribution can never fail a scan or a quote submission.
+
 ## Environment variables
 
 | Variable | Required | Purpose |

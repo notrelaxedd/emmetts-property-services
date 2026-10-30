@@ -15,6 +15,7 @@
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { CanvassDigest } from "../canvass/summary";
 import type { Database } from "../db/types";
 import { createMessage, resolveModel } from "./client";
 import { supportsEffort, supportsForcedToolChoice } from "./pricing";
@@ -22,6 +23,9 @@ import {
   AD_SYSTEM_PROMPT,
   AD_TOOL_DESCRIPTION,
   AD_TOOL_NAME,
+  CANVASS_SUMMARY_SYSTEM_PROMPT,
+  CANVASS_SUMMARY_TOOL_DESCRIPTION,
+  CANVASS_SUMMARY_TOOL_NAME,
   CUSTOM_REQUEST_SYSTEM_PROMPT,
   CUSTOM_REQUEST_TOOL_DESCRIPTION,
   CUSTOM_REQUEST_TOOL_NAME,
@@ -34,6 +38,7 @@ import {
 } from "./prompts";
 import {
   adOutputSchema,
+  canvassSummarySchema,
   customRequestOutputSchema,
   formatZodIssues,
   messageOutputSchema,
@@ -42,6 +47,7 @@ import {
   type AdDraft,
   type AiMessageKind,
   type BusinessContext,
+  type CanvassSummaryOutput,
   type CustomRequestSummary,
   type MessageDraft,
   type TreeCoverEstimate,
@@ -51,7 +57,7 @@ import type { z } from "zod";
 
 type Db = SupabaseClient<Database>;
 
-export type { BusinessContext, AdDraft, MessageDraft, CustomRequestSummary, TreeCoverEstimate, AiMessageKind };
+export type { BusinessContext, AdDraft, MessageDraft, CustomRequestSummary, TreeCoverEstimate, AiMessageKind, CanvassSummaryOutput };
 export { AiCapExceededError } from "./usage";
 export { AiConfigError } from "./client";
 
@@ -417,6 +423,27 @@ export async function estimateFromPhotos(
         `</request>\n\nJudge the tree cover and submit it with the ${TREE_COVER_TOOL_NAME} tool.`;
       return [...photos.blocks, { type: "text", text }];
     },
+    effort: "low",
+    opts,
+  });
+}
+
+/**
+ * The nightly Canvass digest → the owner's morning summary. The digest is aggregate only (counts by street, knocker,
+ * pitch and time bucket); nothing about any resident is sent. Low effort: it is a short, factual write-up.
+ */
+export async function summarizeCanvassDay(db: Db, digest: CanvassDigest, opts: AiCallOptions = {}): Promise<CanvassSummaryOutput> {
+  const text =
+    `<digest>\n${esc(JSON.stringify(digest, null, 1))}\n</digest>\n\n` +
+    `Write the morning summary for ${esc(digest.for_date)} and submit it with the ${CANVASS_SUMMARY_TOOL_NAME} tool.`;
+  return runStructured({
+    db,
+    task: "canvass_summary",
+    toolName: CANVASS_SUMMARY_TOOL_NAME,
+    toolDescription: CANVASS_SUMMARY_TOOL_DESCRIPTION,
+    schema: canvassSummarySchema,
+    system: CANVASS_SUMMARY_SYSTEM_PROMPT,
+    content: async () => [{ type: "text", text }],
     effort: "low",
     opts,
   });

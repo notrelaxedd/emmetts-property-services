@@ -58,6 +58,21 @@ export const treeCoverOutputSchema = z.object({
 });
 export type TreeCoverEstimate = z.infer<typeof treeCoverOutputSchema>;
 
+const shortLine = (max: number) => z.string().trim().min(1).max(max);
+const streetNote = z.object({ street: shortLine(80), why: shortLine(300) });
+
+/** Nightly canvass digest: exactly the `CanvassSummaryContent` shape stored in `canvass_summaries.summary`. */
+export const canvassSummarySchema = z.object({
+  headline: shortLine(160),
+  highlights: z.array(shortLine(300)).max(8),
+  best_streets: z.array(streetNote).max(5),
+  worst_streets: z.array(streetNote).max(5),
+  knocker_notes: z.array(shortLine(300)).max(6),
+  pitch_notes: z.array(shortLine(300)).max(6),
+  tomorrow: z.array(z.object({ street: shortLine(80), window: shortLine(60), why: shortLine(300) })).max(5),
+});
+export type CanvassSummaryOutput = z.infer<typeof canvassSummarySchema>;
+
 // ---------- JSON schema for tool input ----------
 
 export type ToolInputSchema = { type: "object"; properties: Record<string, unknown>; required?: string[]; [k: string]: unknown };
