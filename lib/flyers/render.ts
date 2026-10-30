@@ -72,8 +72,11 @@ async function qrPng(url: string, max: number): Promise<{ png: Buffer; size: num
   return { png, size: modules * scale };
 }
 
-/** The flyer with the worker's QR code (pointing at `url`) and code in the box, as an opaque PNG. */
-async function compose(url: string, code: string, scale: number): Promise<Buffer> {
+/**
+ * The flyer with the QR code (pointing at `url`) and, for a worker's flyer, their code in the box,
+ * as an opaque PNG. No code (the generic flyer): the QR alone, centered.
+ */
+async function compose(url: string, code: string | null, scale: number): Promise<Buffer> {
   const { qrBox } = FLYER_TEMPLATE;
   const box = {
     left: Math.round(qrBox.left * scale),
@@ -82,7 +85,7 @@ async function compose(url: string, code: string, scale: number): Promise<Buffer
     height: Math.round(qrBox.height * scale),
   };
   const pad = Math.round(PAD * scale);
-  const label = await codeLabel(code, Math.round(LABEL_HEIGHT * scale));
+  const label = code ? await codeLabel(code, Math.round(LABEL_HEIGHT * scale)) : null;
   const labelMeta = label ? await sharp(label).metadata() : null;
   const labelHeight = labelMeta?.height ?? 0;
   const qr = await qrPng(url, Math.min(box.width - pad * 2, box.height - pad * 2 - (labelHeight ? labelHeight + pad : 0)));
@@ -115,19 +118,19 @@ async function compose(url: string, code: string, scale: number): Promise<Buffer
   return sharp(flyer).flatten({ background: "#ffffff" }).removeAlpha().png().toBuffer();
 }
 
-/** Print-ready US Letter PDF of a worker's flyer. */
-export async function renderFlyerPdf(url: string, code: string): Promise<Buffer> {
+/** Print-ready US Letter PDF of a worker's flyer (or the generic one, with no code). */
+export async function renderFlyerPdf(url: string, code: string | null = null): Promise<Buffer> {
   const jpeg = await sharp(await compose(url, code, PRINT_SCALE)).jpeg({ quality: 92, chromaSubsampling: "4:4:4" }).toBuffer();
   return jpegPagePdf(jpeg, { width: FLYER_TEMPLATE.width * PRINT_SCALE, height: FLYER_TEMPLATE.height * PRINT_SCALE });
 }
 
 /** Full-resolution PNG of a worker's flyer. */
-export async function renderFlyerPng(url: string, code: string): Promise<Buffer> {
+export async function renderFlyerPng(url: string, code: string | null = null): Promise<Buffer> {
   return compose(url, code, PRINT_SCALE);
 }
 
 /** Small JPEG for previewing the flyer in the console. */
-export async function renderFlyerPreview(url: string, code: string): Promise<Buffer> {
+export async function renderFlyerPreview(url: string, code: string | null = null): Promise<Buffer> {
   return sharp(await compose(url, code, 1)).resize({ width: 700 }).jpeg({ quality: 85 }).toBuffer();
 }
 

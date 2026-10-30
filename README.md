@@ -46,7 +46,7 @@ npm run test:e2e             # Playwright smoke tests (set PLAYWRIGHT_CHROMIUM_P
 | All the words on the site | `lib/content.ts` |
 | The list of services (in-season panel, service rows, quote form, SEO) | `lib/services.ts` |
 | Photos and logo | `public/images/`, `public/logo.png` and `public/logo-light.png`; see `public/images/README.md` |
-| Flyer design (words, layout) + where the QR code goes | `assets/flyer/fall-cleanup.html`, then `npm run flyer:template` (re-renders `fall-cleanup.webp` at 300 dpi and prints the box to paste into `FLYER_TEMPLATE` in `lib/flyers/render.ts`) |
+| Flyer design (words, layout) + where the QR code goes (worker flyers and the generic one share it) | `assets/flyer/fall-cleanup.html`, then `npm run flyer:template` (re-renders `fall-cleanup.webp` at 300 dpi and prints the box to paste into `FLYER_TEMPLATE` in `lib/flyers/render.ts`) |
 | Colors, fonts, sizes | `tailwind.config.ts`, `app/globals.css` |
 
 The hero headline is the current seasonal offer (`content.hero.headline`). Swap it to

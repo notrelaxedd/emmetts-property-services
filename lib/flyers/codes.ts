@@ -47,6 +47,14 @@ export function flyerUrl(siteUrl: string, code: string): string {
 }
 
 /**
+ * The URL in the generic flyer's QR (no worker): straight to the quote form, tagged as a flyer
+ * with no code, so the lead shows it came from a flyer without crediting anyone.
+ */
+export function genericFlyerUrl(siteUrl: string): string {
+  return `${siteUrl.replace(/\/$/, "")}/quote?utm_source=flyer&utm_medium=qr`;
+}
+
+/**
  * The flyer code a quote-form submission should be credited to: the utm tags the QR redirect adds
  * win (that visit came straight from a flyer); otherwise the cookie from an earlier scan.
  */

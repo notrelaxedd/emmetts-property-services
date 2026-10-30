@@ -5,6 +5,7 @@ import {
   attributedCode,
   flyerLandingPath,
   flyerUrl,
+  genericFlyerUrl,
   isBot,
   normalizeCode,
   randomCode,
@@ -36,6 +37,9 @@ describe("flyer codes", () => {
   it("builds the QR link and the landing page", () => {
     expect(flyerUrl("https://eodlawns.com/", "K7M2")).toBe("https://eodlawns.com/f/K7M2");
     expect(flyerLandingPath("K7M2")).toBe("/quote?utm_source=flyer&utm_medium=qr&utm_campaign=K7M2");
+    expect(genericFlyerUrl("https://eodlawns.com/")).toBe("https://eodlawns.com/quote?utm_source=flyer&utm_medium=qr");
+    // No campaign, so a generic scan credits no one (an earlier worker scan's cookie still can).
+    expect(attributedCode({ source: "flyer" }, undefined)).toBeNull();
   });
 
   it("credits the utm tags first, then the scan cookie", () => {
