@@ -3,6 +3,7 @@ import { Receipt } from "lucide-react"
 import { dateTime, money } from "@/components/admin/inbox/format"
 import { UrlFilterChips } from "@/components/admin/inbox/inbox-filters"
 import { QuoteStatusBadge } from "@/components/admin/leads/status-badges"
+import { DeleteQuoteButton } from "@/components/admin/quotes/delete-quote-button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageHeader } from "@/components/ui/page-header"
@@ -90,6 +91,9 @@ export default async function QuotesPage({ searchParams }: { searchParams: { sta
                 <TableHead className="text-right">Profit</TableHead>
                 <TableHead className="text-right">Price</TableHead>
                 <TableHead>Payment</TableHead>
+                <TableHead className="w-10 text-right">
+                  <span className="sr-only">Delete</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -118,6 +122,9 @@ export default async function QuotesPage({ searchParams }: { searchParams: { sta
                           : q.sent_at
                             ? `Link sent ${dateTime(q.sent_at)}`
                             : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DeleteQuoteButton quoteId={q.id} customerName={c?.name ?? "this customer"} amount={q.price_total} paid={!!q.paid_at} compact />
                     </TableCell>
                   </TableRow>
                 )

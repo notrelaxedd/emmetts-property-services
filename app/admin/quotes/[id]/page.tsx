@@ -4,6 +4,7 @@ import { ArrowLeft, ExternalLink } from "lucide-react"
 import { CopyButton } from "@/components/admin/inbox/copy-button"
 import { dateTime, label, money } from "@/components/admin/inbox/format"
 import { QuoteStatusBadge } from "@/components/admin/leads/status-badges"
+import { DeleteQuoteButton } from "@/components/admin/quotes/delete-quote-button"
 import { QuoteEditor } from "@/components/admin/quotes/quote-editor"
 import { RefundButton } from "@/components/admin/quotes/refund-button"
 import { StatusTimeline } from "@/components/admin/quotes/status-timeline"
@@ -90,7 +91,18 @@ export default async function QuotePage({ params }: { params: { id: string } }) 
             </Link>
           </>
         }
-        actions={canRefund ? <RefundButton quoteId={quote.id} amount={quote.price_total} /> : null}
+        actions={
+          <>
+            {canRefund ? <RefundButton quoteId={quote.id} amount={quote.price_total} /> : null}
+            <DeleteQuoteButton
+              quoteId={quote.id}
+              customerName={customer?.name ?? "this customer"}
+              amount={quote.price_total}
+              paid={!!quote.paid_at}
+              redirectTo="/admin/quotes"
+            />
+          </>
+        }
       />
 
       <div className="grid gap-4 lg:grid-cols-[1fr_18rem]">
