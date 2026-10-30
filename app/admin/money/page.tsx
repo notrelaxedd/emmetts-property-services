@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { ChevronLeft, ChevronRight, Megaphone, Receipt, Wallet } from "lucide-react"
+import { DeleteJobButton } from "@/components/admin/money/delete-job-button"
 import { ExpenseForm, ExpensesTable } from "@/components/admin/money/expenses"
 import { PaidJobForm, type PaidJobCustomer } from "@/components/admin/money/paid-job-form"
 import { Badge } from "@/components/ui/badge"
@@ -204,11 +205,11 @@ export default async function MoneyPage({ searchParams }: { searchParams: { mont
             <CardHeader>
               <CardTitle>Add a paid job</CardTitle>
               <CardDescription>
-                A job that&rsquo;s already done and paid. It counts on the day you pick. New customer? Add them on the{" "}
-                <Link href="/admin/customers/log" className="font-medium text-ink underline underline-offset-4">
-                  price log
+                A job that&rsquo;s already done and paid. It counts on the day you pick. New customer?{" "}
+                <Link href="/admin/customers/new" className="font-medium text-ink underline underline-offset-4">
+                  Add them
                 </Link>{" "}
-                first.
+                first. Entered one twice? Delete it under Profit per job.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -235,6 +236,9 @@ export default async function MoneyPage({ searchParams }: { searchParams: { mont
                       <TableHead className="hidden text-right md:table-cell">Fee</TableHead>
                       <TableHead className="text-right">Labor</TableHead>
                       <TableHead className="text-right">Profit</TableHead>
+                      <TableHead className="w-10 text-right">
+                        <span className="sr-only">Delete</span>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -252,6 +256,9 @@ export default async function MoneyPage({ searchParams }: { searchParams: { mont
                           {j.laborEstimated && j.labor > 0 ? <span className="ml-1 text-xs text-ink-muted">est.</span> : null}
                         </TableCell>
                         <TableCell className="text-right font-semibold"><Money n={j.profit} /></TableCell>
+                        <TableCell className="text-right">
+                          <DeleteJobButton jobId={j.job_id} label={`${j.customer_name}'s ${usd(j.price)} job${j.date ? ` on ${j.date}` : ""}`} />
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

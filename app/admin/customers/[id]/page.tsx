@@ -8,6 +8,7 @@ import { day, titleCase } from "@/components/admin/customers/format"
 import { LogInteractionForm } from "@/components/admin/customers/log-interaction-form"
 import { PriceLogTable } from "@/components/admin/customers/price-log-table"
 import { PaidJobForm, RemovePaidJobButton } from "@/components/admin/money/paid-job-form"
+import { DeleteQuoteButton } from "@/components/admin/quotes/delete-quote-button"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -237,6 +238,9 @@ export default async function CustomerPage({ params }: { params: { id: string } 
                   <TableHead className="hidden text-right sm:table-cell">Labor</TableHead>
                   <TableHead className="hidden md:table-cell">Sent</TableHead>
                   <TableHead className="hidden md:table-cell">Accepted</TableHead>
+                  <TableHead className="text-right">
+                    <span className="sr-only">Delete</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -250,6 +254,9 @@ export default async function CustomerPage({ params }: { params: { id: string } 
                     <TableCell className="hidden text-right tabular-nums sm:table-cell">{usd(Number(q.labor_total))}</TableCell>
                     <TableCell className="hidden md:table-cell">{day(q.sent_at)}</TableCell>
                     <TableCell className="hidden md:table-cell">{day(q.accepted_at)}</TableCell>
+                    <TableCell className="text-right">
+                      <DeleteQuoteButton quoteId={q.id} customerName={data!.customer.name} amount={Number(q.price_total)} paid={!!q.paid_at} compact />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

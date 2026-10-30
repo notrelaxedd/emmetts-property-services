@@ -6,7 +6,7 @@ import { requireOwner } from "@/lib/auth/session"
 import { opsConfig } from "@/lib/config"
 import type { Customer } from "@/lib/db/types"
 import { geocode } from "@/lib/geo"
-import { check, formatPhone, normalizePhone, upsertCustomer } from "@/lib/ops"
+import { check, formatPhone, normalizePhone, one, upsertCustomer } from "@/lib/ops"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; reason: string }
@@ -58,6 +58,73 @@ const contactSchema = z.object({
 
 export type CustomerContact = z.input<typeof contactSchema>
 
+/** Coordinates for an address (when a geocoder is configured), or null. Never throws; gives up after 4s. */
+async function locate(address: string | null): Promise<{ lat: number; lng: number } | null> {
+  if (!address || opsConfig.geocoder === "none") return null
+  try {
+    return await Promise.race([geocode(address), new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000))])
+  } catch (e) {
+    console.error("[customers] geocode failed:", e instanceof Error ? e.message : e)
+    return null
+  }
+}
+
+const newCustomerSchema = contactSchema.extend({ notes: z.string().trim().max(5000) })
+
+export type NewCustomer = z.input<typeof newCustomerSchema>
+
+/**
+ * "Add a customer": just put someone on file (work done or planned), no conversation or job needed.
+ * Only the name is required. A phone or email already on file is refused with that customer's id, so
+ * the same person isn't added twice.
+ */
+export async function addCustomer(input: NewCustomer): Promise<{ ok: true; id: string; message: string } | { ok: false; reason: string; existingId?: string }> {
+  await requireOwner()
+  const parsed = newCustomerSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, reason: parsed.error.issues[0]?.message ?? "Invalid values." }
+  const v = parsed.data
+  const digits = normalizePhone(v.phone)
+  if (v.phone && digits.length !== 10) return { ok: false, reason: "Enter a 10-digit phone number, or leave it blank." }
+  try {
+    const db = requireSupabaseAdmin()
+    const matches = [
+      digits
+        ? check(
+            await db.from("customers").select("id,name").in("phone", [digits, formatPhone(digits), `1${digits}`, `+1${digits}`]).limit(1).maybeSingle(),
+            "find customer (phone)",
+          )
+        : null,
+      v.email ? check(await db.from("customers").select("id,name").eq("email", v.email).limit(1).maybeSingle(), "find customer (email)") : null,
+    ]
+    const found = matches[0] ?? matches[1]
+    if (found) {
+      return {
+        ok: false,
+        reason: `${found.name} is already on file with that ${matches[0] ? "phone number" : "email"}.`,
+        existingId: found.id,
+      }
+    }
+    const address = v.address || null
+    const coords = await locate(address)
+    const row: Partial<Customer> = {
+      name: v.name,
+      email: v.email || null,
+      phone: digits || null,
+      address,
+      lat: coords?.lat ?? null,
+      lng: coords?.lng ?? null,
+      parcel_id: v.parcel_id || null,
+      notes: v.notes || null,
+    }
+    const created = one(await db.from("customers").insert(row).select("id").single(), "add customer")
+    revalidatePath("/admin/customers")
+    revalidatePath("/admin/money")
+    return { ok: true, id: created.id, message: `${v.name} added.` }
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 /**
  * Owner edits to who the customer is and where they live. A changed address is re-geocoded
  * (when a geocoder is configured) so scheduling distances follow it; otherwise its old
@@ -84,14 +151,7 @@ export async function updateCustomerContact(id: string, input: CustomerContact):
       parcel_id: v.parcel_id || null,
     }
     if (address !== current.address) {
-      let coords: { lat: number; lng: number } | null = null
-      if (address && opsConfig.geocoder !== "none") {
-        try {
-          coords = await Promise.race([geocode(address), new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000))])
-        } catch (e) {
-          console.error("[customers] geocode failed:", e instanceof Error ? e.message : e)
-        }
-      }
+      const coords = await locate(address)
       data.lat = coords?.lat ?? null
       data.lng = coords?.lng ?? null
     }

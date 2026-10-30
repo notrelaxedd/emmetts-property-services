@@ -6,6 +6,7 @@ import { EXPENSE_CATEGORIES } from "@/app/admin/money/math"
 import { actorOf } from "@/components/admin/inbox/server"
 import { requireOwner } from "@/lib/auth/session"
 import { check } from "@/lib/ops"
+import { deleteJob } from "@/lib/ops/delete-quote"
 import { recordManualJob, removeManualJob } from "@/lib/ops/manual-jobs"
 import { PAYMENT_METHODS } from "@/lib/ops/payment-methods"
 import { localDate } from "@/lib/scheduler/time"
@@ -101,6 +102,21 @@ export async function removePaidJob(quoteId: string): Promise<ActionResult> {
     const { customerId } = await removeManualJob(db, quoteId)
     revalidatePaidJob(customerId)
     return { ok: true, message: "Job removed." }
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/** Delete a job from the Money page (entered twice, say). Its quote goes too, so the money comes off. */
+export async function deleteMoneyJob(jobId: string): Promise<ActionResult> {
+  await requireOwner()
+  if (!/^[0-9a-f-]{36}$/i.test(jobId)) return { ok: false, reason: "Invalid job." }
+  try {
+    const db = requireSupabaseAdmin()
+    const { customerId } = await deleteJob(db, jobId)
+    revalidatePaidJob(customerId)
+    revalidatePath("/admin", "layout")
+    return { ok: true, message: "Job deleted." }
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : String(e) }
   }

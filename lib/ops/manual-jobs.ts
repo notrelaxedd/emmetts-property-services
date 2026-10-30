@@ -14,6 +14,7 @@
 import type { PaymentMethod } from "../db/types";
 import { fee, moneyRound } from "../pricing";
 import { zonedToUtc } from "../scheduler/time";
+import { deleteQuote } from "./delete-quote";
 import { getSettings } from "./settings";
 import { check, one } from "./types";
 import type { Db } from "./types";
@@ -157,15 +158,9 @@ export async function recordManualJob(db: Db, j: ManualJob): Promise<{ quoteId: 
  * that came in through the site, and a job with crew payouts on record (delete those first).
  */
 export async function removeManualJob(db: Db, quoteId: string): Promise<{ customerId: string }> {
-  const quote = check(await db.from("quotes").select("id,lead_id,customer_id").eq("id", quoteId).maybeSingle(), "removeManualJob(quote)");
+  const quote = check(await db.from("quotes").select("id,lead_id").eq("id", quoteId).maybeSingle(), "removeManualJob(quote)");
   if (!quote) throw new Error("Job not found.");
   const lead = check(await db.from("leads").select("id,source").eq("id", quote.lead_id).maybeSingle(), "removeManualJob(lead)");
   if (lead?.source !== MANUAL_SOURCE) throw new Error("Only jobs added by hand can be removed here.");
-  const jobs = await db.from("jobs").delete().eq("quote_id", quoteId);
-  if (jobs.error && (jobs.error as { code?: string }).code === "23503") {
-    throw new Error("This job has crew payouts on record; delete those on the employee's page first.");
-  }
-  check(jobs, "removeManualJob(job)");
-  check(await db.from("leads").delete().eq("id", lead.id), "removeManualJob(lead)");
-  return { customerId: quote.customer_id };
+  return deleteQuote(db, quoteId);
 }

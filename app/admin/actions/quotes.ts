@@ -11,6 +11,7 @@ import { requireOwner } from "@/lib/auth/session"
 import type { QuoteItem, QuoteItemStatus } from "@/lib/db/types"
 import { createApproval, decideApproval } from "@/lib/ops/approvals"
 import { quoteApprovalInput, quoteEditLockReason } from "@/lib/ops/handlers/custom_item"
+import { deleteQuote } from "@/lib/ops/delete-quote"
 import { ensureJobForQuote } from "@/lib/ops/jobs"
 import { PAYMENT_METHOD_LABEL, PAYMENT_METHODS } from "@/lib/ops/payment-methods"
 import { OFFLINE_METHODS, recordOfflinePayment } from "@/lib/ops/payments"
@@ -370,6 +371,24 @@ export async function setPaymentMethod(quoteId: string, method: string): Promise
     )
     revalidateQuote(id)
     return { ok: true, message: `Noted: pays by ${PAYMENT_METHOD_LABEL[m.data].toLowerCase()} after the job` }
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) }
+  }
+}
+
+/**
+ * Delete a quote outright (a duplicate, a test, a customer who backed out): its lines, job and lead go
+ * with it, and so does its money on the Money page (lib/ops/delete-quote.ts). Doesn't refund a card payment.
+ */
+export async function deleteQuoteAction(quoteId: string): Promise<ActionResult> {
+  await requireOwner()
+  try {
+    const id = Id.parse(quoteId)
+    const db = requireSupabaseAdmin()
+    const { customerId } = await deleteQuote(db, id)
+    revalidatePath("/admin", "layout")
+    revalidatePath(`/admin/customers/${customerId}`)
+    return { ok: true, message: "Quote deleted" }
   } catch (e) {
     return { ok: false, error: errorMessage(e) }
   }
