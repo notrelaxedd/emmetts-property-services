@@ -37,6 +37,10 @@ with `NEXT_PUBLIC_`; never commit one.
 | `FLEET_ROLE` | — | ✓ | ✓ | `ads` · `quotes` · `scheduler` · `followup` · `host`. One per box. |
 | `FLEET_NAME` | — | ✓ | — | Worker display name on the Fleet panel. Defaults to `<role>-<hostname>`. |
 | `FLEET_ROOT` | — | ✓ | — | Install directory (default `/opt/fleet`), used for the version stamp. |
+| `CRON_SECRET` | ✓ | — | ✓ | **Secret.** Vercel sends it as `Authorization: Bearer <CRON_SECRET>` to `/api/cron/canvass-summary` (the nightly canvass digest); the route returns 401 without it. Any long random string; Vercel → Settings → Environment Variables. |
+| `CENSUS_API_KEY` | ✓ | — | — | api.census.gov key for the ACS block-group pulls (Canvass tab). Optional: the API works without one at a lower rate limit. Free from <https://api.census.gov/data/key_signup.html>. |
+| `CANVASS_PARCEL_LAYER_URL` | ✓ | — | — | Overrides the Cuyahoga County parcel layer the Canvass tab pulls from (default `https://gis.cuyahogacounty.gov/server/rest/services/Open_Data_Parcels/MapServer/1`, the non-Cleveland combined parcels). Set it if the county moves the service. Field names are discovered at runtime (Canvass → Settings → Refresh from county). |
+| `NEXT_PUBLIC_SATELLITE_TILE_URL` | ✓ | — | — | Satellite tile template for the Canvass maps (`{z}/{x}/{y}` placeholders). Default: Esri World Imagery. Public by design (a tile URL, not a secret). |
 
 ## Finding the parcel layer
 

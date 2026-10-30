@@ -8,6 +8,17 @@
  * supabase-js (we cast in SQL views / selects where precision matters). Times are ISO strings.
  */
 
+import type {
+  BasePrices,
+  CanvassSummaryContent,
+  GeoFeatureCollection,
+  KnockWeather,
+  ParcelFieldMap,
+  ParcelGeom,
+  PriorWindow,
+  SeasonMap,
+} from "../canvass/types";
+
 // ---------- Enums (Postgres enum types with the same names) ----------
 
 export type Role = "owner" | "crew";
@@ -68,6 +79,20 @@ export type FleetTaskType =
   | "send_message"
   | "custom_summary";
 export type FleetTaskStatus = "queued" | "running" | "done" | "failed";
+/** Canvass: what happened at the door. */
+export type KnockOutcome =
+  | "no_answer"
+  | "not_interested"
+  | "quote_given"
+  | "booked"
+  | "call_back"
+  | "no_soliciting"
+  | "do_not_return"
+  | "has_service";
+/** Canvass: `hanger_events.event`. Named `…Kind` because `HangerEvent` is the row type. */
+export type HangerEventKind = "scan" | "booking";
+/** Canvass: when the crew observed the household is usually home. */
+export type HomePattern = "home_weekdays" | "evenings_only" | "weekends_only" | "unknown";
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6; // 0 = Sunday, matches JS Date#getDay()
 
 // ---------- JSON column shapes ----------
@@ -493,6 +518,181 @@ export type StripeEvent = Base & {
   payload: Record<string, unknown>;
 };
 
+// ---------- Canvass (door-to-door planning) ----------
+
+/**
+ * A county parcel pulled into the Canvass tab. Typed columns feed the planner; `raw` holds the county
+ * attributes as fetched. `callback_window` / `home_pattern` / `do_not_knock` come from the crew and the
+ * homeowner only and survive re-pulls.
+ */
+export type Parcel = Base & {
+  /** County PIN. */
+  parcel_id: string;
+  /** Site address as the county gives it. */
+  address: string;
+  /** Street name without the house number, upper-cased (hanger codes, learned layer grouping). */
+  street: string;
+  city: string | null;
+  zip: string | null;
+  /** Owner name from the county record. Display / greeting only. */
+  owner_display: string | null;
+  mailing_address: string | null;
+  /** County land-use / class code, as text. */
+  land_use: string | null;
+  lot_sqft: number | null;
+  living_sqft: number | null;
+  stories: number | null;
+  footprint_sqft: number | null;
+  year_built: number | null;
+  market_value: number | null;
+  /** Null = unknown. */
+  owner_occupied: boolean | null;
+  /** LLC / trust / corp owner: landlord pitch. */
+  owner_is_entity: boolean;
+  /** GeoJSON Polygon / MultiPolygon in WGS84. */
+  geom: ParcelGeom | null;
+  centroid_lat: number | null;
+  centroid_lng: number | null;
+  /** 12-digit Census block group GEOID. */
+  block_group_geoid: string | null;
+  turf_sqft_est: number | null;
+  turf_sqft_traced: number | null;
+  /** GeoJSON FeatureCollection of traced lawn polygons. */
+  turf_geom: GeoFeatureCollection | null;
+  /** What the homeowner said ("weekdays after 5"). Overrides every model. */
+  callback_window: string | null;
+  home_pattern: HomePattern | null;
+  /** Respected forever once set: never in a route or plan. */
+  do_not_knock: boolean;
+  do_not_knock_reason: string | null;
+  customer_id: string | null;
+  /** County attributes as fetched (object). */
+  raw: Record<string, unknown>;
+  fetched_at: string;
+};
+
+/** Census ACS 5-year aggregates for one block group, plus the day-one window derived from them. */
+export type BlockGroup = Base & {
+  geoid: string;
+  /** GeoJSON polygon from TIGERweb; null until fetched. */
+  geom: ParcelGeom | null;
+  /** B23025: not in labor force / total (0..1). */
+  pct_not_in_lf: number | null;
+  /** B23007: families with own children under 18 where a parent is not in the labor force (0..1). */
+  pct_hh_nonworking_parent: number | null;
+  /** B01001 (0..1). */
+  pct_65_plus: number | null;
+  /** B19013, display only. */
+  median_hh_income: number | null;
+  /** B08302: `{ "<bucket label>": count }`. */
+  depart_dist: Record<string, number>;
+  /** B08303: `{ "<bucket label>": count }`. */
+  commute_dist: Record<string, number>;
+  prior_window: PriorWindow | null;
+  /** e.g. "2023". */
+  acs_vintage: string | null;
+  fetched_at: string | null;
+};
+
+/** One door knocked. */
+export type Knock = Base & {
+  parcel_id: string;
+  knocked_at: string;
+  /** profiles.id of the crew member. */
+  knocker_id: string;
+  outcome: KnockOutcome;
+  pitch_id: string | null;
+  lat: number | null;
+  lng: number | null;
+  weather: KnockWeather | null;
+  notes: string | null;
+  /** What they said at this knock; also copied onto the parcel. */
+  callback_window: string | null;
+  home_pattern: HomePattern | null;
+  quote_low: number | null;
+  quote_high: number | null;
+  lead_id: string | null;
+  quote_id: string | null;
+  /** UUID generated on the phone; unique, so the offline queue can re-send safely. */
+  client_id: string | null;
+};
+
+/** A script the crew picks at session start. */
+export type Pitch = Base & {
+  name: string;
+  script: string;
+  active: boolean;
+  sort_order: number;
+};
+
+/** One QR code per street printed on door hangers (/h/<code>). */
+export type HangerCode = Base & {
+  code: string;
+  street: string;
+  block_group_geoid: string | null;
+  active: boolean;
+};
+
+/** A scan (hashed visitor) or a booking attributed to a hanger code. */
+export type HangerEvent = Base & {
+  code: string;
+  event: HangerEventKind;
+  /** sha256 of ip + user agent (truncated). Scans only. */
+  visitor: string | null;
+  /** Bookings only. */
+  lead_id: string | null;
+};
+
+/** A saved "plan my session". */
+export type CanvassPlan = Base & {
+  /** "YYYY-MM-DD" */
+  for_date: string;
+  /** "HH:MM" */
+  slot_start: string;
+  slot_end: string;
+  /** parcels.id in walking order. */
+  parcel_ids: string[];
+  created_by: string | null;
+  notes: string | null;
+};
+
+/** The nightly AI digest, one per day. */
+export type CanvassSummary = Base & {
+  /** "YYYY-MM-DD" (the day summarised). */
+  for_date: string;
+  summary: CanvassSummaryContent;
+  model: string | null;
+};
+
+export type CanvassSettings = Base & {
+  /** Single row; id is always `00000000-0000-0000-0000-000000000001`. */
+  hardscape_pct: number;
+  rate_per_1000_sqft: number;
+  min_charge: number;
+  base_prices: BasePrices;
+  value_tier_enabled: boolean;
+  /** 1.0..1.10 */
+  value_tier_max: number;
+  doors_per_hour: number;
+  /** "Near a customer" = within this many houses on the same street. */
+  neighbor_n: number;
+  /** Houses knocked within this many days are left out of plans. */
+  recency_days: number;
+  daytime_not_in_lf_threshold: number;
+  daytime_nonworking_parent_threshold: number;
+  work_hours: number;
+  /** Knocks a block group / street needs before the learned window applies. */
+  learned_min_knocks: number;
+  season_map: SeasonMap;
+  residential_land_use_prefixes: string[];
+  parcel_field_map: ParcelFieldMap;
+  acs_vintage: string;
+  /** Season offer printed on hangers; null = default copy. */
+  offer_text: string | null;
+};
+
+export const CANVASS_SETTINGS_ID = "00000000-0000-0000-0000-000000000001";
+
 // ---------- supabase-js Database generic ----------
 
 type Table<R> = { Row: R; Insert: Partial<R>; Update: Partial<R>; Relationships: [] };
@@ -526,6 +726,15 @@ export type Database = {
       fleet_workers: Table<FleetWorker>;
       fleet_tasks: Table<FleetTask>;
       stripe_events: Table<StripeEvent>;
+      parcels: Table<Parcel>;
+      block_groups: Table<BlockGroup>;
+      knocks: Table<Knock>;
+      pitches: Table<Pitch>;
+      hanger_codes: Table<HangerCode>;
+      hanger_events: Table<HangerEvent>;
+      canvass_plans: Table<CanvassPlan>;
+      canvass_summaries: Table<CanvassSummary>;
+      canvass_settings: Table<CanvassSettings>;
     };
     Views: {
       /** Crew-safe view of jobs: no prices, no customer phone/email. */
@@ -583,6 +792,9 @@ export type Database = {
       fleet_role: FleetRole;
       fleet_task_type: FleetTaskType;
       fleet_task_status: FleetTaskStatus;
+      knock_outcome: KnockOutcome;
+      hanger_event: HangerEventKind;
+      home_pattern: HomePattern;
     };
     CompositeTypes: Record<string, never>;
   };

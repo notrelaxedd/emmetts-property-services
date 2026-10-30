@@ -58,8 +58,12 @@ export const PARCEL_FIELD_KEYS = [
   "stories",
   "footprint_sqft",
   "owner_occupied",
+  "street",
 ] as const;
 export type ParcelFieldKey = (typeof PARCEL_FIELD_KEYS)[number];
+
+/** Keys the pull derives itself when the layer has no such field (`street` comes from the site address). */
+export const DERIVED_FIELD_KEYS: readonly ParcelFieldKey[] = ["street"];
 
 export type ParcelFieldMapping = {
   /** The layer field name used, or null when nothing matched. */
@@ -69,13 +73,34 @@ export type ParcelFieldMapping = {
   candidates: string[];
 };
 
-/** `canvass_settings.parcel_field_map`: discovered at runtime from the layer metadata, owner-editable. */
-export type ParcelFieldMap = Partial<Record<ParcelFieldKey, ParcelFieldMapping>> & {
+export type LayerFieldInfo = { name: string; type: string; alias: string };
+
+type ParcelFieldMapMeta = {
   /** Every field the layer reports, so the owner can pick any of them. */
-  layer_fields?: { name: string; type: string; alias: string }[];
+  layer_fields?: LayerFieldInfo[];
   layer_name?: string;
   fetched_at?: string;
 };
+
+/**
+ * `canvass_settings.parcel_field_map`: discovered at runtime from the layer metadata, owner-editable. Every
+ * FieldKey is present once it has been through `mergeParcelFieldMap` / `buildFieldMap` (an unresolved key is
+ * `{ field: null, source: "missing", candidates: [] }`); the column default `{}` is a `ParcelFieldMapPatch`.
+ */
+export type ParcelFieldMap = Record<ParcelFieldKey, ParcelFieldMapping> & ParcelFieldMapMeta;
+
+/** A partial map, as stored before the first county fetch or as an owner's per-key edit. */
+export type ParcelFieldMapPatch = Partial<Record<ParcelFieldKey, ParcelFieldMapping>> & ParcelFieldMapMeta;
+
+/** `{ field: null, source: "missing", candidates: [] }` for one key. */
+export const missingFieldMapping = (): ParcelFieldMapping => ({ field: null, source: "missing", candidates: [] });
+
+/** A map with every FieldKey unresolved (what the planner sees before the first "Refresh from county"). */
+export function emptyParcelFieldMap(): ParcelFieldMap {
+  const out = {} as ParcelFieldMap;
+  for (const key of PARCEL_FIELD_KEYS) out[key] = missingFieldMapping();
+  return out;
+}
 
 // ---------- Weather, pricing, season ----------
 
@@ -123,3 +148,37 @@ export type ScoreBreakdown = {
 };
 
 export type QuoteRange = { low: number; high: number; mid: number; basis: string };
+
+// ---------- Defaults shared by the settings helper and the pure modules ----------
+
+/** Mirrors the `canvass_settings.base_prices` column default (dollars per visit). */
+export const DEFAULT_BASE_PRICES: BasePrices = { mow: 35, edge: 15, leaf_cleanup: 150, gutters: 120, snow: 45 };
+
+/** Mirrors the `canvass_settings.season_map` column default: Dec–Mar snow, Apr–Aug mowing, Sep–Nov leaf cleanup. */
+export const DEFAULT_SEASON_MAP: SeasonMap = {
+  "1": "snow",
+  "2": "snow",
+  "3": "snow",
+  "4": "mow",
+  "5": "mow",
+  "6": "mow",
+  "7": "mow",
+  "8": "mow",
+  "9": "leaf_cleanup",
+  "10": "leaf_cleanup",
+  "11": "leaf_cleanup",
+  "12": "snow",
+};
+
+// ---------- Nightly summary ----------
+
+/** `canvass_summaries.summary`: the shape `canvassSummarySchema` (lib/ai/schemas.ts) produces. */
+export type CanvassSummaryContent = {
+  headline: string;
+  highlights: string[];
+  best_streets: { street: string; why: string }[];
+  worst_streets: { street: string; why: string }[];
+  knocker_notes: string[];
+  pitch_notes: string[];
+  tomorrow: { street: string; window: string; why: string }[];
+};

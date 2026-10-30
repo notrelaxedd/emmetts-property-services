@@ -564,8 +564,8 @@ select tests.check(
   'set_updated_at bumps updated_at on update');
 select tests.check(
   (select count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = 'public' and t.tgname = 'set_updated_at') = 26,
-  'set_updated_at is attached to all 26 tables');
+    where n.nspname = 'public' and t.tgname = 'set_updated_at') = 35,
+  'set_updated_at is attached to all 35 tables');
 select tests.check(
   (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity) = 0,
@@ -725,6 +725,207 @@ select tests.check(
 select tests.check(
   (select count(*) from public.profiles where user_id = '00000000-0000-0000-0000-0000000000d4') = 0,
   'a confirmed phone user without name metadata creates no profile');
+
+-- ---------------------------------------------------------------------------
+\echo '# 1800 canvass: crew reads parcels + settings, writes own knocks; hangers / summaries owner-only'
+-- ---------------------------------------------------------------------------
+reset role;
+select tests.claims(null, 'service_role');
+
+select tests.check((select count(*) from public.canvass_settings) = 1, 'canvass_settings has exactly one row');
+select tests.check((select id from public.canvass_settings) = '00000000-0000-0000-0000-000000000001', 'canvass_settings row has the fixed id');
+select tests.check(
+  (select hardscape_pct = 0.12 and rate_per_1000_sqft = 6 and min_charge = 40 and not value_tier_enabled and value_tier_max = 1.10
+          and doors_per_hour = 25 and neighbor_n = 3 and recency_days = 14 and work_hours = 8.5 and learned_min_knocks = 8
+          and acs_vintage = '2023' and offer_text is null and parcel_field_map = '{}'::jsonb
+   from public.canvass_settings),
+  'canvass_settings defaults match the spec');
+select tests.check(
+  (select base_prices = '{"mow":35,"edge":15,"leaf_cleanup":150,"gutters":120,"snow":45}'::jsonb
+          and season_map ->> '1' = 'snow' and season_map ->> '4' = 'mow' and season_map ->> '9' = 'leaf_cleanup' and season_map ->> '12' = 'snow'
+          and residential_land_use_prefixes = '{"510","511","512","513","514","515","516","517","518","519"}'::text[]
+   from public.canvass_settings),
+  'canvass_settings.base_prices / season_map / residential prefixes default as in lib/canvass/types.ts');
+select tests.check(
+  tests.run($$insert into public.canvass_settings (id) values ('00000000-0000-0000-0000-000000000002')$$) like 'err:23514:%',
+  'canvass_settings is a singleton');
+select tests.check(
+  tests.run($$update public.canvass_settings set value_tier_max = 1.5$$) like 'err:23514:%',
+  'canvass_settings.value_tier_max is capped at 1.10');
+select tests.check(
+  (select array_agg(name order by sort_order) from public.pitches) = array['Neighbor special', 'Season focus', 'Landlord / rental']
+  and (select bool_and(active) from public.pitches),
+  'pitches seeded with the three starter scripts, all active');
+
+-- Fixtures (as a trusted caller): one block group, two parcels (one do-not-knock), a plan, a hanger
+-- code with a scan, a summary, and one knock by crew A.
+insert into public.block_groups (geoid, pct_not_in_lf, pct_hh_nonworking_parent, acs_vintage, fetched_at)
+values ('390351001001', 0.42, 0.30, '2023', now());
+with p as (
+  insert into public.parcels (parcel_id, address, street, city, zip, owner_display, lot_sqft, living_sqft, stories,
+                              centroid_lat, centroid_lng, block_group_geoid, raw)
+  values ('301-01-001', '1 LAKE RD', 'LAKE RD', 'ROCKY RIVER', '44116', 'Pat Homeowner', 8000, 1600, 2,
+          41.48, -81.84, '390351001001', '{"parcelpin":"301-01-001"}')
+  returning id
+) insert into tests.fx select 'parcel', id from p;
+with p as (
+  insert into public.parcels (parcel_id, address, street, do_not_knock, do_not_knock_reason)
+  values ('301-01-002', '3 LAKE RD', 'LAKE RD', true, 'No Soliciting sign')
+  returning id
+) insert into tests.fx select 'parcel_dnk', id from p;
+insert into public.canvass_plans (for_date, slot_start, slot_end, parcel_ids, created_by)
+values (current_date, '15:00', '17:00', array[tests.id('parcel')], tests.id('owner'));
+insert into public.hanger_codes (code, street, block_group_geoid) values ('LAKE7', 'LAKE RD', '390351001001');
+insert into public.hanger_events (code, event, visitor) values ('LAKE7', 'scan', 'v1');
+insert into public.hanger_events (code, event, lead_id) values ('LAKE7', 'booking', tests.id('lead'));
+insert into public.canvass_summaries (for_date, summary, model)
+values (current_date - 1, '{"headline":"Quiet day","highlights":[]}', 'claude-sonnet-5-5');
+with k as (
+  insert into public.knocks (parcel_id, knocker_id, outcome, pitch_id, lat, lng, weather, client_id)
+  select tests.id('parcel'), tests.id('crew_a'), 'no_answer', (select id from public.pitches order by sort_order limit 1),
+         41.48, -81.84, '{"temp_f":52,"precip_in":0,"code":3,"label":"Overcast"}', 'phone-1'
+  returning id
+) insert into tests.fx select 'knock_a', id from k;
+insert into public.knocks (parcel_id, knocker_id, outcome, client_id)
+values (tests.id('parcel'), tests.id('crew_b'), 'not_interested', 'phone-2');
+
+-- Constraints.
+select tests.check(
+  tests.run($$insert into public.parcels (parcel_id, address) values ('301-01-001', 'dup')$$) like 'err:23505:%',
+  'parcels.parcel_id is unique');
+select tests.check(
+  tests.run($$insert into public.parcels (parcel_id, centroid_lat, centroid_lng) values ('301-01-009', 95, 0)$$) like 'err:23514:%',
+  'parcels centroid must be a valid lat/lng');
+select tests.check(
+  tests.run($$insert into public.parcels (parcel_id, lot_sqft) values ('301-01-009', -1)$$) like 'err:23514:%',
+  'parcels sizes cannot be negative');
+select tests.check(
+  tests.run($$insert into public.parcels (parcel_id, raw) values ('301-01-009', '[]')$$) like 'err:23514:%',
+  'parcels.raw must be a JSON object');
+select tests.check(
+  tests.run($$insert into public.block_groups (geoid) values ('39035')$$) like 'err:23514:%',
+  'block_groups.geoid is a 12-digit GEOID');
+select tests.check(
+  tests.run(format($$insert into public.knocks (parcel_id, knocker_id, outcome, client_id) values (%L, %L, 'booked', 'phone-1')$$,
+                   tests.id('parcel'), tests.id('crew_a'))) like 'err:23505:%',
+  'knocks.client_id is unique (offline re-sends are rejected, not duplicated)');
+select tests.check(
+  tests.run(format($$insert into public.knocks (parcel_id, knocker_id, outcome) values (%L, %L, 'maybe')$$,
+                   tests.id('parcel'), tests.id('crew_a'))) like 'err:22P02:%',
+  'knocks.outcome is the knock_outcome enum');
+select tests.check(
+  tests.run($$insert into public.hanger_codes (code, street) values ('lake7', 'LAKE RD')$$) like 'err:23514:%',
+  'hanger_codes.code must be 4-8 upper-case letters / digits');
+select tests.check(
+  tests.run($$insert into public.hanger_events (code, event) values ('NOPE1', 'scan')$$) like 'err:23503:%',
+  'hanger_events.code must reference a hanger code');
+select tests.check(
+  tests.run($$insert into public.canvass_plans (for_date, slot_start, slot_end) values (current_date, '3pm', '17:00')$$) like 'err:23514:%',
+  'canvass_plans slot times are HH:MM');
+select tests.check(
+  tests.run($$insert into public.canvass_summaries (for_date, summary) values (current_date - 1, '{}')$$) like 'err:23505:%',
+  'canvass_summaries has one row per day');
+select tests.check(
+  tests.run($$insert into public.canvass_summaries (for_date, summary) values (current_date - 2, '"text"')$$) like 'err:23514:%',
+  'canvass_summaries.summary must be a JSON object');
+select tests.check(
+  tests.run(format($$delete from public.profiles where id = %L$$, tests.id('crew_a'))) like 'err:23503:%',
+  'a crew member with knocks cannot be deleted (knock log is kept)');
+
+-- anon: nothing.
+select tests.claims(null, 'anon');
+set role anon;
+do $$
+declare
+  t text;
+  n bigint;
+begin
+  foreach t in array array[
+    'parcels', 'block_groups', 'knocks', 'pitches', 'hanger_codes', 'hanger_events',
+    'canvass_plans', 'canvass_summaries', 'canvass_settings'
+  ] loop
+    n := tests.count_rows(format('select * from public.%I', t));
+    perform tests.check(n <= 0, format('anon reads nothing from %s', t),
+                        case when n = -1 then 'permission denied' else n || ' rows' end);
+  end loop;
+end $$;
+select tests.check(
+  tests.run(format($$insert into public.knocks (parcel_id, knocker_id, outcome) values (%L, %L, 'booked')$$,
+                   tests.id('parcel'), tests.id('crew_a'))) like 'err:42501:%',
+  'anon cannot insert knocks');
+reset role;
+
+-- crew A: read parcels / block_groups / pitches / settings / plans; own knocks only; no hangers / summaries.
+select tests.claims(tests.id('crew_a_uid'));
+set role authenticated;
+select tests.check((select count(*) from public.parcels) = 2, 'crew can read parcels');
+select tests.check((select count(*) from public.canvass_settings) = 1, 'crew can read canvass_settings');
+select tests.check((select count(*) from public.block_groups) = 1, 'crew can read block_groups');
+select tests.check((select count(*) from public.pitches) = 3, 'crew can read pitches');
+select tests.check((select count(*) from public.canvass_plans) = 1, 'crew can read canvass_plans');
+do $$
+declare
+  t text;
+  n bigint;
+begin
+  foreach t in array array['hanger_events', 'canvass_summaries', 'hanger_codes'] loop
+    n := tests.count_rows(format('select * from public.%I', t));
+    perform tests.check(n <= 0, format('crew reads nothing from %s', t),
+                        case when n = -1 then 'permission denied' else n || ' rows' end);
+  end loop;
+end $$;
+select tests.check(
+  tests.run($$update public.parcels set do_not_knock = true$$) = 'ok:0'
+  and tests.run($$update public.canvass_settings set doors_per_hour = 1$$) = 'ok:0'
+  and tests.run($$update public.pitches set active = false$$) = 'ok:0',
+  'crew cannot edit parcels / canvass_settings / pitches');
+select tests.check(
+  tests.run($$insert into public.parcels (parcel_id) values ('crew-made')$$) like 'err:42501:%',
+  'crew cannot insert parcels');
+select tests.check(
+  tests.run(format($$insert into public.knocks (parcel_id, knocker_id, outcome, callback_window, client_id)
+                     values (%L, %L, 'call_back', 'weekdays after 5', 'phone-3')$$,
+                   tests.id('parcel'), tests.id('crew_a'))) = 'ok:1',
+  'crew can insert a knock with their own knocker_id');
+select tests.check(
+  tests.run(format($$insert into public.knocks (parcel_id, knocker_id, outcome, client_id) values (%L, %L, 'booked', 'phone-4')$$,
+                   tests.id('parcel'), tests.id('crew_b'))) like 'err:42501:%',
+  'crew cannot insert a knock for another crew member');
+select tests.check(
+  (select count(*) from public.knocks) = 2 and (select bool_and(knocker_id = tests.id('crew_a')) from public.knocks),
+  'crew sees only their own knocks');
+select tests.check(
+  tests.run($$update public.knocks set outcome = 'booked'$$) = 'ok:0'
+  and tests.run($$delete from public.knocks$$) = 'ok:0',
+  'crew cannot update or delete knocks');
+select tests.check(
+  tests.run($$insert into public.hanger_events (code, event) values ('LAKE7', 'scan')$$) like 'err:42501:%',
+  'crew cannot insert hanger_events');
+reset role;
+
+-- owner: everything.
+select tests.claims(tests.id('owner_uid'));
+set role authenticated;
+do $$
+declare
+  t text;
+  n bigint;
+begin
+  foreach t in array array[
+    'parcels', 'block_groups', 'knocks', 'pitches', 'hanger_codes', 'hanger_events',
+    'canvass_plans', 'canvass_summaries', 'canvass_settings'
+  ] loop
+    n := tests.count_rows(format('select * from public.%I', t));
+    perform tests.check(n > 0, format('owner reads %s', t), n || ' rows');
+  end loop;
+end $$;
+select tests.check((select count(*) from public.knocks) = 3, 'owner sees every knock');
+select tests.check(
+  tests.run($$update public.canvass_settings set doors_per_hour = 30, offer_text = 'Fall special'$$) = 'ok:1'
+  and tests.run(format($$update public.parcels set home_pattern = 'evenings_only' where id = %L$$, tests.id('parcel'))) = 'ok:1'
+  and tests.run($$insert into public.hanger_codes (code, street) values ('ELM2', 'ELM AVE')$$) = 'ok:1',
+  'owner can edit canvass_settings / parcels and create hanger codes');
+reset role;
 
 -- ---------------------------------------------------------------------------
 \echo '# summary'
