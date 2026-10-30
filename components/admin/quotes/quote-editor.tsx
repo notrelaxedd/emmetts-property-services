@@ -577,7 +577,11 @@ export function QuoteEditor({
                       </div>
                     ) : null}
                     <NumberStepper label="Amount received" prefix="$" min={0} step={5} value={payAmount} onChange={setPayAmount} />
-                    {payAmount > 0 && Math.abs(payAmount - quote.price_total) >= 0.01 ? (
+                    {payAmount > 0 && payAmount - quote.price_total >= 0.01 ? (
+                      <p className="text-xs text-ink-muted">
+                        The extra {money(payAmount - quote.price_total)} is a tip and counts as revenue.
+                      </p>
+                    ) : payAmount > 0 && quote.price_total - payAmount >= 0.01 ? (
                       <p className="text-xs text-amber-900">
                         The quote total is {money(quote.price_total)}. The difference is noted on the quote.
                       </p>

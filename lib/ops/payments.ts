@@ -4,7 +4,8 @@
  * (lib/stripe/webhook.ts): quote `accepted` + `paid_at`, lead `won`, the job marked paid (created
  * `unscheduled` first if a payment somehow lands before the estimate's job exists). Before accepting,
  * the quote's open Checkout session is expired and its open Stripe invoice voided (refused if the
- * customer already paid one of them), so the customer can't pay twice.
+ * customer already paid one of them), so the customer can't pay twice. Anything paid over the quote is a
+ * tip: it goes into the quote's total, so it counts as revenue. Less than the quote is flagged to collect.
  *
  * Plain Node (relative imports) like the rest of lib/ops.
  */
@@ -37,14 +38,19 @@ export type OfflinePayment = {
   recordedBy: string;
 };
 
+/** What they paid over the quote: a tip, counted as revenue. 0 when they paid the quote or less. */
+export function tipOver(amount: number, priceTotal: number): number {
+  return Math.max(0, moneyRound(amount - priceTotal));
+}
+
 /** The dated line added to the quote's notes, e.g. "Paid by check #1042: $80.00, recorded by …". */
 export function offlinePaymentNote(p: OfflinePayment, priceTotal: number): string[] {
   const what = p.method === "check" ? `check${p.checkNumber?.trim() ? ` #${p.checkNumber.trim()}` : ""}` : "cash";
-  const notes = [`Paid by ${what}: ${money(p.amount)}, recorded by ${p.recordedBy}.`];
-  const diff = moneyRound(p.amount - priceTotal);
-  if (diff !== 0) {
+  const tip = tipOver(p.amount, priceTotal);
+  const notes = [`Paid by ${what}: ${money(p.amount)}${tip ? ` (quote ${money(priceTotal)} + ${money(tip)} tip)` : ""}, recorded by ${p.recordedBy}.`];
+  if (moneyRound(p.amount - priceTotal) < 0) {
     notes.push(
-      `WARNING: Paid amount differs from quote — received ${money(p.amount)} by ${p.method} but the quote total is ${money(priceTotal)}. ${diff < 0 ? "Collect" : "Return"} the difference.`,
+      `WARNING: Paid amount differs from quote — received ${money(p.amount)} by ${p.method} but the quote total is ${money(priceTotal)}. Collect the difference.`,
     );
   }
   return notes;
@@ -68,6 +74,8 @@ export async function recordOfflinePayment(db: Db, quoteId: string, p: OfflinePa
   let rationale = quote.rationale;
   for (const note of offlinePaymentNote(p, quote.price_total)) rationale = appendNote(rationale, note);
 
+  // A tip goes into the total, so it counts as revenue on the Money page.
+  const priceTotal = moneyRound(quote.price_total + tipOver(p.amount, quote.price_total));
   const now = new Date().toISOString();
   const { data: accepted, error } = await db
     .from("quotes")
@@ -76,9 +84,10 @@ export async function recordOfflinePayment(db: Db, quoteId: string, p: OfflinePa
       accepted_at: quote.accepted_at ?? now,
       paid_at: now,
       payment_method: p.method,
+      price_total: priceTotal,
       // No card fee on cash / check.
       fee_total: 0,
-      profit_total: moneyRound(quote.price_total - quote.labor_total),
+      profit_total: moneyRound(priceTotal - quote.labor_total),
       stripe_checkout_url: null,
       stripe_invoice_url: null,
       rationale,

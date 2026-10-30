@@ -37,6 +37,13 @@ describe("recordManualJob", () => {
     expect(db.tables.fleet_tasks ?? []).toHaveLength(0);
   });
 
+  it("counts a tip as revenue", async () => {
+    const db = world();
+    await recordManualJob(db, input({ price: 80, paid: 100, labor: 30 }));
+    expect(db.tables.quotes[0]).toMatchObject({ price_total: 100, profit_total: 70 });
+    expect(db.tables.quote_items[0].price).toBe(80);
+  });
+
   it("counts what they paid as revenue and keeps the price on the line", async () => {
     const db = world();
     await recordManualJob(db, input({ price: 250, paid: 220, labor: 0 }));
@@ -65,9 +72,9 @@ describe("recordManualJob", () => {
 });
 
 describe("manualJobNote", () => {
-  it("says when they paid more than the price", () => {
+  it("calls anything paid over the price a tip", () => {
     expect(manualJobNote({ price: 80, paid: 100, method: "check", recordedBy: "o@x.com" })).toBe(
-      "Recorded by hand: done and paid by check ($100.00); priced at $80.00, $20.00 extra, by o@x.com.",
+      "Recorded by hand: done and paid by check ($100.00); priced at $80.00, $20.00 tip, by o@x.com.",
     );
   });
 });
