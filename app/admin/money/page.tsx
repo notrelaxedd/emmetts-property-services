@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { ChevronLeft, ChevronRight, Megaphone, Receipt, Wallet } from "lucide-react"
 import { ExpenseForm, ExpensesTable } from "@/components/admin/money/expenses"
+import { PaidJobForm, type PaidJobCustomer } from "@/components/admin/money/paid-job-form"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -45,7 +46,7 @@ async function load(month: string) {
   // Revenue counts when the money arrives (`paid_at`): customers confirm by phone and pay after the job.
   const quoteCols = "id,customer_id,price_total,fee_total,labor_total,paid_at"
   const jobCols = "id,quote_id,customer_id,status,start_at,completed_at"
-  const [accepted, completed, expenses, ai, flyerBatches] = await Promise.all([
+  const [accepted, completed, expenses, ai, flyerBatches, customerList] = await Promise.all([
     db.from("quotes").select(quoteCols).gte("paid_at", fromIso).lt("paid_at", toIso),
     db.from("jobs").select(jobCols).eq("status", "done").gte("completed_at", fromIso).lt("completed_at", toIso),
     db.from("expenses").select("id,date,category,amount,note").gte("date", from).lt("date", to).order("date", { ascending: false }),
@@ -53,8 +54,10 @@ async function load(month: string) {
       ? db.rpc("ai_spend_this_month")
       : db.from("ai_usage").select("est_cost").gte("created_at", fromIso).lt("created_at", toIso),
     db.from("flyer_batches").select("flyer_worker_id,handed_out_on,flyer_count,amount,paid_at").gte("handed_out_on", from).lt("handed_out_on", to),
+    // For "Add a paid job".
+    db.from("customers").select("id,name,address").order("name", { ascending: true }).limit(2000),
   ])
-  for (const r of [accepted, completed, expenses, flyerBatches]) if (r.error) throw new Error(r.error.message)
+  for (const r of [accepted, completed, expenses, flyerBatches, customerList]) if (r.error) throw new Error(r.error.message)
 
   const acceptedQuotes = ((accepted.data ?? []) as PaidQuoteRow[]).map(toQuoteRow)
   const acceptedIds = acceptedQuotes.map((q) => q.id)
@@ -130,6 +133,7 @@ async function load(month: string) {
     jobs: profitPerJob(Array.from(allJobs.values()).map(toMoneyJob), quotesNum, payoutRows),
     expenses: expenseRows,
     flyerWorkers: Array.from(flyerByWorker.values()).sort((a, b) => b.amount - a.amount),
+    customers: (customerList.data ?? []) as PaidJobCustomer[],
     isCurrent,
   }
 }
@@ -195,6 +199,22 @@ export default async function MoneyPage({ searchParams }: { searchParams: { mont
               hint="after fees, labor, expenses, flyers, AI"
             />
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Add a paid job</CardTitle>
+              <CardDescription>
+                A job that&rsquo;s already done and paid. It counts on the day you pick. New customer? Add them on the{" "}
+                <Link href="/admin/customers/log" className="font-medium text-ink underline underline-offset-4">
+                  price log
+                </Link>{" "}
+                first.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <PaidJobForm today={today} defaultDate={month < today.slice(0, 7) ? `${month}-01` : today} customers={data.customers} />
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>
