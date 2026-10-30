@@ -23,7 +23,7 @@ draw an area ──▶ pull county parcels ──▶ block-group ACS prior ─�
 | `/admin/canvass/settings` | owner | Pricing, thresholds, doors/hour, neighbor N, recency, season map, value tier, county field map, land-use codes |
 | `/crew/knock` | crew + owner | The knock logger (mobile-first; "Knock" in the crew tab bar) |
 | `/h/[code]` | public | Hanger QR landing: logs the scan, sets the `hanger` cookie, redirects to the quote form |
-| `/api/cron/canvass-summary` | Vercel cron | Nightly summary (06:00 ET), `Authorization: Bearer CRON_SECRET` |
+| `/api/cron/canvass-summary` | Vercel cron | Nightly summary (10:00 UTC: 06:00 EDT / 05:00 EST), `Authorization: Bearer CRON_SECRET` |
 
 ## Data sources and the privacy rules
 
@@ -109,7 +109,9 @@ reason are stored with it:
    P(answer) per weekday-vs-weekend × 2-hour bucket. The ACS prior's bucket starts at α=4, β=2, every other bucket
    at α=1, β=3, so early data is shrunk toward the prior; posterior mean = (α + answers) / (α + β + knocks). An
    "answer" is any outcome but `no_answer`. It picks the best bucket (ties go to the prior) and refines ranges; it
-   never outputs an exact time.
+   never outputs an exact time. The pool is the whole recent knock log (the same 5000 knocks the conversion model
+   fits on) plus older knocks on the houses in view, so the table, the parcel page, the knock logger and the digest
+   agree on a house's window.
 4. **ACS block-group prior** (`acsPrior`, works on day one):
    - **Daytime-friendly** when `pct_not_in_lf ≥ daytime_not_in_lf_threshold` (default 0.40) **or**
      `pct_hh_nonworking_parent ≥ daytime_nonworking_parent_threshold` (default 0.35) → weekdays 10am–4pm,
@@ -218,7 +220,7 @@ the same page; the crew picks one at session start.
 
 ## Nightly summary
 
-`/api/cron/canvass-summary` runs at 06:00 ET (vercel.json `0 10 * * *`), requires `Authorization: Bearer
+`/api/cron/canvass-summary` runs at 10:00 UTC (vercel.json `0 10 * * *`; Vercel cron is UTC, so 06:00 EDT in summer and 05:00 EST in winter), requires `Authorization: Bearer
 CRON_SECRET`, and summarises yesterday's knocks (by street, knocker and pitch), the best and worst streets and
 tomorrow's suggested streets + windows through `lib/ai/claude.ts` (Sonnet, structured output, low effort, within the
 AI spend cap). Days with no knocks store a minimal summary without calling the model. The card sits at the top of
@@ -227,7 +229,8 @@ the tab with a "Run now" button for testing.
 How it runs (`lib/canvass/summary.ts`):
 
 - `buildCanvassDigest(db, date)` collects the day's knocks in America/New_York (`dayBounds`), joins streets, knocker
-  and pitch names, counts QR scans that day and the planner's window label per street, and `digestFromRows` turns
+  and pitch names, counts QR scans that day and the planner's area window label per street (learned / ACS / default
+  only; a homeowner's or crew tag's per-house label is never counted), and `digestFromRows` turns
   them into an **aggregate-only** digest: counts by outcome, street, knocker, pitch and 2-hour bucket, the weather at
   the knocks. No notes, no callback text, no owner names ever reach the model.
 - `runNightlySummary(db, date = yesterday)` stores `{ headline: "No knocks on <date>", ... }` when the day had no

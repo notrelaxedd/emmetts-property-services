@@ -25,7 +25,7 @@ export function QuoteCard({ season, quote, quotes, turfSqft, turfSource, setting
       <div className="p-4">
         <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Door quote, {season.label.toLowerCase()}</p>
         <p className="mt-1 text-2xl font-bold leading-none tabular-nums text-ink">{formatQuote(quote.low, quote.high)}</p>
-        <p className="mt-2 text-sm text-ink-muted">
+        <div className="mt-2 text-sm text-ink-muted">
           {turfSqft !== null ? (
             <>
               Lawn about {formatSqft(turfSqft)} sqft{" "}
@@ -37,7 +37,7 @@ export function QuoteCard({ season, quote, quotes, turfSqft, turfSource, setting
           ) : (
             "Lot size unknown, so this is the minimum charge. Trace the lawn below to price it."
           )}
-        </p>
+        </div>
       </div>
       <Table>
         <TableHeader>

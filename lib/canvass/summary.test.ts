@@ -89,6 +89,19 @@ describe("helpers", () => {
     expect(w.get("ELM ST")).toBe("B");
     expect(w.has("OAK AVE")).toBe(false);
   });
+  it("windowsByStreet never passes a homeowner's or crew's per-house label to the digest", () => {
+    const w = windowsByStreet([
+      { street: "ELM RD", window: { label: "Homeowner: Ask for Maria, she works at the clinic", source: "homeowner" }, do_not_knock: false },
+      { street: "ELM RD", window: { label: "Homeowner: call 555-0100", source: "homeowner" }, do_not_knock: false },
+      { street: "ELM RD", window: { label: "Weekends likely", source: "crew" }, do_not_knock: false },
+      { street: "ELM RD", window: { label: "Weekdays 4–6pm likely", source: "acs" }, do_not_knock: false },
+      { street: "OAK AVE", window: { label: "Homeowner: Ask for Maria", source: "homeowner" }, do_not_knock: false },
+    ]);
+    expect(w.get("ELM RD")).toBe("Weekdays 4–6pm likely");
+    expect(w.has("OAK AVE")).toBe(false);
+    const d = digestFromRows({ forDate: "2026-10-29", knocks: [], knockerNames: new Map(), pitchNames: new Map(), windowsByStreet: w, season: "Leaf cleanup" });
+    expect(JSON.stringify(d)).not.toContain("Homeowner:");
+  });
   it("storeCanvassSummary inserts once and replaces on re-run", async () => {
     const db = fakeDb();
     await storeCanvassSummary(db, "2026-10-29", emptySummary("2026-10-29"), null);

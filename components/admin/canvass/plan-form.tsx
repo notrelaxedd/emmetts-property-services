@@ -19,12 +19,18 @@ const PlanMap = dynamic(() => import("@/components/admin/canvass/plan-map").then
   loading: () => <div className="h-72 animate-pulse rounded-lg bg-gray-light sm:h-96" aria-hidden="true" />,
 })
 
-/** Everything but the stops list is hidden when the owner presses "Print list". */
+/**
+ * Everything but the stops list is hidden when the owner presses "Print list". The shell, page header, tabs, form
+ * and buttons are taken out of the flow (display: none, so their height prints no blank pages) and the list stays in
+ * normal flow so a long one runs onto the next page.
+ */
 const PRINT_CSS = `
 @media print {
+  aside, header, nav, .no-print { display: none !important; }
+  main { padding: 0 !important; max-width: none !important; }
   body * { visibility: hidden !important; }
   #plan-list, #plan-list * { visibility: visible !important; }
-  #plan-list { position: absolute; left: 0; top: 0; width: 100%; border: 0; box-shadow: none; }
+  #plan-list { width: 100%; border: 0; box-shadow: none; padding: 0; }
 }
 `
 

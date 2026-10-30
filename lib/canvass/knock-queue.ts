@@ -123,6 +123,15 @@ export function dueItems(items: readonly QueuedKnock[], now: number): QueuedKnoc
   return items.filter((i) => i.nextAt <= now).sort((x, y) => x.input.knocked_at.localeCompare(y.input.knocked_at));
 }
 
+/**
+ * What the queue does with a send result: "sent" dequeues, "drop" dequeues a knock the server refused for good
+ * (validation, missing house), "retry" keeps it with backoff (a server / database failure, not the knock's fault).
+ */
+export function sendDisposition(res: { ok: true } | { ok: false; retryable?: boolean }): "sent" | "drop" | "retry" {
+  if (res.ok) return "sent";
+  return res.retryable ? "retry" : "drop";
+}
+
 /** Record a failed send: bump attempts and push the retry out with backoff. */
 export function markFailed(items: readonly QueuedKnock[], clientId: string, error: string | null, now: number): QueuedKnock[] {
   return items.map((i) => {

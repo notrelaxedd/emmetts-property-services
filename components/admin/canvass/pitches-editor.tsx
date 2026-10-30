@@ -104,10 +104,10 @@ export function PitchesEditor({ pitches }: { pitches: Pitch[] }) {
           ) : (
             <li key={p.id} className="flex items-start gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
-                <p className="flex flex-wrap items-center gap-2 font-medium text-ink">
+                <div className="flex flex-wrap items-center gap-2 font-medium text-ink">
                   {p.name}
                   {p.active ? null : <Badge variant="outline">Inactive</Badge>}
-                </p>
+                </div>
                 <p className="mt-0.5 whitespace-pre-line text-sm text-ink-muted">{p.script || "No script yet."}</p>
               </div>
               <label className="flex items-center gap-1.5 text-xs text-ink-muted">

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { Db } from "../ops/types";
 import { settingsRow } from "../ops/test-utils";
-import { createDoorLeadAndQuote, doorCustomerName, findDoorCustomer, type DoorParcel } from "./door-booking";
+import { createDoorLeadAndQuote, doorCustomerName, findDoorCustomer, repriceDoorQuote, type DoorParcel } from "./door-booking";
 
 /**
  * A tiny chainable supabase-js stand-in: from(t).select()/insert()/update() with eq / in / ilike /
@@ -221,5 +221,25 @@ describe("createDoorLeadAndQuote", () => {
       service: "snow",
     });
     expect(db.tables.customers[0].name).toBe("Resident, 19000 DETROIT RD");
+  });
+});
+
+describe("repriceDoorQuote", () => {
+  it("re-prices the door quote, its line and rationale with the amounts typed after the tap", async () => {
+    const db = smallDb({ ...base(), customers: [], parcels: [{ id: "parcel-1", customer_id: null }] });
+    const res = await createDoorLeadAndQuote(db, { parcel: parcel(), knocker_name: "Sam", outcome: "booked", amount_low: 45, amount_high: 60, service: "mow" });
+    expect(db.tables.quotes[0].price_total).toBe(52.5);
+    expect(await repriceDoorQuote(db, res.quote_id, 120, 120)).toBe(true);
+    const quote = db.tables.quotes[0];
+    expect(quote.price_total).toBe(120);
+    expect(quote.profit_total).toBe(120 - (quote.labor_total as number));
+    expect(quote.rationale).toContain("$120–$120");
+    expect(db.tables.quote_items[0].price).toBe(120);
+  });
+  it("leaves a paid or declined quote alone", async () => {
+    const db = smallDb({ quotes: [{ id: "q1", status: "declined", labor_total: 20, paid_at: null, price_total: 50, rationale: "" }] });
+    expect(await repriceDoorQuote(db, "q1", 100, 100)).toBe(false);
+    expect(db.tables.quotes[0].price_total).toBe(50);
+    expect(await repriceDoorQuote(db, "missing", 100, 100)).toBe(false);
   });
 });

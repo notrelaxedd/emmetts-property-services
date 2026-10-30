@@ -317,6 +317,9 @@ describe("address helpers", () => {
     expect(streetOf("123A Main St Unit 4")).toBe("MAIN ST");
     expect(streetOf("2001 Wooster Rd #2")).toBe("WOOSTER RD");
     expect(streetOf("Main St")).toBe("MAIN ST");
+    expect(streetOf("1234 10th St")).toBe("10TH ST");
+    expect(streetOf("12 1st Ave")).toBe("1ST AVE");
+    expect(streetOf("1234 W 210th St")).toBe("W 210TH ST");
     expect(streetOf("")).toBe("");
   });
   it("isResidential matches land-use prefixes as strings", () => {

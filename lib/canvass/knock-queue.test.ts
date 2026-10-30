@@ -9,6 +9,7 @@ import {
   newClientId,
   parseQueue,
   patchQueued,
+  sendDisposition,
   type LogKnockInput,
   type QueuedKnock,
 } from "./knock-queue";
@@ -96,5 +97,14 @@ describe("knock queue", () => {
   it("newClientId looks like a uuid", () => {
     expect(newClientId()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     expect(newClientId()).not.toBe(newClientId());
+  });
+});
+
+describe("sendDisposition", () => {
+  it("keeps a knock the server failed on (retryable) and drops one it refused", () => {
+    expect(sendDisposition({ ok: true })).toBe("sent");
+    expect(sendDisposition({ ok: false })).toBe("drop");
+    expect(sendDisposition({ ok: false, retryable: false })).toBe("drop");
+    expect(sendDisposition({ ok: false, retryable: true })).toBe("retry");
   });
 });

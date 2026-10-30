@@ -337,8 +337,9 @@ export function normalizeAddress(s: string | null | undefined): string {
 export function streetOf(address: string | null | undefined): string {
   // "#4" / "# 4" units go first: normalizeAddress drops the "#".
   let s = normalizeAddress((address ?? "").replace(/#\s*[A-Za-z0-9-]+\s*$/, ""));
-  // Leading house number: "19000", "19000A", "19000 1 2" (was 1/2), "19000 19002" (was 19000-19002).
-  s = s.replace(/^\d+[A-Z]?(\s+\d+(\s+\d+)?)?\s+(?=[A-Z])/, "");
+  // Leading house number: "19000", "19000A", "19000 1 2" (was 1/2), "19000 19002" (was 19000-19002). The street
+  // starts with a letter or an ordinal ("1234 10TH ST").
+  s = s.replace(/^\d+[A-Z]?(\s+\d+(\s+\d+)?)?\s+(?=[A-Z]|\d+(ST|ND|RD|TH)\b)/, "");
   // Trailing unit: "UNIT 4", "APT B", "STE 200". A bare trailing number is left alone (ambiguous).
   s = s.replace(/\s+(UNIT|APT|APARTMENT|STE|SUITE|BLDG|LOT|FL|FLOOR|REAR|UPPER|LOWER|UP|DN|DOWN)\s*[A-Z0-9]*$/, "");
   return s.trim();

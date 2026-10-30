@@ -7,7 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/toast"
 import { distanceMeters } from "@/lib/canvass/geometry"
-import { preselectIndex } from "@/lib/canvass/preselect"
+import { followPick, needsRefetch, preselectIndex, type FollowState } from "@/lib/canvass/preselect"
 import type { ServiceKey } from "@/lib/canvass/types"
 import type { NearbyParcel, PlanStopView } from "@/lib/canvass/views"
 import type { KnockOutcome, Pitch } from "@/lib/db/types"
@@ -31,8 +31,6 @@ import { useGeolocation } from "./use-geolocation"
 
 /** Rocky River base (opsConfig.defaultBase): used only to load the session info when GPS is off. */
 const BASE = { lat: 41.4756, lng: -81.8396 }
-/** Re-query the server once the crew member has walked this far from the last query point. */
-const REFETCH_METERS = 120
 const STOP_OUTCOMES: readonly KnockOutcome[] = ["no_soliciting", "do_not_return"]
 
 type Season = { service: ServiceKey; label: string; pitch: string }
@@ -65,8 +63,10 @@ export function KnockLogger({ name }: KnockLoggerProps) {
   const [details, setDetails] = React.useState<DetailsTarget | null>(null)
   const [savingDetails, setSavingDetails] = React.useState(false)
 
+  /** Where houses were last loaded from (never set by the GPS-off load, which fetches no houses). */
   const lastQuery = React.useRef<{ lat: number; lng: number } | null>(null)
   const manualPick = React.useRef(false)
+  const follow = React.useRef<FollowState>({ index: 0, candidate: 0, streak: 0 })
   const pendingDetails = React.useRef(new Map<string, KnockDetailsPatch>())
   // Latest state for callbacks that must not re-create on every render (flush, load).
   const logsRef = React.useRef(logs)
@@ -75,6 +75,8 @@ export function KnockLogger({ name }: KnockLoggerProps) {
   parcelsRef.current = parcels
   const indexRef = React.useRef(index)
   indexRef.current = index
+  const detailsOpenRef = React.useRef(false)
+  detailsOpenRef.current = details !== null
 
   // ---------- Offline queue ----------
 
@@ -100,6 +102,7 @@ export function KnockLogger({ name }: KnockLoggerProps) {
           }
         }
       } else if (e.kind === "rejected") {
+        pendingDetails.current.delete(e.clientId)
         setLogs((prev) => prev.map((l) => (l.client_id === e.clientId ? { ...l, status: "failed" } : l)))
         toast({ title: `Knock not saved: ${e.error}`, variant: "destructive" })
       }
@@ -146,7 +149,7 @@ export function KnockLogger({ name }: KnockLoggerProps) {
     async (lat: number, lng: number, withHouses: boolean) => {
       setLoading(true)
       setLoadError(null)
-      lastQuery.current = { lat, lng }
+      if (withHouses) lastQuery.current = { lat, lng }
       try {
         const res = await nearbyParcelsAction(lat, lng)
         if (!res.ok) {
@@ -180,11 +183,14 @@ export function KnockLogger({ name }: KnockLoggerProps) {
     const pos = geo.position
     if (!pos) return
     const last = lastQuery.current
-    if (last && distanceMeters([last.lng, last.lat], [pos.lng, pos.lat]) < REFETCH_METERS) {
-      // Same spot: just follow the GPS point to the right house unless the crew picked one by hand.
-      if (!manualPick.current) {
-        const idx = preselectIndex(parcelsRef.current, [pos.lng, pos.lat])
-        if (idx >= 0) setIndex(idx)
+    if (last && !needsRefetch(distanceMeters([last.lng, last.lat], [pos.lng, pos.lat]), parcelsRef.current)) {
+      // Same spot: follow the GPS point to the right house unless the crew picked one by hand or is adding details.
+      // A neighbour must win a few fixes in a row first, so GPS noise on a lot line does not flip the selection.
+      if (!manualPick.current && !detailsOpenRef.current) {
+        const cur = indexRef.current
+        const state = follow.current.index === cur ? follow.current : { index: cur, candidate: cur, streak: 0 }
+        follow.current = followPick(state, preselectIndex(parcelsRef.current, [pos.lng, pos.lat]))
+        if (follow.current.index !== cur) setIndex(follow.current.index)
       }
       return
     }
@@ -299,7 +305,14 @@ export function KnockLogger({ name }: KnockLoggerProps) {
       const entry = logsRef.current.find((l) => l.client_id === target.client_id)
       const knockId = entry?.knock_id ?? target.knock_id
       if (knockId) {
-        const res = await updateKnockDetailsAction(knockId, patch)
+        let res: Awaited<ReturnType<typeof updateKnockDetailsAction>>
+        try {
+          res = await updateKnockDetailsAction(knockId, patch)
+        } catch {
+          // No signal: keep the sheet open with what was typed so Save can be tapped again.
+          toast({ title: "Details didn't save. Check your signal and tap Save again.", variant: "destructive" })
+          return
+        }
         toast(res.ok ? { title: res.message, variant: "success" } : { title: res.error, variant: "destructive" })
       } else {
         // Not on the server yet: ride along with the queued knock, and re-send once it lands in case the flush beat us.

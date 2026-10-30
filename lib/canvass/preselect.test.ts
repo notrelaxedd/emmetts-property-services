@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orderByDistance, preselectIndex, type PreselectParcel } from "./preselect";
+import { followPick, needsRefetch, orderByDistance, preselectIndex, type FollowState, type PreselectParcel } from "./preselect";
 import type { ParcelGeom } from "./types";
 
 const square = (lng: number, lat: number, size = 0.0004): ParcelGeom => ({
@@ -55,5 +55,38 @@ describe("orderByDistance", () => {
     const b = parcel("b", -81.84, 41.47);
     expect(orderByDistance([a, b], [-81.84, 41.47]).map((p) => p.id)).toEqual(["b", "a"]);
     expect(orderByDistance([a, b], null).map((p) => p.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("needsRefetch", () => {
+  const within = (farthest: number) => Array.from({ length: 40 }, (_, i) => ({ meters: (farthest * (i + 1)) / 40 }));
+  it("re-asks before the crew walks out of the loaded houses", () => {
+    expect(needsRefetch(50, within(90))).toBe(false);
+    expect(needsRefetch(55, within(90))).toBe(true); // 60% of 90 m
+    expect(needsRefetch(100, within(250))).toBe(false);
+    expect(needsRefetch(120, within(250))).toBe(true); // capped at 120 m
+  });
+  it("never re-asks on every fix, even with few or no houses loaded", () => {
+    expect(needsRefetch(10, [])).toBe(false);
+    expect(needsRefetch(30, [])).toBe(true);
+    expect(needsRefetch(20, [{ meters: 5 }])).toBe(false);
+  });
+});
+
+describe("followPick", () => {
+  const at = (index: number): FollowState => ({ index, candidate: index, streak: 0 });
+  it("ignores a neighbour that wins only alternating fixes", () => {
+    let s = at(0);
+    for (const c of [1, 0, 1, 0, 1, 0]) s = followPick(s, c);
+    expect(s.index).toBe(0);
+  });
+  it("moves after the new house wins three fixes in a row", () => {
+    let s = at(0);
+    s = followPick(s, 1);
+    s = followPick(s, 1);
+    expect(s.index).toBe(0);
+    s = followPick(s, 1);
+    expect(s.index).toBe(1);
+    expect(followPick(at(2), -1).index).toBe(2);
   });
 });

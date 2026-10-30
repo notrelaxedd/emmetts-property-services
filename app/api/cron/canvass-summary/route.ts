@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
 /**
- * Nightly canvass summary (vercel.json: `0 10 * * *` = 06:00 America/New_York). Vercel calls it with
+ * Nightly canvass summary (vercel.json: `0 10 * * *` = 10:00 UTC: 06:00 EDT, 05:00 EST). Vercel calls it with
  * `Authorization: Bearer <CRON_SECRET>`; anything else gets 401. Summarises yesterday (Ohio time), or `?date=YYYY-MM-DD`
  * for a re-run. A day without knocks stores a minimal summary and never calls the model.
  */

@@ -75,6 +75,31 @@ describe("loadParcelViews", () => {
   });
 });
 
+describe("learned window pooling", () => {
+  it("pools the whole block group's knocks, so one house's detail page agrees with the table", async () => {
+    const houses = Array.from({ length: 10 }, (_, i) =>
+      parcelRow({ block_group_geoid: GEOID, address: `${19000 + i * 2} DETROIT RD`, parcel_id: `PIN-${i}`, fetched_at: "2026-10-02T00:00:00Z" }),
+    );
+    // One knock per house: 10 knocks in the block group (>= learned_min_knocks 8), but only 1 on any single house.
+    const db = fakeDb({
+      canvass_settings: [canvassSettingsRow()],
+      parcels: houses,
+      block_groups: [blockGroupRow({ geoid: GEOID })],
+      knocks: houses.map((h) => knockRow({ parcel_id: h.id, knocked_at: "2026-10-27T23:15:00.000Z", outcome: "quote_given" })),
+      profiles: profiles as never,
+      customers: [],
+    });
+    const table = await loadParcelViews(db);
+    const fromTable = table.parcels.find((p) => p.id === houses[3].id)!;
+    expect(fromTable.window.source).toBe("learned");
+    const detail = await loadParcelDetail(db, houses[3].id);
+    expect(detail!.parcel.window.source).toBe("learned");
+    expect(detail!.parcel.window.label).toBe(fromTable.window.label);
+    const views = await loadParcelViews(db, { ids: [houses[3].id] });
+    expect(views.parcels[0].window.label).toBe(fromTable.window.label);
+  });
+});
+
 describe("loadParcelDetail", () => {
   it("returns the view plus the knock history with names, or null", async () => {
     const { db, a } = seed();

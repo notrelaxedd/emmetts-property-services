@@ -14,6 +14,10 @@ import { cn } from "@/lib/utils"
 import { OUTCOME_LABEL } from "./outcome-grid"
 
 const CALLBACK_CHIPS = ["Weekdays after 5", "Weekends", "Mornings"] as const
+// The server's limits (app/crew/actions/knock.ts): over-long text must never get a queued knock refused.
+const CALLBACK_MAX = 200
+const NOTES_MAX = 2000
+const MONEY_MAX = 100_000
 const HOME_PATTERNS: { value: HomePattern; label: string }[] = [
   { value: "home_weekdays", label: "Home weekdays" },
   { value: "evenings_only", label: "Evenings only" },
@@ -71,17 +75,17 @@ export function DetailsSheet({ target, pitches, pitchId, saving, onSave, onClose
   const withQuote = target?.outcome === "quote_given" || target?.outcome === "booked"
   const num = (s: string) => {
     const n = Number(s)
-    return s.trim() === "" || !Number.isFinite(n) ? null : Math.max(0, n)
+    return s.trim() === "" || !Number.isFinite(n) ? null : Math.min(MONEY_MAX, Math.max(0, n))
   }
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!target || saving) return
     const patch: KnockDetailsPatch = {
-      callback_window: callback.trim() || null,
+      callback_window: callback.trim().slice(0, CALLBACK_MAX) || null,
       home_pattern: pattern,
       pitch_id: pitch || null,
-      notes: notes.trim() || null,
+      notes: notes.trim().slice(0, NOTES_MAX) || null,
     }
     if (withQuote) {
       patch.quote_low = num(low)
@@ -128,7 +132,7 @@ export function DetailsSheet({ target, pitches, pitchId, saving, onSave, onClose
                 </button>
               ))}
             </div>
-            <Input id="kd-callback" placeholder="What they said, e.g. after 6 on Tuesdays" className="h-11 text-base" value={callback} onChange={(e) => setCallback(e.target.value)} />
+            <Input id="kd-callback" placeholder="What they said, e.g. after 6 on Tuesdays" maxLength={CALLBACK_MAX} className="h-11 text-base" value={callback} onChange={(e) => setCallback(e.target.value)} />
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -158,7 +162,7 @@ export function DetailsSheet({ target, pitches, pitchId, saving, onSave, onClose
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="kd-notes">Notes</Label>
-            <Textarea id="kd-notes" rows={2} className="text-base" placeholder="Dog in yard, side door, ask for Pat" value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <Textarea id="kd-notes" rows={2} maxLength={NOTES_MAX} className="text-base" placeholder="Dog in yard, side door, ask for Pat" value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
 
           <div className="grid grid-cols-2 gap-2">

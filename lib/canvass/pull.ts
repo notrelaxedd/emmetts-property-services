@@ -198,7 +198,7 @@ async function inChunks<T>(ids: readonly string[], fetchChunk: (chunk: string[])
   return out;
 }
 
-type TouchedRow = Pick<Parcel, "id" | "parcel_id" | "address" | "centroid_lat" | "centroid_lng" | "block_group_geoid" | "customer_id">;
+type TouchedRow = Pick<Parcel, "id" | "parcel_id" | "address" | "city" | "zip" | "centroid_lat" | "centroid_lng" | "block_group_geoid" | "customer_id">;
 
 // ---------- Block groups ----------
 
@@ -280,7 +280,23 @@ export async function refreshBlockGroupPriors(db: Db): Promise<{ updated: number
 
 // ---------- Customers ----------
 
-/** Link pulled parcels to existing customers by county PIN, else by normalised address prefix. Returns how many were linked. */
+/**
+ * True when a customer's address, past the parcel's street line, can be this parcel's town: it names the parcel's
+ * city or zip, or it names no town at all ("UNIT 2", or nothing). "LAKEWOOD OH 44107" for a Rocky River parcel is false.
+ */
+export function sameTown(tail: string, parcel: { city?: string | null; zip?: string | null }): boolean {
+  const t = ` ${normalizeAddress(tail)} `;
+  if (t.trim() === "") return true;
+  const city = normalizeAddress(parcel.city);
+  const zip = (parcel.zip ?? "").trim().slice(0, 5);
+  if (!city && !zip) return true;
+  if (city && t.includes(` ${city} `)) return true;
+  if (zip && t.includes(` ${zip}`)) return true;
+  // No zip and no state in the tail: nothing says it is somewhere else.
+  return !/ \d{5}( |$)/.test(t) && !/ OH(IO)? /.test(t);
+}
+
+/** Link pulled parcels to existing customers by county PIN, else by normalised address (same street line, same town). Returns how many were linked. */
 export async function linkCustomers(db: Db, rows: readonly TouchedRow[]): Promise<number> {
   // `== null` also catches a freshly inserted row whose default columns did not come back.
   const unlinked = rows.filter((r) => r.customer_id == null);
@@ -297,7 +313,9 @@ export async function linkCustomers(db: Db, rows: readonly TouchedRow[]): Promis
   let linked = 0;
   for (const r of unlinked) {
     const addr = normalizeAddress(r.address);
-    const id = byPin.get(r.parcel_id) ?? (addr ? byAddress.find((c) => c.norm === addr || c.norm.startsWith(`${addr} `))?.id : undefined);
+    const id =
+      byPin.get(r.parcel_id) ??
+      (addr ? byAddress.find((c) => c.norm === addr || (c.norm.startsWith(`${addr} `) && sameTown(c.norm.slice(addr.length + 1), r)))?.id : undefined);
     if (!id) continue;
     check(await db.from("parcels").update({ customer_id: id }).eq("id", r.id), "link customer");
     linked++;
@@ -370,7 +388,7 @@ export async function pullParcels(db: Db, polygon: GeoPolygon, opts: PullOpts = 
     const chunk = toInsert.slice(i, i + CHUNK);
     const rows =
       check(
-        await db.from("parcels").insert(chunk).select("id,parcel_id,address,centroid_lat,centroid_lng,block_group_geoid,customer_id"),
+        await db.from("parcels").insert(chunk).select("id,parcel_id,address,city,zip,centroid_lat,centroid_lng,block_group_geoid,customer_id"),
         "insert parcels",
       ) ?? [];
     touched.push(...rows);

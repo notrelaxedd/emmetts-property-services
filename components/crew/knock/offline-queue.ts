@@ -14,6 +14,7 @@ import {
   mergeQueues,
   parseQueue,
   patchQueued,
+  sendDisposition,
   type KnockDetailsPatch,
   type LogKnockInput,
   type QueuedKnock,
@@ -60,7 +61,8 @@ export function patchQueuedKnock(clientId: string, patch: KnockDetailsPatch): bo
   return true
 }
 
-export type SendResult = { ok: true; knock_id: string; message: string; do_not_knock: boolean } | { ok: false; error: string }
+/** `retryable`: the server failed (database blip, timeout), not the knock; the item stays queued with backoff. */
+export type SendResult = { ok: true; knock_id: string; message: string; do_not_knock: boolean } | { ok: false; error: string; retryable?: boolean }
 
 export type FlushEvent =
   | { kind: "sent"; clientId: string; result: Extract<SendResult, { ok: true }> }
@@ -71,7 +73,7 @@ let flushing = false
 
 /**
  * Send every due item, oldest first. A server "no" (validation, missing house) drops the item so it
- * never blocks the rest; a network failure keeps it with backoff. One flush at a time.
+ * never blocks the rest; a network failure or a retryable server failure keeps it with backoff. One flush at a time.
  */
 export async function flushQueue(send: (input: LogKnockInput) => Promise<SendResult>, onEvent?: (e: FlushEvent) => void): Promise<QueuedKnock[]> {
   if (flushing) return readQueue()
@@ -82,10 +84,15 @@ export async function flushQueue(send: (input: LogKnockInput) => Promise<SendRes
       const clientId = item.input.client_id
       try {
         const res = await send(item.input)
+        const next = sendDisposition(res)
         if (res.ok) {
           items = dequeue(readQueue(), clientId)
           writeQueue(items)
           onEvent?.({ kind: "sent", clientId, result: res })
+        } else if (next === "retry") {
+          items = markFailed(readQueue(), clientId, res.error, Date.now())
+          writeQueue(items)
+          onEvent?.({ kind: "failed", clientId, error: res.error })
         } else {
           items = dequeue(readQueue(), clientId)
           writeQueue(items)

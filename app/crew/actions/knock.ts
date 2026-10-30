@@ -1,7 +1,7 @@
 "use server"
 
 import { z } from "zod"
-import { createDoorLeadAndQuote } from "@/lib/canvass/door-booking"
+import { createDoorLeadAndQuote, repriceDoorQuote } from "@/lib/canvass/door-booking"
 import type { LogKnockInput } from "@/lib/canvass/knock-queue"
 import { loadNearbyParcels, loadTodayPlan, searchParcels } from "@/lib/canvass/load"
 import { currentSeasonFocus } from "@/lib/canvass/season"
@@ -49,6 +49,13 @@ const OUTCOME_LABEL: Record<KnockOutcome, string> = {
 const coord = (min: number, max: number) => z.number().finite().min(min).max(max)
 const money = z.number().finite().min(0).max(100_000).nullable().optional()
 const text = (max: number) => z.string().trim().max(max).nullable().optional()
+/** Optional free text on a queued knock: clipped, never a reason to reject (and drop) the knock itself. */
+const clipped = (max: number) =>
+  z
+    .string()
+    .transform((s) => s.trim().slice(0, max))
+    .nullable()
+    .optional()
 
 const logSchema = z.object({
   client_id: z.string().uuid("Bad client id"),
@@ -60,9 +67,9 @@ const logSchema = z.object({
   pitch_id: z.string().uuid().nullable(),
   quote_low: money,
   quote_high: money,
-  callback_window: text(200),
+  callback_window: clipped(200),
   home_pattern: z.enum(HOME_PATTERNS).nullable().optional(),
-  notes: text(2000),
+  notes: clipped(2000),
 })
 
 const detailsSchema = z.object({
@@ -131,7 +138,24 @@ export async function searchParcelsAction(q: string): Promise<{ ok: true; parcel
   }
 }
 
-export type LogKnockResult = { ok: true; knock_id: string; message: string; do_not_knock: boolean } | { ok: false; error: string }
+/** `retryable`: a server / database failure, not a problem with the knock; the offline queue keeps it and retries. */
+export type LogKnockResult =
+  | { ok: true; knock_id: string; message: string; do_not_knock: boolean }
+  | { ok: false; error: string; retryable?: boolean }
+
+const retry = (error: string): { ok: false; error: string; retryable: true } => ({ ok: false, error, retryable: true })
+
+/** What a knock changes on its parcel (do-not-knock, callback window, home pattern); idempotent. */
+function parcelPatchFor(v: Pick<LogKnockInput, "outcome" | "callback_window" | "home_pattern">): Partial<Parcel> {
+  const patch: Partial<Parcel> = {}
+  if (DO_NOT_KNOCK_OUTCOMES.includes(v.outcome)) {
+    patch.do_not_knock = true
+    patch.do_not_knock_reason = DO_NOT_KNOCK_REASON[v.outcome] ?? "Asked us not to knock"
+  }
+  if (v.callback_window) patch.callback_window = v.callback_window
+  if (v.home_pattern) patch.home_pattern = v.home_pattern
+  return patch
+}
 
 /**
  * One tap at the door. Idempotent on `client_id` (the offline queue re-sends). The insert comes
@@ -142,7 +166,7 @@ export async function logKnockAction(input: LogKnockInput): Promise<LogKnockResu
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Check the knock.")
   const v = parsed.data
   const ctx = await crewContext()
-  if (!ctx) return fail("Sign-in isn't configured.")
+  if (!ctx) return retry("Sign-in isn't configured.")
   try {
     const db = requireSupabaseAdmin()
     const existing = check(
@@ -150,6 +174,9 @@ export async function logKnockAction(input: LogKnockInput): Promise<LogKnockResu
       "logKnock(existing)",
     )
     if (existing) {
+      // A retry after the insert landed but the parcel update failed: apply it again (it is idempotent).
+      const again = parcelPatchFor(v)
+      if (Object.keys(again).length) check(await db.from("parcels").update(again).eq("id", existing.parcel_id), "logKnock(parcel update)")
       const p = check(await db.from("parcels").select("do_not_knock").eq("id", existing.parcel_id).maybeSingle(), "logKnock(parcel)")
       return { ok: true, knock_id: existing.id, message: `Logged: ${OUTCOME_LABEL[v.outcome]}`, do_not_knock: p?.do_not_knock ?? false }
     }
@@ -157,8 +184,10 @@ export async function logKnockAction(input: LogKnockInput): Promise<LogKnockResu
     const parcel = check(await db.from("parcels").select("*").eq("id", v.parcel_id).maybeSingle(), "logKnock(parcel)") as Parcel | null
     if (!parcel) return fail("That house isn't in the list any more.")
 
-    // Weather runs while the insert goes through; never blocks for more than its 3 s cap.
-    const weatherP = v.lat !== null && v.lng !== null ? fetchKnockWeather(v.lat, v.lng) : Promise.resolve(null)
+    // Weather runs while the insert goes through; never blocks for more than its 3 s cap. No GPS fix: the house's centroid.
+    const wLat = v.lat ?? parcel.centroid_lat
+    const wLng = v.lng ?? parcel.centroid_lng
+    const weatherP = wLat !== null && wLng !== null ? fetchKnockWeather(wLat, wLng) : Promise.resolve(null)
 
     const knockedAt = new Date(v.knocked_at)
     const safeKnockedAt = Number.isFinite(knockedAt.getTime()) && knockedAt.getTime() <= Date.now() + 5 * 60_000 ? knockedAt : new Date()
@@ -192,15 +221,8 @@ export async function logKnockAction(input: LogKnockInput): Promise<LogKnockResu
     }
     knock = one(inserted, "logKnock(insert)")
 
-    const parcelPatch: Partial<Parcel> = {}
-    let doNotKnock = parcel.do_not_knock
-    if (DO_NOT_KNOCK_OUTCOMES.includes(v.outcome)) {
-      parcelPatch.do_not_knock = true
-      parcelPatch.do_not_knock_reason = DO_NOT_KNOCK_REASON[v.outcome] ?? "Asked us not to knock"
-      doNotKnock = true
-    }
-    if (v.callback_window) parcelPatch.callback_window = v.callback_window
-    if (v.home_pattern) parcelPatch.home_pattern = v.home_pattern
+    const parcelPatch = parcelPatchFor(v)
+    const doNotKnock = parcel.do_not_knock || parcelPatch.do_not_knock === true
     if (Object.keys(parcelPatch).length) {
       check(await db.from("parcels").update(parcelPatch).eq("id", parcel.id), "logKnock(parcel update)")
     }
@@ -236,7 +258,7 @@ export async function logKnockAction(input: LogKnockInput): Promise<LogKnockResu
 
     return { ok: true, knock_id: knock.id, message, do_not_knock: doNotKnock }
   } catch (e) {
-    return fail(errorMessage(e))
+    return retry(errorMessage(e))
   }
 }
 
@@ -271,6 +293,18 @@ export async function updateKnockDetailsAction(
     if (v.callback_window) parcelPatch.callback_window = v.callback_window
     if (v.home_pattern) parcelPatch.home_pattern = v.home_pattern
     if (Object.keys(parcelPatch).length) check(await db.from("parcels").update(parcelPatch).eq("id", knock.parcel_id), "knockDetails(parcel)")
+
+    // Amounts typed after the knock (and its door quote) landed: re-price the quote like the offline path would have.
+    const low = v.quote_low !== undefined ? v.quote_low : knock.quote_low
+    const high = v.quote_high !== undefined ? v.quote_high : knock.quote_high
+    if (knock.quote_id && (low !== knock.quote_low || high !== knock.quote_high) && (low !== null || high !== null)) {
+      try {
+        await repriceDoorQuote(db, knock.quote_id, low ?? high ?? 0, high ?? low ?? 0)
+      } catch (e) {
+        console.error("[knock] quote re-price failed", e)
+        return { ok: true, message: `Details saved (quote price not updated: ${errorMessage(e)})` }
+      }
+    }
 
     return { ok: true, message: "Details saved." }
   } catch (e) {

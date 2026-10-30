@@ -7,6 +7,7 @@
  *   quote:    sent (+sent_at) for a quote, accepted (+accepted_at) for a booking; price = mid of low/high
  *   item:     is_custom "Door quote: <service>", priced, 1 h
  *   job:      booked only; `ensureJobForQuote` (unscheduled, unpaid) so it lands on the "Needs a day" rail
+ *   reprice:  amounts typed in the details sheet after the knock landed (`repriceDoorQuote`)
  */
 import type { Customer, KnockOutcome, Parcel } from "../db/types";
 import { moneyRound } from "../pricing";
@@ -35,6 +36,13 @@ export type DoorBookingInput = {
 };
 
 export type DoorBookingResult = { customer_id: string; lead_id: string; quote_id: string; job_id: string | null };
+
+/** Door-quote price: the mid of low / high (high never below low, both at least 0). */
+export function doorPrice(amountLow: number, amountHigh: number): { low: number; high: number; price: number } {
+  const low = Math.max(0, Number(amountLow) || 0);
+  const high = Math.max(low, Number(amountHigh) || 0);
+  return { low, high, price: moneyRound((low + high) / 2) };
+}
 
 /** Customer name when the county record has no usable owner name. */
 export function doorCustomerName(parcel: Pick<DoorParcel, "owner_display" | "address">): string {
@@ -72,9 +80,7 @@ export async function findDoorCustomer(db: Db, parcel: DoorParcel): Promise<Cust
 /** Creates (or links) the customer, then lead + quote (+ job when booked). Sets parcels.customer_id. */
 export async function createDoorLeadAndQuote(db: Db, input: DoorBookingInput): Promise<DoorBookingResult> {
   const { parcel, outcome, service } = input;
-  const low = Math.max(0, Number(input.amount_low) || 0);
-  const high = Math.max(low, Number(input.amount_high) || 0);
-  const price = moneyRound((low + high) / 2);
+  const { low, high, price } = doorPrice(input.amount_low, input.amount_high);
   const now = new Date().toISOString();
   const label = SERVICE_LABELS[service];
 
@@ -202,4 +208,31 @@ export async function createDoorLeadAndQuote(db: Db, input: DoorBookingInput): P
     check(await db.from("parcels").update({ customer_id: customer.id }).eq("id", parcel.id), "doorBooking(parcel link)");
   }
   return { customer_id: customer.id, lead_id: lead.id, quote_id: quote.id, job_id };
+}
+
+/** Quote statuses a door quote can still be re-priced in (not paid). */
+const REPRICEABLE = ["sent", "accepted"] as const;
+
+/**
+ * The crew typed the real amounts in the details sheet after the knock (and its quote) were saved: re-price the
+ * door quote the same way `createDoorLeadAndQuote` would have (total, profit, its one custom line, rationale).
+ * False when the quote is gone, paid or no longer sent / accepted.
+ */
+export async function repriceDoorQuote(db: Db, quoteId: string, amountLow: number, amountHigh: number): Promise<boolean> {
+  const { low, high, price } = doorPrice(amountLow, amountHigh);
+  const quote = check(
+    await db.from("quotes").select("id,status,labor_total,paid_at,rationale").eq("id", quoteId).maybeSingle(),
+    "repriceDoorQuote(quote)",
+  );
+  if (!quote || quote.paid_at || !(REPRICEABLE as readonly string[]).includes(quote.status)) return false;
+  const rationale = (quote.rationale ?? "").replace(/\$[\d.,]+–\$[\d.,]+/, () => `$${low}–$${high}`);
+  check(
+    await db
+      .from("quotes")
+      .update({ price_total: price, profit_total: moneyRound(price - (Number(quote.labor_total) || 0)), rationale })
+      .eq("id", quote.id),
+    "repriceDoorQuote(update)",
+  );
+  check(await db.from("quote_items").update({ price }).eq("quote_id", quote.id).eq("is_custom", true), "repriceDoorQuote(item)");
+  return true;
 }

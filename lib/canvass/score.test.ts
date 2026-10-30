@@ -101,8 +101,14 @@ describe("addresses", () => {
     const street = [100, 102, 104, 110, 112].map((n) => ({ address: `${n} Elm Rd` }));
     expect(houseDistance(100, 104, street)).toBe(2);
     expect(houseDistance(100, 110, street)).toBe(3);
-    expect(houseDistance(100, 120, street)).toBe(5);
+    expect(houseDistance(100, 120, street)).toBe(8); // 4 known up to 112, then 114–120 at a step of 2
     expect(houseDistance(102, 100, street)).toBe(1);
+  });
+  it("does not treat a far house missing from a partial street list as next door", () => {
+    expect(houseDistance(100, 2000, [{ address: "100 ELM RD" }])).toBe(950);
+    expect(houseDistance(100, 2000, [100, 102, 104].map((n) => ({ address: `${n} ELM RD` })))).toBe(950);
+    const parcel = { address: "100 Elm Rd", street: "ELM RD", centroid_lat: 41.4756, centroid_lng: -81.8396 };
+    expect(neighborBoost(parcel, [{ address: "2000 Elm Rd", lat: null, lng: null }], 3, [{ address: "100 ELM RD" }])).toBe(1);
   });
 });
 

@@ -73,14 +73,7 @@ export default async function ParcelDetailPage({ params }: { params: { id: strin
     <div className="space-y-4">
       <PageHeader
         title={parcel.address}
-        description={
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span>{parcel.owner_display ?? "Owner unknown"}</span>
-            {parcel.owner_is_entity ? <Badge variant="outline">Entity owner</Badge> : null}
-            {parcel.isCustomer ? <Badge variant="secondary">Customer</Badge> : null}
-            {parcel.do_not_knock ? <Badge variant="destructive">Do not knock</Badge> : null}
-          </span>
-        }
+        description={parcel.owner_display ?? "Owner unknown"}
         actions={
           <>
             <ScorePopover score={parcel.score} breakdown={parcel.breakdown} quintile={parcel.quintile} />
@@ -92,6 +85,14 @@ export default async function ParcelDetailPage({ params }: { params: { id: strin
           </>
         }
       />
+      {/* Badges render a <div>, so they sit under the header rather than inside its description <p>. */}
+      {parcel.owner_is_entity || parcel.isCustomer || parcel.do_not_knock ? (
+        <div className="-mt-2 flex flex-wrap items-center gap-2">
+          {parcel.owner_is_entity ? <Badge variant="outline">Entity owner</Badge> : null}
+          {parcel.isCustomer ? <Badge variant="secondary">Customer</Badge> : null}
+          {parcel.do_not_knock ? <Badge variant="destructive">Do not knock</Badge> : null}
+        </div>
+      ) : null}
 
       <Card className="p-4">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-4">

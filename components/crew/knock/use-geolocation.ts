@@ -47,6 +47,8 @@ export function useGeolocation(enabled = true): Geolocation {
     try {
       navigator.geolocation.getCurrentPosition(
         (p) => {
+          // The screen closed (or retry ran) before the first fix: start no watch nobody would clear.
+          if (cancelled) return
           onFix(p)
           try {
             watchId = navigator.geolocation.watchPosition(onFix, () => {}, OPTIONS)

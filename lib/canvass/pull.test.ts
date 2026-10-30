@@ -4,7 +4,7 @@ import { COUNTY_PARCELS_SERVICE } from "./county";
 import { layerMetaFixtureA, parcelFeaturesFixtureA } from "./county.fixture";
 import { GEOID_A, allGroups, dataFixtures, dataResponse } from "./census.fixture";
 import type { AcsTable } from "./census";
-import { _resetLayerMetaCache, blockGroupColumns, countyColumns, fieldMapSignature, inspectCountyLayer, mergeParcelRow, pullParcels, refreshBlockGroupPriors } from "./pull";
+import { _resetLayerMetaCache, blockGroupColumns, countyColumns, fieldMapSignature, inspectCountyLayer, mergeParcelRow, pullParcels, refreshBlockGroupPriors, sameTown } from "./pull";
 import { canvassSettingsRow, parcelRow } from "./rows.fixture";
 import { _resetTigerCache, TIGERWEB_SERVICE } from "./tiger";
 import type { GeoPolygon } from "./types";
@@ -164,6 +164,21 @@ describe("mergeParcelRow", () => {
     expect(empty.prior_window.reason).toBe("No area data yet");
     expect(empty.fetched_at).toBeNull();
     expect(empty.depart_dist).toEqual({});
+  });
+});
+
+describe("sameTown", () => {
+  const parcel = { city: "Rocky River", zip: "44116" };
+  it("accepts the parcel's city or zip, or a tail that names no town", () => {
+    expect(sameTown("ROCKY RIVER OH 44116", parcel)).toBe(true);
+    expect(sameTown("CLEVELAND OH 44116", parcel)).toBe(true); // postal city, same zip
+    expect(sameTown("", parcel)).toBe(true);
+    expect(sameTown("UNIT 2", parcel)).toBe(true);
+    expect(sameTown("LAKEWOOD OH 44107", { city: null, zip: null })).toBe(true); // nothing to compare against
+  });
+  it("rejects a customer on the same street line in another town", () => {
+    expect(sameTown("LAKEWOOD OH 44107", parcel)).toBe(false);
+    expect(sameTown("BAY VILLAGE 44140", parcel)).toBe(false);
   });
 });
 

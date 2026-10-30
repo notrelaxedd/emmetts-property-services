@@ -37,11 +37,12 @@ const PRINT_CSS = `
 }
 `
 
-async function load(code: string): Promise<{ row: HangerCode; copy: HangerCopy; qr: string; seasonLabel: string }> {
+/** Null when the code has no row (the page calls notFound() outside its try/catch). */
+async function load(code: string): Promise<{ row: HangerCode; copy: HangerCopy; qr: string; seasonLabel: string } | null> {
   const db = requireSupabaseAdmin()
   const [found, settings] = await Promise.all([db.from("hanger_codes").select("*").eq("code", code).maybeSingle(), getCanvassSettings(db)])
   const row: HangerCode | null = check(found, "hanger code")
-  if (!row) notFound()
+  if (!row) return null
   const season = currentSeasonFocus(settings.season_map)
   const copy = hangerCopy(season, settings.offer_text)
   const qr = await QRCode.toDataURL(hangerUrl(siteConfig.url, row.code), { margin: 1, width: 360 })
@@ -60,6 +61,7 @@ export default async function PrintHangersPage({ params }: { params: { code: str
   } catch (e) {
     error = e instanceof Error ? e.message : String(e)
   }
+  if (!error && !data) notFound()
 
   return (
     <div className="space-y-4">

@@ -105,7 +105,9 @@ async function loadContext(db: Db, parcels: readonly Parcel[], settings?: Canvas
 
 /**
  * The conversion model, fitted on the whole knock log (most recent `MODEL_KNOCK_LIMIT`), joined to the parcels those
- * knocks were on (loaded in chunks when they are not among the parcels being viewed).
+ * knocks were on (loaded in chunks when they are not among the parcels being viewed). The same history feeds the
+ * learned window layer, so a block group (or street) pools all of its recent knocks whichever of its houses are on
+ * screen: the detail page, the knock logger, the digest and the table agree.
  */
 async function loadModel(db: Db, ctx: Context, viewed: readonly Parcel[]) {
   const history =
@@ -115,17 +117,25 @@ async function loadModel(db: Db, ctx: Context, viewed: readonly Parcel[]) {
   const missing = uniqueStrings(history.map((k) => k.parcel_id)).filter((id) => !known.has(id));
   const extra = await inChunks(missing, async (chunk) =>
     check(
-      await db.from("parcels").select("id,parcel_id,lot_sqft,owner_occupied,street,address,centroid_lat,centroid_lng,customer_id").in("id", chunk),
+      await db
+        .from("parcels")
+        .select("id,parcel_id,lot_sqft,owner_occupied,street,address,centroid_lat,centroid_lng,customer_id,block_group_geoid")
+        .in("id", chunk),
       "canvass model parcels",
     ) ?? [],
   );
-  return fitModelFrom(history, [...viewed, ...extra], ctx.customers, ctx.settings);
+  const parcels = [...viewed, ...extra];
+  const model = fitModelFrom(history, parcels, ctx.customers, ctx.settings);
+  // Pool for the learned layer: the knock history plus any older knocks on the viewed houses.
+  const seen = new Set(history.map((k) => k.id));
+  const learnedKnocks = [...history, ...ctx.knocks.filter((k) => !seen.has(k.id))];
+  const learned = learnedWindowsFor(parcels, learnedKnocks, ctx.blockGroups, ctx.settings);
+  return { model, learned };
 }
 
 async function viewsFor(db: Db, parcels: readonly Parcel[], opts: { settings?: CanvassSettings; slot?: ScoreSlot | null } = {}): Promise<{ views: ParcelView[]; ctx: Context }> {
   const ctx = await loadContext(db, parcels, opts.settings);
-  const model = await loadModel(db, ctx, parcels);
-  const learned = learnedWindowsFor(parcels, ctx.knocks, ctx.blockGroups, ctx.settings);
+  const { model, learned } = await loadModel(db, ctx, parcels);
   const views = assembleParcelViews({
     parcels,
     blockGroups: ctx.blockGroups,

@@ -160,7 +160,8 @@ export type CustomerPoint = {
 
 /**
  * Houses between two numbers on the same side of the street (same parity). With the street's parcels
- * known it counts the real houses in between; otherwise house numbers are assumed to step by 2.
+ * known it counts the real houses in between, up to the farthest known one; past that (the list is often
+ * just the houses on screen) and with no list, house numbers are assumed to step by 2.
  */
 export function houseDistance(a: number, b: number, parcelsOnStreet?: readonly { address: string }[]): number | null {
   if (a % 2 !== b % 2) return null; // opposite sides: the metres rule handles those
@@ -169,12 +170,16 @@ export function houseDistance(a: number, b: number, parcelsOnStreet?: readonly {
   if (lo === hi) return 0;
   if (!parcelsOnStreet || parcelsOnStreet.length === 0) return Math.ceil((hi - lo) / 2);
   const numbers = new Set<number>();
+  let top = lo;
   for (const p of parcelsOnStreet) {
     const n = houseNumber(p.address);
-    if (n !== null && n % 2 === lo % 2 && n > lo && n <= hi) numbers.add(n);
+    if (n !== null && n % 2 === lo % 2 && n > lo && n <= hi) {
+      numbers.add(n);
+      top = Math.max(top, n);
+    }
   }
-  // Houses strictly between plus the far house itself; if the far house isn't a known parcel, count it anyway.
-  return Math.max(1, numbers.size + (numbers.has(hi) ? 0 : 1));
+  // Known houses up to the farthest known one, then the unloaded stretch to the far house at a step of 2.
+  return Math.max(1, numbers.size + Math.ceil((hi - top) / 2));
 }
 
 /**
