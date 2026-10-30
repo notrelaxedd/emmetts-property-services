@@ -6,8 +6,8 @@
  * dated on the day of the job. No tasks, emails or Stripe calls. The lead's `source` is `manual`, which is
  * what lets an entry made by mistake be removed again.
  *
- * Revenue is what they paid: the quote's `price_total` is the amount received, and the line keeps the
- * price (the same "total override" shape the quote editor uses when the two differ).
+ * Revenue is what they paid, tip included: the quote's `price_total` is the amount received, and the line
+ * keeps the price (the same "total override" shape the quote editor uses when the two differ).
  *
  * Plain Node (relative imports) like the rest of lib/ops.
  */
@@ -41,11 +41,11 @@ export type ManualJob = {
   recordedBy: string;
 };
 
-/** The note on the quote, e.g. "Recorded by hand: done and paid by cash ($80.00), by owner@…". */
+/** The note on the quote, e.g. "Recorded by hand: done and paid by cash ($80.00), by owner@…". Paying over the price is a tip. */
 export function manualJobNote(j: Pick<ManualJob, "price" | "paid" | "method" | "recordedBy">): string {
   const paid = `paid by ${METHOD_WORD[j.method]} (${money(j.paid)})`;
   const diff = moneyRound(j.paid - j.price);
-  const vs = diff === 0 ? "" : `; priced at ${money(j.price)}, ${diff > 0 ? `${money(diff)} extra` : `${money(-diff)} less`}`;
+  const vs = diff === 0 ? "" : `; priced at ${money(j.price)}, ${diff > 0 ? `${money(diff)} tip` : `${money(-diff)} less`}`;
   return `Recorded by hand: done and ${paid}${vs}, by ${j.recordedBy}.`;
 }
 

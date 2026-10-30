@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Trash2 } from "lucide-react"
 import { recordPaidJob, removePaidJob } from "@/app/admin/actions/money"
+import { usd } from "@/app/admin/money/math"
 import { INTERACTION_CATEGORIES } from "@/components/admin/customers/format"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -46,6 +47,7 @@ export function PaidJobForm({
   const [method, setMethod] = React.useState<PaymentMethod>("cash")
   const [labor, setLabor] = React.useState("")
   const id = (k: string) => `pj-${customer ? "c-" : ""}${k}`
+  const tip = paidTouched && Number(paid) > 0 && Number(price) > 0 ? Math.round((Number(paid) - Number(price)) * 100) / 100 : 0
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -169,6 +171,7 @@ export function PaidJobForm({
           {pending ? "Saving…" : "Paid & done"}
         </Button>
       </div>
+      {tip > 0 ? <p className="text-xs text-ink-muted">The extra {usd(tip)} is a tip and counts as revenue.</p> : null}
       {method === "stripe" ? <p className="text-xs text-ink-muted">The card fee from your settings comes off the profit.</p> : null}
     </form>
   )

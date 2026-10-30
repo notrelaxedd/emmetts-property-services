@@ -82,9 +82,20 @@ describe("recordOfflinePayment", () => {
     expect(note).not.toContain("ignored");
     expect(note).toMatch(/WARNING: Paid amount differs from quote — received \$70\.00 by cash but the quote total is \$80\.00\. Collect the difference\./);
 
+    expect(db.tables.quotes[0].price_total).toBe(80);
+
     const draft = world({ status: "draft" });
     await recordOfflinePayment(draft, "q1", check());
     expect(draft.tables.quotes[0].status).toBe("accepted");
+  });
+
+  it("counts anything paid over the quote as a tip, in the total (revenue) and profit, with no warning", async () => {
+    const db = world();
+    await recordOfflinePayment(db, "q1", check({ method: "cash", amount: 100 }));
+    const q = db.tables.quotes[0];
+    expect(q).toMatchObject({ price_total: 100, fee_total: 0, profit_total: 70 });
+    expect(String(q.rationale)).toContain("Paid by cash: $100.00 (quote $80.00 + $20.00 tip), recorded by owner@example.com.");
+    expect(String(q.rationale)).not.toMatch(/WARNING|Return/);
   });
 
   it("the usual case: a quote confirmed by phone, job done, check handed over → paid, job marked paid, nothing re-scheduled", async () => {
