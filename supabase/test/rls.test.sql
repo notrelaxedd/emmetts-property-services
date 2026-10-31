@@ -880,7 +880,7 @@ reset role;
 select tests.claims(tests.id('crew_a_uid'));
 set role authenticated;
 select tests.check((select count(*) from public.parcels) = 2, 'crew can read parcels');
-select tests.check((select count(*) from public.canvass_settings) = 1, 'crew can read canvass_settings');
+select tests.check((select count(*) from public.canvass_settings) = 0, 'crew cannot read canvass_settings (pay rate / tier minutes are owner-only since v3)');
 select tests.check((select count(*) from public.block_groups) = 1, 'crew can read block_groups');
 select tests.check((select count(*) from public.pitches) = 3, 'crew can read pitches');
 select tests.check((select count(*) from public.canvass_plans) = 1, 'crew can read canvass_plans');

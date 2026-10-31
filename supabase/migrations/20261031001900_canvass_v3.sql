@@ -41,3 +41,7 @@ comment on column public.canvass_settings.score_weights is
   'Multipliers on the four simple-score factors: {time,lawn,customer,owner}.';
 comment on column public.canvass_settings.walk_doors is 'Doors in one Walk Mode route.';
 comment on column public.parcels.state is 'Two-letter state for the full address (county pulls are Ohio).';
+
+-- v3: canvass_settings now carries pay_rate and tier_minutes (the owner-only profit check), so the crew read
+-- policy from 1800 is dropped. Walk Mode and the knock action read settings through the service role.
+drop policy if exists crew_select on public.canvass_settings;
