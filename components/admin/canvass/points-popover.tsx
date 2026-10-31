@@ -9,7 +9,6 @@ import type { ScoreWeights } from "@/lib/canvass/types"
 type Factor = { key: keyof SimpleScore["breakdown"]; label: string; hint: string }
 
 const FACTORS: Factor[] = [
-  { key: "time", label: "Time", hint: "Good now 3, maybe 2, not home 0" },
   { key: "lawn", label: "Lawn", hint: "Small 1, medium 2, large 3" },
   { key: "customer", label: "Customer nearby", hint: "Next door 3, close 2, same street 1" },
   { key: "owner", label: "Owner", hint: "Owner-occupied 3, unknown 1, rental 0" },
@@ -17,8 +16,8 @@ const FACTORS: Factor[] = [
 
 const EMOJI: Record<ScoreLabel, string> = { hot: "🔥", good: "👍", low: "➖" }
 
-/** "7 of 12": the points a house earned out of the most it can earn. */
-export function pointsText(points: number, max = 12): string {
+/** "7 of 9": the points a house earned out of the most it can earn. */
+export function pointsText(points: number, max = 9): string {
   return `${points} of ${max}`
 }
 
@@ -29,7 +28,7 @@ export function factorMax(weight: number | null | undefined): number {
 }
 
 /**
- * The 🔥 / 👍 / ➖ label as a tap target. Opens the four-factor breakdown behind the label. Owner pages only: crew
+ * The 🔥 / 👍 / ➖ label as a tap target. Opens the three-factor breakdown behind the label. Owner pages only: crew
  * surfaces never get points.
  */
 export function PointsPopover({
@@ -38,7 +37,7 @@ export function PointsPopover({
   breakdown,
   reason,
   weights,
-  max = 12,
+  max = 9,
   className,
 }: {
   label: ScoreLabel
@@ -85,7 +84,7 @@ export function PointsPopover({
             </div>
           ))}
         </dl>
-        <p className="mt-3 border-t border-ink/10 pt-2 text-xs text-ink-muted">Hot is 9 or more, good 5 to 8, low 4 or less. Weights are in Settings.</p>
+        <p className="mt-3 border-t border-ink/10 pt-2 text-xs text-ink-muted">Hot is 7 or more, good 4 to 6, low 3 or less. Weights are in Settings.</p>
       </PopoverContent>
     </Popover>
   )

@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { labelFor, reasonText, scoreColor, scoreLabelText, simpleScore, type SimpleScoreInput } from "./simple-score";
 
-const W = { time: 1, lawn: 1, customer: 1, owner: 1 };
+const W = { lawn: 1, customer: 1, owner: 1 };
 const base: SimpleScoreInput = {
-  light: "green",
   tier: "large",
   turfSqft: 9000,
   nearCustomer: "adjacent",
@@ -12,19 +11,13 @@ const base: SimpleScoreInput = {
 };
 
 describe("simpleScore points", () => {
-  it("is 12 for the best of everything", () => {
+  it("is 9 for the best of everything", () => {
     const s = simpleScore(base, W);
-    expect(s.points).toBe(12);
-    expect(s.max).toBe(12);
+    expect(s.points).toBe(9);
+    expect(s.max).toBe(9);
     expect(s.label).toBe("hot");
     expect(s.emoji).toBe("🔥");
-    expect(s.breakdown).toEqual({ time: 3, lawn: 3, customer: 3, owner: 3 });
-  });
-  it("time: green 3 / yellow 2 / red 0", () => {
-    const b = { ...base, tier: null, nearCustomer: "none" as const, ownerOccupied: false };
-    expect(simpleScore({ ...b, light: "green" }, W).breakdown.time).toBe(3);
-    expect(simpleScore({ ...b, light: "yellow" }, W).breakdown.time).toBe(2);
-    expect(simpleScore({ ...b, light: "red" }, W).breakdown.time).toBe(0);
+    expect(s.breakdown).toEqual({ lawn: 3, customer: 3, owner: 3 });
   });
   it("lawn: small 1 / medium 2 / large 3 / xl 3 / unknown 1", () => {
     const lawn = (tier: SimpleScoreInput["tier"]) => simpleScore({ ...base, tier }, W).breakdown.lawn;
@@ -38,14 +31,17 @@ describe("simpleScore points", () => {
     const o = (ownerOccupied: boolean | null, ownerIsEntity = false) => simpleScore({ ...base, ownerOccupied, ownerIsEntity }, W).breakdown.owner;
     expect([o(true), o(null), o(false), o(null, true), o(true, true)]).toEqual([3, 1, 0, 0, 0]);
   });
+  it("has three breakdown factors and no time factor", () => {
+    expect(Object.keys(simpleScore(base, W).breakdown).sort()).toEqual(["customer", "lawn", "owner"]);
+  });
 });
 
 describe("labels", () => {
-  it("hot >= 9, good 5-8, low <= 4", () => {
-    expect([labelFor(12), labelFor(9), labelFor(8), labelFor(5), labelFor(4), labelFor(0)]).toEqual(["hot", "hot", "good", "good", "low", "low"]);
-    expect(simpleScore({ ...base, light: "yellow", tier: "medium", nearCustomer: "near", ownerOccupied: true }, W).points).toBe(9);
-    expect(simpleScore({ ...base, light: "red", tier: "small", nearCustomer: "none", ownerOccupied: null }, W)).toMatchObject({ points: 2, label: "low", emoji: "➖" });
-    expect(simpleScore({ ...base, light: "yellow", tier: "medium", nearCustomer: "street", ownerOccupied: null }, W)).toMatchObject({ points: 6, label: "good", emoji: "👍" });
+  it("hot >= 7, good 4-6, low <= 3", () => {
+    expect([labelFor(9), labelFor(7), labelFor(6), labelFor(4), labelFor(3), labelFor(0)]).toEqual(["hot", "hot", "good", "good", "low", "low"]);
+    expect(simpleScore({ ...base, tier: "medium", nearCustomer: "near", ownerOccupied: true }, W).points).toBe(7);
+    expect(simpleScore({ ...base, tier: "small", nearCustomer: "none", ownerOccupied: null }, W)).toMatchObject({ points: 2, label: "low", emoji: "➖" });
+    expect(simpleScore({ ...base, tier: "medium", nearCustomer: "street", ownerOccupied: null }, W)).toMatchObject({ points: 4, label: "good", emoji: "👍" });
   });
   it("text and map colours", () => {
     expect(scoreLabelText("hot")).toBe("Hot");
@@ -59,63 +55,55 @@ describe("labels", () => {
 });
 
 describe("weights", () => {
-  it("multiply each factor and the total is clamped to 0..12", () => {
-    const heavy = { time: 2, lawn: 1, customer: 1, owner: 1 };
-    expect(simpleScore(base, heavy).points).toBe(12);
-    expect(simpleScore(base, heavy).breakdown.time).toBe(6);
-    const none = { time: 0, lawn: 0, customer: 0, owner: 0 };
+  it("multiply each factor and the total is clamped to 0..9", () => {
+    const heavy = { lawn: 2, customer: 1, owner: 1 };
+    expect(simpleScore(base, heavy).points).toBe(9);
+    expect(simpleScore(base, heavy).breakdown.lawn).toBe(6);
+    const none = { lawn: 0, customer: 0, owner: 0 };
     expect(simpleScore(base, none).points).toBe(0);
     expect(simpleScore(base, none).label).toBe("low");
   });
   it("a weight of 0 removes a factor; 0.5 halves it and the total rounds", () => {
-    const half = { time: 0.5, lawn: 1, customer: 1, owner: 1 };
-    const s = simpleScore({ ...base, light: "green" }, half);
-    expect(s.breakdown.time).toBe(1.5);
-    expect(s.points).toBe(11); // 10.5 rounds up
-    const noTime = simpleScore({ ...base, light: "green" }, { ...W, time: 0 });
-    expect(noTime.points).toBe(9);
-    expect(noTime.reasons).not.toContain("good time now");
+    const half = { lawn: 0.5, customer: 1, owner: 1 };
+    const s = simpleScore(base, half);
+    expect(s.breakdown.lawn).toBe(1.5);
+    expect(s.points).toBe(8); // 7.5 rounds up
+    const noLawn = simpleScore(base, { ...W, lawn: 0 });
+    expect(noLawn.points).toBe(6);
+    expect(noLawn.reasons).not.toContain("Big lawn");
   });
-  it("ignores nonsense weights", () => {
-    expect(simpleScore(base, { time: -1, lawn: 1, customer: 1, owner: 1 }).breakdown.time).toBe(0);
-    expect(simpleScore(base, { time: Number.NaN, lawn: 1, customer: 1, owner: 1 }).breakdown.time).toBe(3);
+  it("ignores nonsense weights and a stored time key", () => {
+    expect(simpleScore(base, { lawn: -1, customer: 1, owner: 1 }).breakdown.lawn).toBe(0);
+    expect(simpleScore(base, { lawn: Number.NaN, customer: 1, owner: 1 }).breakdown.lawn).toBe(3);
+    const withTime = { time: 5, lawn: 1, customer: 1, owner: 1 } as unknown as typeof W;
+    expect(simpleScore(base, withTime).points).toBe(9);
   });
 });
 
 describe("reasons", () => {
   it("lists up to three factors, strongest first, in the spec's wording", () => {
     const s = simpleScore(base, W);
-    expect(s.reasons).toEqual(["Big lawn", "next to a customer", "good time now"]);
-    expect(reasonText(s)).toBe("Big lawn · next to a customer · good time now");
+    expect(s.reasons).toEqual(["Big lawn", "next to a customer", "owner-occupied"]);
+    expect(reasonText(s)).toBe("Big lawn · next to a customer · owner-occupied");
   });
   it("uses the other phrasings", () => {
-    expect(simpleScore({ ...base, tier: "medium", nearCustomer: "near", light: "yellow", ownerOccupied: false }, W).reasons).toEqual([
-      "Medium lawn", // 2-2-2 tie: lawn, customer, time order
+    expect(simpleScore({ ...base, tier: "medium", nearCustomer: "near", ownerOccupied: null }, W).reasons).toEqual([
+      "Medium lawn", // 2-2 tie: lawn, customer order
       "near a customer",
-      "maybe home now",
     ]);
-    expect(simpleScore({ ...base, tier: "small", nearCustomer: "street", light: "red", ownerOccupied: true }, W).reasons).toEqual([
+    expect(simpleScore({ ...base, tier: "small", nearCustomer: "street", ownerOccupied: true }, W).reasons).toEqual([
       "owner-occupied",
       "Small lawn",
       "a customer on this street",
     ]);
   });
   it("names rentals last", () => {
-    const s = simpleScore({ ...base, light: "red", tier: "large", nearCustomer: "none", ownerOccupied: null, ownerIsEntity: true }, W);
+    const s = simpleScore({ ...base, tier: "large", nearCustomer: "none", ownerOccupied: null, ownerIsEntity: true }, W);
     expect(s.reasons).toEqual(["Big lawn", "Rental (landlord pitch)"]);
   });
-  it("has no reasons when nothing scores", () => {
-    const s = simpleScore({ light: "red", tier: null, turfSqft: null, nearCustomer: "none", ownerOccupied: false, ownerIsEntity: false }, W);
+  it("has only the rental line when nothing else scores", () => {
+    const s = simpleScore({ tier: null, turfSqft: null, nearCustomer: "none", ownerOccupied: false, ownerIsEntity: false }, W);
     expect(s.reasons).toEqual(["Rental (landlord pitch)"]);
     expect(s.points).toBe(1);
-  });
-});
-
-describe("simpleScore reasons for a chosen slot", () => {
-  it("says 'for this slot' instead of 'now' when the light was judged for a slot", () => {
-    const b = { ...base, tier: null, nearCustomer: "none" as const, ownerOccupied: null };
-    expect(simpleScore({ ...b, light: "green" }, W).reasons).toContain("good time now");
-    expect(simpleScore({ ...b, light: "green", forSlot: true }, W).reasons).toContain("good time for this slot");
-    expect(simpleScore({ ...b, light: "yellow", forSlot: true }, W).reasons).toContain("maybe home for this slot");
   });
 });

@@ -14,7 +14,7 @@ import { addDays, localDate, zonedToUtc } from "../scheduler/time";
 import { loadParcelViews } from "./load";
 import { currentSeasonFocus } from "./season";
 import { getCanvassSettings } from "./settings";
-import type { CanvassSummaryContent, WindowSource } from "./types";
+import type { CanvassSummaryContent } from "./types";
 import { CANVASS_TZ, bucketOf, formatHourRange, isAnswer } from "./windows";
 
 export const SUMMARY_TZ = CANVASS_TZ;
@@ -22,7 +22,7 @@ export const SUMMARY_TZ = CANVASS_TZ;
 const KNOCK_OUTCOMES: readonly KnockOutcome[] = ["no_answer", "not_interested", "quote_given", "booked", "call_back", "no_soliciting", "do_not_return", "has_service"];
 
 export type DigestGroup = { name: string; knocks: number; answers: number; quotes: number; booked: number; callbacks: number };
-export type DigestStreet = DigestGroup & { doNotKnock: number; window: string | null };
+export type DigestStreet = DigestGroup & { doNotKnock: number };
 
 /** What the model sees. Aggregate only. */
 export type CanvassDigest = {
@@ -51,8 +51,6 @@ export type DigestInput = {
   knocks: readonly DigestKnockRow[];
   knockerNames: ReadonlyMap<string, string>;
   pitchNames: ReadonlyMap<string, string>;
-  /** Street → the planner's window label for most of its houses. */
-  windowsByStreet?: ReadonlyMap<string, string>;
   hangerScans?: number;
   season?: string;
 };
@@ -113,7 +111,7 @@ export function digestFromRows(input: DigestInput): CanvassDigest {
     if (dnk) doNotKnock++;
 
     const streetName = k.street.trim().toUpperCase() || "UNKNOWN STREET";
-    const street = streets.get(streetName) ?? { ...emptyGroup(streetName), doNotKnock: 0, window: input.windowsByStreet?.get(streetName) ?? null };
+    const street = streets.get(streetName) ?? { ...emptyGroup(streetName), doNotKnock: 0 };
     tally(street, k.outcome);
     if (dnk) street.doNotKnock++;
     streets.set(streetName, street);
@@ -191,37 +189,6 @@ export function dayBounds(forDate: string): { start: string; end: string } {
   return { start: zonedToUtc(forDate, "00:00").toISOString(), end: zonedToUtc(addDays(forDate, 1), "00:00").toISOString() };
 }
 
-/**
- * Most common plain-English window per street among the given parcel views ("Weekdays after 4pm, Saturdays all day").
- * Only area-level windows count (learned, ACS prior, default): a homeowner's words are verbatim and a crew tag is about
- * one house, and neither may reach the model.
- */
-export function windowsByStreet(
-  parcels: readonly { street: string; plain: { text: string }; window: { source?: WindowSource }; do_not_knock: boolean }[],
-): Map<string, string> {
-  const counts = new Map<string, Map<string, number>>();
-  for (const p of parcels) {
-    if (p.do_not_knock || p.window.source === "homeowner" || p.window.source === "crew") continue;
-    const street = p.street.trim().toUpperCase();
-    const inner = counts.get(street) ?? new Map<string, number>();
-    inner.set(p.plain.text, (inner.get(p.plain.text) ?? 0) + 1);
-    counts.set(street, inner);
-  }
-  const out = new Map<string, string>();
-  counts.forEach((inner, street) => {
-    let best: string | null = null;
-    let bestN = 0;
-    inner.forEach((n, label) => {
-      if (n > bestN) {
-        best = label;
-        bestN = n;
-      }
-    });
-    if (best) out.set(street, best);
-  });
-  return out;
-}
-
 /** The digest for one local day from the database. */
 export async function buildCanvassDigest(db: Db, forDate: string): Promise<CanvassDigest> {
   const { start, end } = dayBounds(forDate);
@@ -259,7 +226,6 @@ export async function buildCanvassDigest(db: Db, forDate: string): Promise<Canva
     knocks: knocks.map((k) => ({ ...k, street: streetById.get(k.parcel_id) ?? "" })),
     knockerNames: new Map((check(profiles, "digest knockers") ?? []).map((p) => [p.id, p.name])),
     pitchNames: new Map((check(pitches, "digest pitches") ?? []).map((p) => [p.id, p.name])),
-    windowsByStreet: windowsByStreet(parcels),
     hangerScans: (check(scans, "digest scans") ?? []).length,
     season,
   });

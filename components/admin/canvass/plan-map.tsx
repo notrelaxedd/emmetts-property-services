@@ -94,7 +94,7 @@ export function PlanMap({ center, start, stops, onPick, className }: PlanMapProp
           s.centroid_lat !== null && s.centroid_lng !== null ? (
             <Marker key={s.id} position={[s.centroid_lat, s.centroid_lng]} icon={stopIcon(s.order)} interactive>
               <Tooltip direction="top">
-                {s.order}. {s.fullAddress} ({s.knock.label})
+                {s.order}. {s.fullAddress}
               </Tooltip>
             </Marker>
           ) : null,

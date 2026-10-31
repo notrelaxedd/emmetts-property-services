@@ -45,8 +45,7 @@ export function PlanForm({ defaultDate, base, baseLabel }: PlanFormProps) {
   const { toast } = useToast()
   const [pending, startTransition] = React.useTransition()
   const [date, setDate] = React.useState(defaultDate)
-  const [start, setStart] = React.useState("15:00")
-  const [end, setEnd] = React.useState("17:00")
+  const [hours, setHours] = React.useState("2")
   const [startMode, setStartMode] = React.useState<"base" | "map">("base")
   const [picked, setPicked] = React.useState<LatLng | null>(null)
   const [plan, setPlan] = React.useState<PlanView | null>(null)
@@ -59,8 +58,9 @@ export function PlanForm({ defaultDate, base, baseLabel }: PlanFormProps) {
       toast({ title: "Pick a date", variant: "destructive" })
       return
     }
-    if (end <= start) {
-      toast({ title: "The slot must end after it starts", variant: "destructive" })
+    const hoursNum = Number(hours)
+    if (!Number.isFinite(hoursNum) || hoursNum <= 0 || hoursNum > 12) {
+      toast({ title: "Enter how many hours you will walk", description: "Between 0.5 and 12.", variant: "destructive" })
       return
     }
     if (startMode === "map" && !picked) {
@@ -70,8 +70,7 @@ export function PlanForm({ defaultDate, base, baseLabel }: PlanFormProps) {
     startTransition(async () => {
       const r = await planSessionAction({
         date,
-        start,
-        end,
+        hours: hoursNum,
         startLat: startPoint?.lat ?? null,
         startLng: startPoint?.lng ?? null,
       })
@@ -80,7 +79,7 @@ export function PlanForm({ defaultDate, base, baseLabel }: PlanFormProps) {
         return
       }
       setPlan(r.plan)
-      if (r.plan.stops.length === 0) toast({ title: "No house fits this slot", description: "Try a different time or pull more streets." })
+      if (r.plan.stops.length === 0) toast({ title: "No house to plan", description: "Pull more streets on the map, or wait until recent knocks age out." })
     })
   }
 
@@ -91,24 +90,20 @@ export function PlanForm({ defaultDate, base, baseLabel }: PlanFormProps) {
         <CardHeader>
           <CardTitle>Plan my session</CardTitle>
           <CardDescription>
-            Picks the best houses whose knock window overlaps the slot and puts them in walking order. Do-not-knock houses and
-            recent knocks are left out.
+            Picks the best houses for the hours you will walk (doors per hour from Settings) and puts them in walking order.
+            Do-not-knock houses and recent knocks are left out.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={planIt} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="plan-date">Date</Label>
                 <Input id="plan-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="plan-start">Start</Label>
-                <Input id="plan-start" type="time" step={900} value={start} onChange={(e) => setStart(e.target.value)} required />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="plan-end">End</Label>
-                <Input id="plan-end" type="time" step={900} value={end} onChange={(e) => setEnd(e.target.value)} required />
+                <Label htmlFor="plan-hours">Hours</Label>
+                <Input id="plan-hours" type="number" inputMode="decimal" min={0.5} max={12} step={0.5} value={hours} onChange={(e) => setHours(e.target.value)} required />
               </div>
             </div>
 

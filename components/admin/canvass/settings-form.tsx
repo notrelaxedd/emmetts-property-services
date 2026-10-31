@@ -36,10 +36,6 @@ type NumberKey =
   | "pay_rate"
   | "walk_doors"
   | "value_tier_max"
-  | "daytime_not_in_lf_threshold"
-  | "daytime_nonworking_parent_threshold"
-  | "work_hours"
-  | "learned_min_knocks"
   | "doors_per_hour"
   | "neighbor_n"
   | "recency_days"
@@ -68,13 +64,6 @@ const PROFIT_FIELDS: NumberField[] = [
   { key: "pay_rate", label: "Pay rate", prefix: "$", suffix: "per person per hour", step: 0.25, min: 0, max: 1000, hint: "Used only for the owner's profit check" },
 ]
 
-const TIMING_FIELDS: NumberField[] = [
-  { key: "daytime_not_in_lf_threshold", label: "Daytime OK: not in labor force", percent: true, suffix: "%", step: 1, min: 0, max: 100, hint: "Share of adults in the block group not in the labor force at or above this means daytime knocks are fine" },
-  { key: "daytime_nonworking_parent_threshold", label: "Daytime OK: non-working parent", percent: true, suffix: "%", step: 1, min: 0, max: 100, hint: "Share of households with a non-working parent at or above this means daytime knocks are fine" },
-  { key: "work_hours", label: "Typical work day", suffix: "hours", step: 0.5, min: 0, max: 24, hint: "Used with the area's departure time and commute to guess when people are home" },
-  { key: "learned_min_knocks", label: "Learned window needs", suffix: "knocks", step: 1, integer: true, min: 1, max: 1000, hint: "Knocks an area needs before its own answer history replaces the Census prior" },
-]
-
 const SESSION_FIELDS: NumberField[] = [
   { key: "doors_per_hour", label: "Doors per hour", step: 1, integer: true, min: 1, max: 200, hint: "How many houses one person can knock in an hour" },
   { key: "neighbor_n", label: "Neighbor boost within", suffix: "houses", step: 1, integer: true, min: 0, max: 50, hint: "A house this close to a customer on the same street scores higher" },
@@ -83,7 +72,6 @@ const SESSION_FIELDS: NumberField[] = [
 ]
 
 const SCORE_WEIGHT_FIELDS: { key: keyof ScoreWeights; label: string; hint: string }[] = [
-  { key: "time", label: "Time", hint: "Is it a good time to knock" },
   { key: "lawn", label: "Lawn", hint: "Bigger lawn, bigger job" },
   { key: "customer", label: "Customer nearby", hint: "A neighbor already uses you" },
   { key: "owner", label: "Owner", hint: "Owner-occupied beats a rental" },
@@ -93,7 +81,7 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 
 const isService = (v: string): v is ServiceKey => (SERVICE_KEYS as string[]).includes(v)
 
-const ALL_FIELDS = [...PRICING_FIELDS, ...PROFIT_FIELDS, ...TIMING_FIELDS, ...SESSION_FIELDS]
+const ALL_FIELDS = [...PRICING_FIELDS, ...PROFIT_FIELDS, ...SESSION_FIELDS]
 
 function toText(f: Pick<NumberField, "percent">, v: unknown): string {
   if (v === null || v === undefined) return ""
@@ -241,7 +229,7 @@ function TierGrid({
 
 /**
  * Every canvass_settings column except the county field map, grouped in cards. One "Save" sends the whole form as
- * a patch; the server recomputes each area's window with the new thresholds.
+ * a patch.
  */
 export function CanvassSettingsForm({ initial, defaultOffer }: { initial: CanvassSettingsFormInput; defaultOffer: string }) {
   const router = useRouter()
@@ -457,12 +445,12 @@ export function CanvassSettingsForm({ initial, defaultOffer }: { initial: Canvas
         <CardHeader>
           <CardTitle>Score weights</CardTitle>
           <CardDescription>
-            Each house earns 0 to 3 points for four things: time, lawn, a customer nearby, and the owner. A weight multiplies one of them (1 is normal,
-            2 counts it double, 0 ignores it). Hot is 9 points or more out of 12.
+            Each house earns 0 to 3 points for three things: lawn, a customer nearby, and the owner. A weight multiplies one of them (1 is normal,
+            2 counts it double, 0 ignores it). Hot is 7 points or more out of 9.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-3">
             {SCORE_WEIGHT_FIELDS.map((f) => (
               <div key={f.key} className="space-y-1.5">
                 <Label htmlFor={`cs-weight-${f.key}`}>{f.label}</Label>
@@ -479,33 +467,6 @@ export function CanvassSettingsForm({ initial, defaultOffer }: { initial: Canvas
                 <p className="text-xs text-ink-muted">{f.hint}</p>
               </div>
             ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Timing</CardTitle>
-          <CardDescription>
-            How the Census block-group aggregates turn into a knock window. Always a 2-hour range or &quot;Anytime weekdays&quot;, never a minute.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {TIMING_FIELDS.map((f) => (
-              <NumberInput key={f.key} f={f} id={`cs-${f.key}`} value={draft.numbers[f.key]} onChange={(v) => setNumber(f.key, v)} />
-            ))}
-            <div className="space-y-1.5">
-              <Label htmlFor="cs-acs_vintage">ACS vintage</Label>
-              <Input
-                id="cs-acs_vintage"
-                inputMode="numeric"
-                maxLength={4}
-                value={draft.acs_vintage}
-                onChange={(e) => setDraft((d) => ({ ...d, acs_vintage: e.target.value }))}
-              />
-              <p className="text-xs text-ink-muted">Year of the ACS 5-year release to read, e.g. 2023.</p>
-            </div>
           </div>
         </CardContent>
       </Card>
@@ -563,7 +524,7 @@ export function CanvassSettingsForm({ initial, defaultOffer }: { initial: Canvas
           <CardTitle>County data</CardTitle>
           <CardDescription>Which county land-use codes count as a house to knock. Everything else is dropped on pull.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="cs-prefixes">Residential land-use prefixes</Label>
             <Input
@@ -573,6 +534,17 @@ export function CanvassSettingsForm({ initial, defaultOffer }: { initial: Canvas
               onChange={(e) => setDraft((d) => ({ ...d, prefixes: e.target.value }))}
             />
             <p className="text-xs text-ink-muted">Comma separated. A parcel is residential when its land-use code starts with any of these.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="cs-acs_vintage">Census (ACS) vintage</Label>
+            <Input
+              id="cs-acs_vintage"
+              inputMode="numeric"
+              maxLength={4}
+              value={draft.acs_vintage}
+              onChange={(e) => setDraft((d) => ({ ...d, acs_vintage: e.target.value }))}
+            />
+            <p className="text-xs text-ink-muted">Year of the ACS 5-year release to read for median income, e.g. 2023.</p>
           </div>
         </CardContent>
       </Card>

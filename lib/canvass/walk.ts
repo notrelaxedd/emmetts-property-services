@@ -2,14 +2,13 @@
  * Walk Mode planner: the next N good doors, in walking order from where the crew is standing.
  * Pure: no next/* or db imports. Deterministic (ties fall back to distance, then id).
  *
- * Filter: not do-not-knock, not knocked within `recencyDays`, residential, light green or yellow, has a location.
- * Rank:   score points (high first), then green before yellow, then nearer to the start, then id; take `n`.
+ * Filter: not do-not-knock, not knocked within `recencyDays`, residential, has a location.
+ * Rank:   score points (high first), then nearer to the start, then id; take `n`.
  * Route:  plan.ts routeOrder (nearest neighbour + 2-opt) from the start, then a small pass that keeps one side of
  *         the street together: when the next stop could equally be one of several houses within 15 m of the
  *         nearest, the one with the same house-number parity as the previous stop (same street) goes first.
  */
 import { distanceMeters } from "./geometry";
-import type { Light } from "./lights";
 import { routeOrder } from "./plan";
 import type { Position } from "./types";
 
@@ -22,8 +21,7 @@ export type WalkParcel = {
   id: string;
   /** [lng, lat] (same as plan.ts); a house without one cannot be walked to and is left out. */
   centroid: Position | null;
-  light: Light;
-  /** Simple-score points (0..12). */
+  /** Simple-score points (0..9). */
   points: number;
   /** ISO timestamp of the last knock, if any. */
   lastKnockAt: string | null;
@@ -51,8 +49,6 @@ export type WalkCounts = {
   dnk: number;
   recent: number;
   notResidential: number;
-  /** Red light (probably not home). */
-  badLight: number;
   noLocation: number;
   taken: number;
 };
@@ -118,7 +114,7 @@ export function buildWalk<T extends WalkParcel>(input: WalkInput<T>): WalkResult
   const cutoff = nowMs - Math.max(0, input.recencyDays) * DAY_MS;
   const startPos: Position = [input.start.lng, input.start.lat];
 
-  const counts: WalkCounts = { candidates: 0, dnk: 0, recent: 0, notResidential: 0, badLight: 0, noLocation: 0, taken: 0 };
+  const counts: WalkCounts = { candidates: 0, dnk: 0, recent: 0, notResidential: 0, noLocation: 0, taken: 0 };
   const eligible: T[] = [];
   for (const p of input.parcels) {
     if (p.do_not_knock) {
@@ -140,10 +136,6 @@ export function buildWalk<T extends WalkParcel>(input: WalkInput<T>): WalkResult
       counts.notResidential++;
       continue;
     }
-    if (p.light === "red") {
-      counts.badLight++;
-      continue;
-    }
     if (!p.centroid) {
       counts.noLocation++;
       continue;
@@ -155,7 +147,6 @@ export function buildWalk<T extends WalkParcel>(input: WalkInput<T>): WalkResult
   const toStart = new Map<string, number>(eligible.map((p) => [p.id, distanceMeters(startPos, p.centroid as Position)]));
   const ranked = eligible.slice().sort((a, b) => {
     if (b.points !== a.points) return b.points - a.points;
-    if (a.light !== b.light) return a.light === "green" ? -1 : 1;
     const da = toStart.get(a.id) as number;
     const db = toStart.get(b.id) as number;
     if (da !== db) return da - db;

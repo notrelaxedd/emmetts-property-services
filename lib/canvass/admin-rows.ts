@@ -4,10 +4,9 @@
  * next/*, no db: safe to import from server components and client islands alike.
  */
 import type { HomePattern, KnockOutcome } from "../db/types";
-import type { Light } from "./lights";
 import { scoreColor as labelColor } from "./simple-score";
 import type { ScoreLabel } from "./simple-score";
-import type { ParcelGeom, TierKey, WindowSource } from "./types";
+import type { ParcelGeom, TierKey } from "./types";
 import type { ParcelView } from "./views";
 
 /** One table row: everything the list shows, nothing heavy. Owner pages only (it carries points and profit). */
@@ -27,22 +26,12 @@ export type ParcelRow = {
   tier: TierKey | null;
   market_value: number | null;
   owner_occupied: boolean | null;
-  windowLabel: string;
-  windowReason: string;
-  windowSource: WindowSource;
-  /** The knock-now light ("green" | "yellow" | "red"), its label and the next good time. */
-  light: Light;
-  lightLabel: string;
-  nextGoodTime: string | null;
-  /** The plain-English window and why ("Weekdays after 4:30pm, Saturdays all day" / "most people here commute ..."). */
-  plainText: string;
-  plainReason: string;
-  /** Simple score: points 0..12, hot / good / low, the reasons joined with " · " and the four factors. */
+  /** Simple score: points 0..9, hot / good / low, the reasons joined with " · " and the three factors. */
   scorePoints: number;
   scoreLabel: ScoreLabel;
   scoreEmoji: string;
   scoreReason: string;
-  scoreBreakdown: { time: number; lawn: number; customer: number; owner: number };
+  scoreBreakdown: { lawn: number; customer: number; owner: number };
   /** The season service's quote: "$40" | "Quote on site" | "Owner to fill in" | "Lot size unknown". */
   quoteLabel: string;
   quotePrice: number | null;
@@ -67,22 +56,6 @@ export type MapParcel = {
   isCustomer: boolean;
 };
 
-/**
- * The light for the whole area: the most common light among the houses that can be knocked (do-not-knock ones
- * do not vote). Ties go to the better light. Null when there is nobody to vote.
- */
-export function areaLight(rows: readonly { light: Light; do_not_knock: boolean }[]): Light | null {
-  const counts: Record<Light, number> = { green: 0, yellow: 0, red: 0 };
-  let voters = 0;
-  for (const r of rows) {
-    if (r.do_not_knock) continue;
-    counts[r.light]++;
-    voters++;
-  }
-  if (voters === 0) return null;
-  return counts.green >= counts.yellow && counts.green >= counts.red ? "green" : counts.yellow >= counts.red ? "yellow" : "red";
-}
-
 export function toParcelRow(v: ParcelView): ParcelRow {
   const reasons = v.simple.reasons.join(" · ");
   return {
@@ -100,14 +73,6 @@ export function toParcelRow(v: ParcelView): ParcelRow {
     tier: v.quote.tier,
     market_value: v.market_value,
     owner_occupied: v.owner_occupied,
-    windowLabel: v.window.label,
-    windowReason: v.window.reason,
-    windowSource: v.window.source,
-    light: v.knock.light,
-    lightLabel: v.knock.label,
-    nextGoodTime: v.knock.nextGoodTime,
-    plainText: v.plain.text,
-    plainReason: v.plain.reason,
     scorePoints: v.simple.points,
     scoreLabel: v.simple.label,
     scoreEmoji: v.simple.emoji,
@@ -151,14 +116,6 @@ export const HOME_PATTERN_LABELS: Record<HomePattern, string> = {
   evenings_only: "Evenings only",
   weekends_only: "Weekends only",
   unknown: "Unknown",
-};
-
-export const WINDOW_SOURCE_LABELS: Record<WindowSource, string> = {
-  homeowner: "Homeowner said",
-  crew: "Crew observed",
-  learned: "Learned from knocks",
-  acs: "Area estimate",
-  none: "No data yet",
 };
 
 export const outcomeLabel = (outcome: KnockOutcome | null | undefined): string => (outcome ? OUTCOME_LABELS[outcome] ?? outcome : "Not knocked");

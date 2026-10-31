@@ -11,7 +11,6 @@ let seq = 0;
 const house = (over: Partial<WalkParcel> = {}): WalkParcel => ({
   id: `p${++seq}`,
   centroid: at(0.001),
-  light: "green",
   points: 8,
   lastKnockAt: null,
   do_not_knock: false,
@@ -25,7 +24,7 @@ const walk = (parcels: WalkParcel[], over: Partial<Parameters<typeof buildWalk>[
   buildWalk({ parcels, start: START, n: 25, recencyDays: 14, now: NOW, ...over });
 
 describe("buildWalk filtering", () => {
-  it("drops do-not-knock, recent knocks, non-residential, red lights and houses without a location", () => {
+  it("drops do-not-knock, recent knocks, non-residential and houses without a location", () => {
     const keep = house({ id: "keep" });
     const r = walk([
       keep,
@@ -33,11 +32,10 @@ describe("buildWalk filtering", () => {
       house({ id: "recent", lastKnockAt: "2026-10-20T12:00:00Z" }),
       house({ id: "old", lastKnockAt: "2026-10-01T12:00:00Z", centroid: at(0.002) }),
       house({ id: "commercial", isResidential: false }),
-      house({ id: "red", light: "red" }),
       house({ id: "nowhere", centroid: null }),
     ]);
     expect(r.stops.map((s) => s.id).sort()).toEqual(["keep", "old"]);
-    expect(r.counts).toEqual({ candidates: 2, dnk: 1, recent: 1, notResidential: 1, badLight: 1, noLocation: 1, taken: 2 });
+    expect(r.counts).toEqual({ candidates: 2, dnk: 1, recent: 1, notResidential: 1, noLocation: 1, taken: 2 });
   });
   it("a knock exactly recencyDays ago is still recent; just older is allowed", () => {
     const edge = house({ id: "edge", lastKnockAt: new Date(NOW.getTime() - 14 * 86400000).toISOString() });
@@ -52,7 +50,7 @@ describe("buildWalk filtering", () => {
 
 describe("buildWalk exclude", () => {
   it("leaves out excluded houses before taking n, counting them as recent", () => {
-    const hs = [house({ points: 12 }), house({ points: 11 }), house({ points: 10 }), house({ points: 9 })];
+    const hs = [house({ points: 9 }), house({ points: 8 }), house({ points: 7 }), house({ points: 6 })];
     const r = walk(hs, { n: 2, exclude: new Set([hs[0].id, hs[1].id]) });
     expect(r.stops.map((s) => s.id).sort()).toEqual([hs[2].id, hs[3].id].sort());
     expect(r.counts.recent).toBe(2);
@@ -61,20 +59,20 @@ describe("buildWalk exclude", () => {
 });
 
 describe("buildWalk ranking", () => {
-  it("takes the top n by points, green before yellow on a tie, then routes them", () => {
+  it("takes the top n by points, nearer first on a tie, then routes them", () => {
     const parcels = [
       house({ id: "low", points: 3, centroid: at(0.0005) }),
-      house({ id: "hotY", points: 10, light: "yellow", centroid: at(0.002) }),
-      house({ id: "hotG", points: 10, light: "green", centroid: at(0.003) }),
+      house({ id: "hotY", points: 9, centroid: at(0.002) }),
+      house({ id: "hotG", points: 9, centroid: at(0.003) }),
       house({ id: "mid", points: 6, centroid: at(0.004) }),
     ];
     const r = walk(parcels, { n: 3 });
     expect(r.stops.map((s) => s.id).sort()).toEqual(["hotG", "hotY", "mid"]);
-    // n = 2 keeps the two 10s even though "low" is nearest to the start
+    // n = 2 keeps the two 9s even though "low" is nearest to the start
     expect(walk(parcels, { n: 2 }).stops.map((s) => s.id).sort()).toEqual(["hotG", "hotY"]);
-    // equal points: green beats yellow for the last slot
-    const tie = [house({ id: "y", points: 7, light: "yellow", centroid: at(0.0005) }), house({ id: "g", points: 7, light: "green", centroid: at(0.004) })];
-    expect(walk(tie, { n: 1 }).stops.map((s) => s.id)).toEqual(["g"]);
+    // equal points: the house nearer to the start wins the last slot
+    const tie = [house({ id: "far", points: 7, centroid: at(0.004) }), house({ id: "near", points: 7, centroid: at(0.0005) })];
+    expect(walk(tie, { n: 1 }).stops.map((s) => s.id)).toEqual(["near"]);
   });
 });
 

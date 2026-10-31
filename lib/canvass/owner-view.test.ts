@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { areaBanner, defaultSlot, filterRows, incomeLabel, occupancyLabel, parseHomeParams, slotLabel, topList } from "./owner-view";
+import { filterRows, incomeLabel, occupancyLabel, parseHomeParams, topList } from "./owner-view";
 import type { TopRow } from "./owner-view";
 
 const NOW = new Date("2026-10-31T18:20:00Z"); // 2:20pm Ohio (EDT)
@@ -7,7 +7,7 @@ const NOW = new Date("2026-10-31T18:20:00Z"); // 2:20pm Ohio (EDT)
 const row = (id: string, over: Partial<TopRow> = {}): TopRow => ({
   id,
   scorePoints: 6,
-  light: "green",
+  scoreBreakdown: { lawn: 2 },
   fullAddress: `${id} Main St`,
   do_not_knock: false,
   lastKnockAt: null,
@@ -25,58 +25,26 @@ const opts = (ids: string[], over = {}) => ({
 });
 
 describe("parseHomeParams", () => {
-  it("defaults to now with all three filters on", () => {
-    expect(parseHomeParams({})).toEqual({ date: null, start: null, end: null, hideDnk: true, hideRecent: true, singleFamily: true });
+  it("defaults to all three filters on", () => {
+    expect(parseHomeParams({})).toEqual({ hideDnk: true, hideRecent: true, singleFamily: true });
   });
 
-  it("reads a slot and turns a filter off with 0", () => {
-    const p = parseHomeParams({ date: "2026-11-02", start: "16:00", end: "18:00", dnk: "0", sf: ["0"] });
-    expect(p).toMatchObject({ date: "2026-11-02", start: "16:00", end: "18:00", hideDnk: false, hideRecent: true, singleFamily: false });
+  it("turns a filter off with 0", () => {
+    expect(parseHomeParams({ dnk: "0", sf: ["0"] })).toEqual({ hideDnk: false, hideRecent: true, singleFamily: false });
   });
 
-  it("ignores a malformed or half-given slot", () => {
-    expect(parseHomeParams({ date: "11/02", start: "16:00" }).date).toBeNull();
-    expect(parseHomeParams({ date: "2026-11-02" }).start).toBeNull();
-    expect(parseHomeParams({ date: "2026-11-02", start: "25:00" }).date).toBeNull();
-    expect(parseHomeParams({ date: "2026-11-02", start: "16:00", end: "nope" }).end).toBeNull();
-  });
-});
-
-describe("defaultSlot / slotLabel", () => {
-  it("rounds now down to the hour for two hours in Ohio time", () => {
-    expect(defaultSlot(NOW)).toEqual({ date: "2026-10-31", start: "14:00", end: "16:00" });
-  });
-
-  it("caps the end of a late slot", () => {
-    expect(defaultSlot(new Date("2026-11-01T02:30:00Z")).end).toBe("23:59"); // 10:30pm Ohio (EDT)
-  });
-
-  it("labels a slot with the weekday and a clock time", () => {
-    expect(slotLabel("2026-10-31", "16:00")).toBe("Sat 4pm");
-    expect(slotLabel("2026-11-02", "16:30")).toBe("Mon 4:30pm");
-  });
-});
-
-describe("areaBanner", () => {
-  it("says it plainly for now and for a slot", () => {
-    expect(areaBanner("green", null)).toMatchObject({ emoji: "🟢", text: "Good time to knock now" });
-    expect(areaBanner("green", "Sat 4pm").text).toBe("Good time to knock Sat 4pm");
-    expect(areaBanner("yellow", null).emoji).toBe("🟡");
-    expect(areaBanner("red", null).emoji).toBe("🔴");
-  });
-
-  it("copes with an empty area", () => {
-    expect(areaBanner(null, null).light).toBeNull();
+  it("ignores old slot links (date / start / end) and junk values", () => {
+    expect(parseHomeParams({ date: "2026-11-02", start: "16:00", end: "18:00", recent: "nope" })).toEqual({ hideDnk: true, hideRecent: true, singleFamily: true });
   });
 });
 
 describe("topList", () => {
-  it("ranks by points, then green before yellow, then address", () => {
+  it("ranks by points, then the bigger lawn tier, then address", () => {
     const rows = [
-      row("a", { scorePoints: 5, light: "yellow" }),
+      row("a", { scorePoints: 5, scoreBreakdown: { lawn: 1 } }),
       row("b", { scorePoints: 9 }),
-      row("c", { scorePoints: 5, light: "green" }),
-      row("d", { scorePoints: 5, light: "green", fullAddress: "1 Main St" }),
+      row("c", { scorePoints: 5, scoreBreakdown: { lawn: 3 } }),
+      row("d", { scorePoints: 5, scoreBreakdown: { lawn: 3 }, fullAddress: "1 Main St" }),
     ];
     const { top } = topList(rows, opts(["a", "b", "c", "d"]));
     expect(top.map((r) => r.id)).toEqual(["b", "d", "c", "a"]);
@@ -100,7 +68,7 @@ describe("topList", () => {
   });
 
   it("caps at 25 and counts the rest", () => {
-    const rows = Array.from({ length: 30 }, (_, i) => row(`h${i}`, { scorePoints: i % 12 }));
+    const rows = Array.from({ length: 30 }, (_, i) => row(`h${i}`, { scorePoints: i % 10 }));
     const r = topList(rows, opts(rows.map((x) => x.id)));
     expect(r.top).toHaveLength(25);
     expect(r.moreMatching).toBe(5);

@@ -10,7 +10,6 @@ import { Eraser, MapPinned, Pencil, Undo2 } from "lucide-react"
 import { MapContainer, Polygon, Popup } from "react-leaflet"
 import type { LatLng, MapParcel, ParcelRow } from "@/lib/canvass/admin-rows"
 import { boundsOf, CUSTOMER_COLOR, sameBounds, DO_NOT_KNOCK_COLOR, geomToLatLngs, outcomeLabel, scoreColor } from "@/lib/canvass/admin-rows"
-import { LIGHT_EMOJI } from "./light-badge"
 import { scoreLabelText } from "@/lib/canvass/simple-score"
 import type { GeoPolygon } from "@/lib/canvass/types"
 import { localDate } from "@/lib/scheduler/time"
@@ -32,15 +31,6 @@ function ParcelPopup({ row }: { row: ParcelRow | undefined }) {
     <div className="min-w-[12rem] space-y-1 text-sm text-ink">
       <p className="font-semibold leading-tight">{row.fullAddress}</p>
       <p className="text-xs text-ink-muted">{row.owner_display ?? "Owner unknown"}</p>
-      <p>
-        <span className="font-medium">
-          {LIGHT_EMOJI[row.light]} {row.lightLabel}
-        </span>
-        <span className="block text-xs text-ink-muted">{row.plainText}</span>
-        {row.light === "red" ? (
-          <span className="block text-xs text-ink-muted">{row.nextGoodTime ? `Next good: ${row.nextGoodTime}` : "No good time in the next 7 days"}</span>
-        ) : null}
-      </p>
       <p>
         {row.scoreEmoji} {scoreLabelText(row.scoreLabel)}
         {row.scoreReason ? <span className="block text-xs text-ink-muted">{row.scoreReason}</span> : null}
@@ -69,7 +59,7 @@ export function AreaMap({ shapes, rows, center, pulling, onPull }: AreaMapProps)
   const draw = useDrawPolygon()
   const byId = React.useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows])
   // Re-fit only when the area itself changes (a pull), not on every page reload that sends the same shapes again
-  // (a filter toggle or a slot change): that would throw away the owner's zoom and pan.
+  // (a filter toggle): that would throw away the owner's zoom and pan.
   const freshBounds = React.useMemo(() => boundsOf(shapes), [shapes])
   const boundsRef = React.useRef(freshBounds)
   if (!sameBounds(boundsRef.current, freshBounds)) boundsRef.current = freshBounds

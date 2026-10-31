@@ -29,7 +29,6 @@ import { formatMoney, formatSqft, outcomeLabel, yesNo } from "@/lib/canvass/admi
 import { localDate } from "@/lib/scheduler/time"
 import type { ScoreWeights } from "@/lib/canvass/types"
 import { cn } from "@/lib/utils"
-import { LightBadge } from "./light-badge"
 import { PointsPopover } from "./points-popover"
 
 const PAGE_SIZE = 50
@@ -117,18 +116,6 @@ const makeColumns = (weights?: ScoreWeights) =>
       )
     },
   }),
-  col.accessor("plainText", {
-    id: "window",
-    header: "Light and window",
-    cell: (c) => {
-      const r = c.row.original
-      return (
-        <span title={r.plainReason} className="block max-w-[14rem] text-sm">
-          <LightBadge light={r.light} label={r.lightLabel} className="flex flex-col" plain={r.plainText} nextGoodTime={r.nextGoodTime} />
-        </span>
-      )
-    },
-  }),
   col.accessor("quoteLabel", {
     id: "quote",
     header: "Quote",
@@ -180,7 +167,7 @@ export function ParcelTable({ rows, weights }: { rows: ParcelRow[]; weights?: Sc
       const q = value.trim().toLowerCase()
       if (!q) return true
       const r = row.original
-      return [r.fullAddress, r.owner_display ?? "", r.street, r.parcel_id, r.plainText, r.scoreReason].some((s) => s.toLowerCase().includes(q))
+      return [r.fullAddress, r.owner_display ?? "", r.street, r.parcel_id, r.scoreReason].some((s) => s.toLowerCase().includes(q))
     },
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),

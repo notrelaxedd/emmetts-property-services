@@ -45,7 +45,7 @@ export default async function CanvassPlanPage() {
     <div className="space-y-4">
       <PageHeader
         title="Plan my session"
-        description="Pick a day and a slot. The planner picks the houses most likely to answer and buy, in walking order."
+        description="Pick a day and how many hours you will walk. The planner picks the houses most likely to buy, in walking order."
       />
       <CanvassTabs active="plan" />
 

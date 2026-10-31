@@ -1,7 +1,7 @@
 "use client"
 
 /**
- * The latest nightly summary (headline, highlights, best streets, tomorrow's streets with windows) and a
+ * The latest nightly summary (headline, highlights, best streets, tomorrow's streets) and a
  * "Run now" button that rebuilds yesterday's summary on demand.
  */
 import * as React from "react"
@@ -86,10 +86,7 @@ export function SummaryCard({ summary }: { summary: SummaryView | null }) {
               <ul className="mt-1 divide-y divide-ink/10 rounded-md border border-ink/10">
                 {s.tomorrow.map((t, i) => (
                   <li key={`${t.street}-${i}`} className="px-3 py-2 text-sm">
-                    <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-                      <span className="font-medium text-ink">{t.street}</span>
-                      <span className="text-xs font-semibold text-brand-green-dark">{t.window}</span>
-                    </div>
+                    <span className="font-medium text-ink">{t.street}</span>
                     <p className="text-xs text-ink-muted">{t.why}</p>
                   </li>
                 ))}

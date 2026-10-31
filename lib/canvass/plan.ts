@@ -1,38 +1,28 @@
 /**
- * "Plan my session": the highest-scoring houses whose window overlaps the slot, as many as the crew
- * can knock in it, in a sensible walking order. Deterministic (no randomness) so the same inputs give
+ * "Plan my session": the highest-scoring houses, as many as the crew can knock in the hours given
+ * (doors_per_hour x hours), in a sensible walking order. Deterministic (no randomness) so the same inputs give
  * the same plan. Pure: no next/* or db imports.
  */
 import { distanceMeters } from "./geometry";
-import type { Position, TimeWindow } from "./types";
-import { windowOverlapsSlot } from "./windows";
+import type { Position } from "./types";
 
 export type PlanParcel = {
   id: string;
   /** [lng, lat]; a house without one is kept but cannot be routed (it goes last with walkMeters 0). */
   centroid: Position | null;
   score: number;
-  window: TimeWindow;
   /** ISO timestamp of the last knock, if any. */
   lastKnockAt: string | null;
   do_not_knock: boolean;
   street?: string | null;
 };
 
-export type PlanSlot = {
-  /** "YYYY-MM-DD" (local calendar date; its weekday picks weekdays vs weekends). */
-  date: string;
-  /** "HH:MM" */
-  start: string;
-  end: string;
-  timezone?: string;
-};
-
 export type PlanSettings = { doors_per_hour: number; recency_days: number };
 
 export type PlanInput = {
   parcels: readonly PlanParcel[];
-  slot: PlanSlot;
+  /** How many hours the crew will knock; doors = doors_per_hour x hours. */
+  hours: number;
   settings: PlanSettings;
   /** Where the crew starts walking ([lng, lat]); defaults to the best-scoring house. */
   startPoint?: Position | null;
@@ -43,7 +33,7 @@ export type PlanInput = {
 export type PlanStop = {
   /** parcels.id (= `parcel.id`). */
   id: string;
-  /** The planned house as it was passed in (window, score, street …). */
+  /** The planned house as it was passed in (score, street …). */
   parcel: PlanParcel;
   /** 1-based walking order. */
   order: number;
@@ -51,46 +41,27 @@ export type PlanStop = {
   walkMeters: number;
 };
 
-export type PlanExcluded = { dnk: number; recent: number; noOverlap: number };
+export type PlanExcluded = { dnk: number; recent: number };
 
 export type PlanResult = {
   stops: PlanStop[];
   totalMeters: number;
-  /** Why houses were left out (do-not-knock, knocked within recency_days, window outside the slot). */
+  /** Why houses were left out (do-not-knock, knocked within recency_days). */
   excluded: PlanExcluded;
   counts: PlanExcluded & {
     /** Houses still eligible after the exclusions (what competed for a place in the plan). */
     candidates: number;
     dnk: number;
     recent: number;
-    noOverlap: number;
     taken: number;
   };
 };
 
 const DAY_MS = 86_400_000;
 
-/** "15:00" → 15, "15:30" → 15.5. Throws on junk so a bad form value never plans a session silently. */
-export function parseHour(hhmm: string): number {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
-  if (!m) throw new Error(`Bad time "${hhmm}" (expected HH:MM)`);
-  const h = Number(m[1]);
-  const mins = Number(m[2]);
-  if (h > 24 || mins > 59 || (h === 24 && mins !== 0)) throw new Error(`Bad time "${hhmm}"`);
-  return h + mins / 60;
-}
-
-/** Weekday (0 = Sunday) of a "YYYY-MM-DD" calendar date; no timezone needed for a plain date. */
-export function weekdayOfDate(date: string): number {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim());
-  if (!m) throw new Error(`Bad date "${date}" (expected YYYY-MM-DD)`);
-  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))).getUTCDay();
-}
-
-/** Houses to knock in a slot: round(doors per hour × hours), never below 1 for a non-empty slot. */
-export function doorsForSlot(doorsPerHour: number, startHour: number, endHour: number): number {
-  const hours = Math.max(0, endHour - startHour);
-  if (hours === 0) return 0;
+/** Houses to knock in a session: round(doors per hour × hours), never below 1 for a positive number of hours. */
+export function doorsForHours(doorsPerHour: number, hours: number): number {
+  if (!(hours > 0)) return 0;
   return Math.max(1, Math.round(doorsPerHour * hours));
 }
 
@@ -163,19 +134,15 @@ export function routeOrder(points: readonly Position[], startPoint: Position | n
 }
 
 /**
- * Exclude do-not-knock houses, houses knocked within `recency_days`, and houses whose window does not
- * overlap the slot; keep the top `doors_per_hour × hours` by score; walk them nearest-neighbour + 2-opt
+ * Exclude do-not-knock houses and houses knocked within `recency_days`; keep the top `doors_per_hour × hours` by score; walk them nearest-neighbour + 2-opt
  * from `startPoint` (or from the best house). Deterministic.
  */
 export function planSession(input: PlanInput): PlanResult {
-  const { parcels, slot, settings } = input;
-  const startHour = parseHour(slot.start);
-  const endHour = parseHour(slot.end);
-  const weekday = weekdayOfDate(slot.date);
+  const { parcels, settings } = input;
   const nowMs = input.now === undefined ? Date.now() : new Date(input.now).getTime();
   const recencyCutoff = nowMs - Math.max(0, settings.recency_days) * DAY_MS;
 
-  const counts = { candidates: 0, dnk: 0, recent: 0, noOverlap: 0, taken: 0 };
+  const counts = { candidates: 0, dnk: 0, recent: 0, taken: 0 };
   const eligible: PlanParcel[] = [];
   for (const p of parcels) {
     if (p.do_not_knock) {
@@ -189,15 +156,11 @@ export function planSession(input: PlanInput): PlanResult {
         continue;
       }
     }
-    if (!windowOverlapsSlot(p.window, { weekday, start: startHour, end: endHour })) {
-      counts.noOverlap++;
-      continue;
-    }
     eligible.push(p);
   }
   counts.candidates = eligible.length;
 
-  const doors = doorsForSlot(settings.doors_per_hour, startHour, endHour);
+  const doors = doorsForHours(settings.doors_per_hour, input.hours);
   const chosen = eligible
     .slice()
     .sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
@@ -223,6 +186,6 @@ export function planSession(input: PlanInput): PlanResult {
   }
   for (const p of unroutable) stops.push({ id: p.id, parcel: p, order: stops.length + 1, walkMeters: 0 });
 
-  const excluded: PlanExcluded = { dnk: counts.dnk, recent: counts.recent, noOverlap: counts.noOverlap };
+  const excluded: PlanExcluded = { dnk: counts.dnk, recent: counts.recent };
   return { stops, totalMeters, excluded, counts };
 }
