@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   boundsOf,
+  sameBounds,
   formatMoney,
   formatSqft,
   geomToLatLngs,
@@ -130,5 +131,14 @@ describe("geometry for Leaflet", () => {
     expect(b![1][0]).toBeCloseTo(41.5003, 6);
     expect(b![1][1]).toBeCloseTo(-81.7998, 6);
     expect(boundsOf([])).toBeNull();
+  });
+});
+
+describe("sameBounds", () => {
+  it("compares by value so a reload with the same area does not re-fit the map", () => {
+    expect(sameBounds([[1, 2], [3, 4]], [[1, 2], [3, 4]])).toBe(true);
+    expect(sameBounds([[1, 2], [3, 4]], [[1, 2], [3, 5]])).toBe(false);
+    expect(sameBounds(null, null)).toBe(true);
+    expect(sameBounds(null, [[1, 2], [3, 4]])).toBe(false);
   });
 });

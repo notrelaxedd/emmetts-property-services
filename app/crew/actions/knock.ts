@@ -98,6 +98,50 @@ function parcelPatchFor(v: Pick<LogKnockInput, "outcome" | "callback_window" | "
   return patch
 }
 
+/** How long the first send of a knock may still be creating its lead before a re-send tries again. */
+const LEAD_SETTLE_MS = 30_000
+
+type DoorSale = "booked" | "quote_given"
+const needsDoorLead = (outcome: KnockOutcome): outcome is DoorSale => outcome === "booked" || outcome === "quote_given"
+
+/**
+ * The lead / quote (and job, for a booking) behind a door sale, linked onto the knock. Never throws: a failure comes
+ * back as "... (lead not created: ...)" so the crew screen can warn, and a re-send of the same knock tries again.
+ */
+async function attachDoorLead(
+  db: ReturnType<typeof requireSupabaseAdmin>,
+  ctx: NonNullable<Awaited<ReturnType<typeof crewContext>>>,
+  parcel: Parcel,
+  knockId: string,
+  outcome: DoorSale,
+  v: Pick<LogKnockInput, "quote_low" | "quote_high">,
+  logged: string,
+): Promise<string> {
+  try {
+    const settings = await getCanvassSettings(db)
+    const season = currentSeasonFocus(settings.season_map)
+    // The default amount is the house's tier price for the featured service (null when it is not priced).
+    const defaultPrice = defaultDoorPrice(parcel, settings, season.service)
+    const booking = await createDoorLeadAndQuote(db, {
+      parcel,
+      knocker_name: ctx.session.profile.name || "Crew",
+      outcome,
+      amount_low: v.quote_low ?? null,
+      amount_high: v.quote_high ?? null,
+      default_price: defaultPrice,
+      service: season.service,
+    })
+    // The knock's low / high columns carry the price when the crew typed nothing (low = high = price).
+    const amounts = doorAmounts({ amount_low: v.quote_low, amount_high: v.quote_high, default_price: defaultPrice })
+    const filled = v.quote_low == null && v.quote_high == null && amounts.priced ? { quote_low: amounts.low, quote_high: amounts.high } : {}
+    check(await db.from("knocks").update({ lead_id: booking.lead_id, quote_id: booking.quote_id, ...filled }).eq("id", knockId), "logKnock(link)")
+    return outcome === "booked" ? "Booked. The owner will schedule it." : "Quote logged and sent to the owner."
+  } catch (e) {
+    console.error("[knock] lead / quote failed", e)
+    return `${logged} (lead not created: ${errorMessage(e)})`
+  }
+}
+
 /**
  * One tap at the door. Idempotent on `client_id` (the offline queue re-sends). The insert comes
  * first; weather (3 s cap) runs alongside it, and the lead / quote for a booking follows.
@@ -111,15 +155,24 @@ export async function logKnockAction(input: LogKnockInput): Promise<LogKnockResu
   try {
     const db = requireSupabaseAdmin()
     const existing = check(
-      await db.from("knocks").select("id, parcel_id").eq("client_id", v.client_id).maybeSingle(),
+      await db.from("knocks").select("id, parcel_id, outcome, lead_id, created_at").eq("client_id", v.client_id).maybeSingle(),
       "logKnock(existing)",
     )
     if (existing) {
       // A retry after the insert landed but the parcel update failed: apply it again (it is idempotent).
       const again = parcelPatchFor(v)
       if (Object.keys(again).length) check(await db.from("parcels").update(again).eq("id", existing.parcel_id), "logKnock(parcel update)")
-      const p = check(await db.from("parcels").select("do_not_knock").eq("id", existing.parcel_id).maybeSingle(), "logKnock(parcel)")
-      return { ok: true, knock_id: existing.id, message: `Logged: ${OUTCOME_LABEL[v.outcome]}`, do_not_knock: p?.do_not_knock ?? false }
+      const p = check(await db.from("parcels").select("*").eq("id", existing.parcel_id).maybeSingle(), "logKnock(parcel)") as Parcel | null
+      let message = `Logged: ${OUTCOME_LABEL[v.outcome]}`
+      // The first send saved the knock but its lead / quote failed: try that part again instead of leaving a booking with no lead.
+      const saved = existing.outcome as KnockOutcome
+      if (p && needsDoorLead(saved) && !existing.lead_id) {
+        // A knock this fresh may still be creating its lead in the first request: come back shortly rather than make a second one.
+        const age = Date.now() - Date.parse(String(existing.created_at ?? ""))
+        if (Number.isFinite(age) && age < LEAD_SETTLE_MS) return retry("Still saving that knock.")
+        message = await attachDoorLead(db, ctx, p, existing.id, saved, v, message)
+      }
+      return { ok: true, knock_id: existing.id, message, do_not_knock: p?.do_not_knock ?? false }
     }
 
     const parcel = check(await db.from("parcels").select("*").eq("id", v.parcel_id).maybeSingle(), "logKnock(parcel)") as Parcel | null
@@ -169,34 +222,7 @@ export async function logKnockAction(input: LogKnockInput): Promise<LogKnockResu
     }
 
     let message = `Logged: ${OUTCOME_LABEL[v.outcome]}`
-    if (v.outcome === "booked" || v.outcome === "quote_given") {
-      try {
-        const settings = await getCanvassSettings(db)
-        const season = currentSeasonFocus(settings.season_map)
-        // The default amount is the house's tier price for the featured service (null when it is not priced).
-        const defaultPrice = defaultDoorPrice(parcel, settings, season.service)
-        const booking = await createDoorLeadAndQuote(db, {
-          parcel,
-          knocker_name: ctx.session.profile.name || "Crew",
-          outcome: v.outcome,
-          amount_low: v.quote_low ?? null,
-          amount_high: v.quote_high ?? null,
-          default_price: defaultPrice,
-          service: season.service,
-        })
-        // The knock's low / high columns carry the price when the crew typed nothing (low = high = price).
-        const amounts = doorAmounts({ amount_low: v.quote_low, amount_high: v.quote_high, default_price: defaultPrice })
-        const filled = v.quote_low == null && v.quote_high == null && amounts.priced ? { quote_low: amounts.low, quote_high: amounts.high } : {}
-        check(
-          await db.from("knocks").update({ lead_id: booking.lead_id, quote_id: booking.quote_id, ...filled }).eq("id", knock.id),
-          "logKnock(link)",
-        )
-        message = v.outcome === "booked" ? "Booked. The owner will schedule it." : "Quote logged and sent to the owner."
-      } catch (e) {
-        console.error("[knock] lead / quote failed", e)
-        message = `${message} (lead not created: ${errorMessage(e)})`
-      }
-    }
+    if (needsDoorLead(v.outcome)) message = await attachDoorLead(db, ctx, parcel, knock.id, v.outcome, v, message)
 
     const weather = await weatherP
     if (weather) {

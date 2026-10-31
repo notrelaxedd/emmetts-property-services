@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { NativeSelect } from "@/components/ui/native-select"
 import { useToast } from "@/components/ui/toast"
 import type { WalkResultView, WalkStopView } from "@/lib/canvass/views"
-import { excludeLogged, nextStopIndex } from "@/lib/canvass/walk-links"
+import { excludeLogged, nextStopIndex, priceServiceLabel } from "@/lib/canvass/walk-links"
 import type { KnockOutcome } from "@/lib/db/types"
 import { cn } from "@/lib/utils"
 import { ComebackPicker } from "./comeback-picker"
@@ -32,7 +32,31 @@ const lastPosKey = (profileId: string) => `canvass.walk.lastPos.${profileId}`
 type Phase = "idle" | "locating" | "denied" | "loading" | "walking" | "finished" | "error"
 type Point = { lat: number; lng: number }
 type LastLog = { client_id: string; address: string; outcome: KnockOutcome; status: "queued" | "sent" | "failed" }
+/** A remembered fix and when it was taken (epoch ms). */
+type StoredPoint = Point & { at: number }
 
+/** A remembered fix older than this is not offered: the crew member is likely somewhere else by now. */
+const LAST_POS_MAX_AGE_MS = 60 * 60_000
+/** A re-plan that has not answered by then is given up on (a dead zone often still reports "online"). */
+const PLAN_TIMEOUT_MS = 15_000
+/** Taps on the outcome grid are ignored this long after the screen moves on, so a double tap can't log the next house. */
+const TAP_GUARD_MS = 600
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timeout")), ms)
+    p.then(
+      (v) => {
+        clearTimeout(timer)
+        resolve(v)
+      },
+      (e: unknown) => {
+        clearTimeout(timer)
+        reject(e)
+      },
+    )
+  })
+}
 function readStored(key: string): string | null {
   try {
     return window.localStorage.getItem(key)
@@ -50,15 +74,23 @@ function writeStored(key: string, value: string | null): void {
   }
 }
 
-function readLastPos(profileId: string): Point | null {
+/** The remembered fix, or null when there is none, it has no time (an older copy) or it is over an hour old. */
+function readLastPos(profileId: string, now = Date.now()): StoredPoint | null {
   const raw = readStored(lastPosKey(profileId))
   if (!raw) return null
   try {
-    const v = JSON.parse(raw) as Partial<Point>
-    return typeof v.lat === "number" && typeof v.lng === "number" && Number.isFinite(v.lat) && Number.isFinite(v.lng) ? { lat: v.lat, lng: v.lng } : null
+    const v = JSON.parse(raw) as Partial<StoredPoint>
+    if (typeof v.lat !== "number" || typeof v.lng !== "number" || !Number.isFinite(v.lat) || !Number.isFinite(v.lng)) return null
+    if (typeof v.at !== "number" || !Number.isFinite(v.at) || now - v.at > LAST_POS_MAX_AGE_MS || v.at > now + 60_000) return null
+    return { lat: v.lat, lng: v.lng, at: v.at }
   } catch {
     return null
   }
+}
+
+function minutesAgo(at: number): string {
+  const m = Math.max(0, Math.round((Date.now() - at) / 60_000))
+  return m <= 1 ? "just now" : `${m} min ago`
 }
 
 export type WalkModeProps = {
@@ -85,15 +117,19 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
   const [index, setIndex] = React.useState(0)
   const [start, setStart] = React.useState<Point | null>(null)
   const [fallbackPos, setFallbackPos] = React.useState<Point | null>(null)
-  const [lastKnown, setLastKnown] = React.useState<Point | null>(null)
+  const [lastKnown, setLastKnown] = React.useState<StoredPoint | null>(null)
   /** Every house logged this session (kept across re-plans), with its outcome. */
   const [outcomes, setOutcomes] = React.useState<Map<string, KnockOutcome>>(() => new Map())
   const [pitchId, setPitchId] = React.useState<string | null>(null)
   const [picking, setPicking] = React.useState(false)
   const [queued, setQueued] = React.useState(0)
   const [lastLog, setLastLog] = React.useState<LastLog | null>(null)
+  const [replanning, setReplanning] = React.useState(false)
 
   const planning = React.useRef(false)
+  const phaseRef = React.useRef(phase)
+  phaseRef.current = phase
+  const lockUntil = React.useRef(0)
   const outcomesRef = React.useRef(outcomes)
   outcomesRef.current = outcomes
   const positionRef = React.useRef<Point | null>(null)
@@ -106,6 +142,8 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
     (e: FlushEvent) => {
       if (e.kind === "sent") {
         setLastLog((l) => (l && l.client_id === e.clientId ? { ...l, status: "sent" } : l))
+        // The knock saved but its lead / quote did not (a booking with no lead): say so, the owner has to follow up.
+        if (e.result.message.includes("not created")) toast({ title: e.result.message, variant: "destructive" })
       } else if (e.kind === "rejected") {
         setLastLog((l) => (l && l.client_id === e.clientId ? { ...l, status: "failed" } : l))
         toast({ title: `Knock not saved: ${e.error}`, variant: "destructive" })
@@ -150,7 +188,7 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
 
   // Remember the latest fix so a later "denied" screen can offer it.
   React.useEffect(() => {
-    if (geo.position) writeStored(lastPosKey(profileId), JSON.stringify({ lat: geo.position.lat, lng: geo.position.lng }))
+    if (geo.position) writeStored(lastPosKey(profileId), JSON.stringify({ lat: geo.position.lat, lng: geo.position.lng, at: geo.position.at }))
   }, [geo.position, profileId])
 
   // ---------- Planning ----------
@@ -159,15 +197,26 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
     async (from: Point, replan: boolean) => {
       if (planning.current) return
       planning.current = true
-      setPhase("loading")
+      // Re-planning mid-walk keeps the current walk on screen (and loggable) until the new one arrives; a failure keeps it.
+      const keepWalk = replan && phaseRef.current === "walking"
+      const failed = (message: string) => {
+        if (keepWalk) {
+          toast({ title: `Couldn't re-plan: ${message}`, description: "Carry on with this walk and try again later.", variant: "destructive" })
+        } else {
+          setError(message)
+          setPhase("error")
+        }
+      }
+      if (keepWalk) setReplanning(true)
+      else setPhase("loading")
       setError(null)
       try {
         // Re-plan: send what is still queued first so the server's "knocked recently" rule sees it too.
         if (replan) await flush()
-        const res = await startWalkAction(from.lat, from.lng)
+        // Every house logged this session is left out on the server before it takes the top doors (some may still be queued).
+        const res = await withTimeout(startWalkAction(from.lat, from.lng, Array.from(outcomesRef.current.keys())), PLAN_TIMEOUT_MS)
         if (!res.ok) {
-          setError(res.error)
-          setPhase("error")
+          failed(res.error)
           return
         }
         const next = replan ? excludeLogged(res.walk.stops, new Set(outcomesRef.current.keys())) : res.walk.stops
@@ -176,15 +225,17 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
         setStart(from)
         setIndex(0)
         setPicking(false)
+        // The house under the crew member's finger just changed: a tap already on its way must not log the new one.
+        if (keepWalk) lockUntil.current = Date.now() + TAP_GUARD_MS
         setPhase(next.length ? "walking" : "finished")
       } catch {
-        setError("Couldn't reach the server. Check your signal and try again.")
-        setPhase("error")
+        failed("Couldn't reach the server. Check your signal and try again.")
       } finally {
         planning.current = false
+        setReplanning(false)
       }
     },
-    [flush],
+    [flush, toast],
   )
 
   const startWalking = () => {
@@ -200,7 +251,7 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
     if (phase !== "locating") return
     if (geo.position) {
       void plan({ lat: geo.position.lat, lng: geo.position.lng }, false)
-    } else if (geo.status === "denied" || geo.status === "unavailable" || geo.status === "unsupported") {
+    } else if (geo.status === "denied" || geo.status === "unavailable" || geo.status === "timeout" || geo.status === "unsupported") {
       setPhase("denied")
     }
   }, [phase, geo.position, geo.status, plan])
@@ -221,25 +272,36 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
 
   const current: WalkStopView | null = stops[index] ?? null
   const doneIds = React.useMemo(() => new Set(stops.filter((s) => outcomes.has(s.id)).map((s) => s.id)), [stops, outcomes])
-  const bookedCount = React.useMemo(() => Array.from(outcomes.values()).filter((o) => o === "booked").length, [outcomes])
+  /** Booked across the whole session (the "Walk complete" line). */
+  const sessionBooked = React.useMemo(() => Array.from(outcomes.values()).filter((o) => o === "booked").length, [outcomes])
+  /** Booked among this walk's stops (the progress line, next to this walk's "8 of 25"). */
+  const walkBooked = React.useMemo(() => stops.filter((s) => outcomes.get(s.id) === "booked").length, [stops, outcomes])
+
+  const tapLocked = () => Date.now() < lockUntil.current
+  const lockTaps = () => {
+    lockUntil.current = Date.now() + TAP_GUARD_MS
+  }
 
   const advance = (done: ReadonlySet<string>) => {
     const next = nextStopIndex(stops, done, index)
     setPicking(false)
+    lockTaps()
     if (next === null) setPhase("finished")
     else setIndex(next)
   }
 
   const logOutcome = (outcome: KnockOutcome, callbackWindow?: string) => {
     const stop = current
-    if (!stop) return
+    if (!stop || tapLocked()) return
+    // Only a live fix is the knock's location; a remembered "last known" point could be another street entirely.
+    const fix = geo.position
     const input: LogKnockInput = {
       client_id: newClientId(),
       parcel_id: stop.id,
       outcome,
       knocked_at: new Date().toISOString(),
-      lat: pos?.lat ?? null,
-      lng: pos?.lng ?? null,
+      lat: fix?.lat ?? null,
+      lng: fix?.lng ?? null,
       pitch_id: pitchId,
       // quote_low / quote_high are left off: the server fills in the tier price for quote_given and booked.
       callback_window: callbackWindow ?? null,
@@ -254,11 +316,26 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
   }
 
   const onPick = (outcome: KnockOutcome) => {
-    if (outcome === "call_back") setPicking(true)
-    else logOutcome(outcome)
+    if (tapLocked()) return
+    if (outcome === "call_back") {
+      setPicking(true)
+      lockTaps()
+    } else logOutcome(outcome)
   }
 
-  const skip = () => advance(doneIds)
+  const skip = () => {
+    if (!tapLocked()) advance(doneIds)
+  }
+
+  const backToWalk = () => {
+    const next = nextStopIndex(stops, doneIds, -1)
+    setError(null)
+    if (next === null) setPhase("finished")
+    else {
+      setIndex(next)
+      setPhase("walking")
+    }
+  }
 
   const changePitch = (id: string | null) => {
     setPitchId(id)
@@ -268,7 +345,7 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
   // ---------- Render ----------
 
   const pitchScript = walk?.pitches.find((p) => p.id === pitchId)?.script?.trim() || null
-  const serviceLabel = walk?.season.label ?? ""
+  const serviceLabel = walk ? priceServiceLabel(walk.season.service) : ""
   const remaining = stops.length - doneIds.size
   const queuedChip =
     queued > 0 ? (
@@ -313,10 +390,16 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
           <MapPinOff aria-hidden="true" />
           <AlertTitle>We couldn&rsquo;t get your location</AlertTitle>
           <AlertDescription className="flex flex-col gap-3">
-            <span>
-              Walk Mode plans the route from where you&rsquo;re standing. Allow location for this site in your browser settings (it&rsquo;s only used while this
-              screen is open), then try again.
-            </span>
+            {geo.status === "timeout" || geo.status === "unavailable" ? (
+              <span>
+                Your phone hasn&rsquo;t found a GPS fix yet. Step away from tall buildings or wait a few seconds, then try again.
+              </span>
+            ) : (
+              <span>
+                Walk Mode plans the route from where you&rsquo;re standing. Allow location for this site in your browser settings (it&rsquo;s only used while
+                this screen is open), then try again.
+              </span>
+            )}
             <div className="flex flex-col gap-2">
               <Button type="button" variant="outline" className="h-12 w-full text-base" onClick={startWalking}>
                 <RefreshCw aria-hidden="true" />
@@ -325,7 +408,7 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
               {lastKnown ? (
                 <Button type="button" variant="outline" className="h-12 w-full text-base" onClick={useLastKnown}>
                   <LocateFixed aria-hidden="true" />
-                  Use last known location
+                  Use last known location ({minutesAgo(lastKnown.at)})
                 </Button>
               ) : null}
             </div>
@@ -355,6 +438,11 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
             <RefreshCw aria-hidden="true" />
             Try again
           </Button>
+          {stops.length > 0 ? (
+            <Button type="button" variant="ghost" className="h-12 w-full text-base" onClick={backToWalk}>
+              Back to my walk
+            </Button>
+          ) : null}
         </AlertDescription>
       </Alert>
     )
@@ -368,7 +456,7 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
           <h1 className="text-lg font-bold text-ink">{outcomes.size ? "Walk complete" : "No good doors nearby"}</h1>
           <p className="text-sm text-ink-muted">
             {outcomes.size
-              ? `${outcomes.size} ${outcomes.size === 1 ? "door" : "doors"} logged${bookedCount ? `, ${bookedCount} booked` : ""}.`
+              ? `${outcomes.size} ${outcomes.size === 1 ? "door" : "doors"} logged${sessionBooked ? `, ${sessionBooked} booked` : ""}.`
               : "Nothing nearby looks good to knock right now. Try again from another street, or later in the day."}
           </p>
           {queuedChip}
@@ -385,7 +473,7 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
     <div className="flex flex-col gap-3">
       <div className="flex items-end justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <ProgressBar total={stops.length} handled={doneIds.size} booked={bookedCount} />
+          <ProgressBar total={stops.length} handled={doneIds.size} booked={walkBooked} />
         </div>
         {queuedChip}
       </div>
@@ -406,9 +494,9 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
             ))}
           </NativeSelect>
         </div>
-        <Button type="button" variant="outline" className="h-11 shrink-0 px-3 text-sm" onClick={replan}>
-          <RefreshCw aria-hidden="true" />
-          Re-plan
+        <Button type="button" variant="outline" className="h-11 shrink-0 px-3 text-sm" onClick={replan} disabled={replanning} aria-busy={replanning}>
+          <RefreshCw aria-hidden="true" className={cn(replanning && "animate-spin")} />
+          {replanning ? "Re-planning..." : "Re-plan"}
         </Button>
       </div>
 
@@ -437,7 +525,7 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
       >
         <NextCard stop={current} pitch={pitchScript ?? current.pitch} serviceLabel={serviceLabel} onSkip={skip} canSkip={remaining > 1} />
         {picking ? (
-          <ComebackPicker onConfirm={(w) => logOutcome("call_back", w)} onCancel={() => setPicking(false)} />
+          <ComebackPicker onConfirm={(w) => logOutcome("call_back", w)} onCancel={() => !tapLocked() && setPicking(false)} />
         ) : (
           <OutcomeButtons onPick={onPick} />
         )}

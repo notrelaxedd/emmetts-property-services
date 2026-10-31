@@ -10,7 +10,7 @@
  *   from(t).select(cols?)                      cols ignored: always returns whole rows
  *     .eq(col, v) .neq(col, v) .in(col, vs) .is(col, v)      filters (AND-ed, strict equality)
  *     .gte(col, v) .lte(col, v) .ilike(col, pattern)         range filters (null never matches) and %-wildcard match
- *     .order(col, { ascending? }) .limit(n)
+ *     .order(col, { ascending? }) .limit(n) .range(from, to)   (range: inclusive offsets, like supabase-js)
  *     .maybeSingle()  -> row | null (error if > 1)   .single() -> row (error PGRST116 if 0 or > 1)
  *     or await it directly -> { data: rows[], error }
  *   from(t).insert(rowOrRows)[.select()[.single()]]   fills id / created_at / updated_at if absent
@@ -78,6 +78,7 @@ export function fakeDb(
     private filters: ((r: Record<string, unknown>) => boolean)[] = [];
     private orderBy: { col: string; asc: boolean }[] = [];
     private max: number | null = null;
+    private skip = 0;
     private mode: "select" | "insert" | "update" | "delete" = "select";
     private payload: unknown;
     private returning = false; // .select() after a write
@@ -140,6 +141,11 @@ export function fakeDb(
       this.max = n;
       return this;
     }
+    range(from: number, to: number) {
+      this.skip = Math.max(0, from);
+      this.max = Math.max(0, to - from + 1);
+      return this;
+    }
     single() {
       this.one = "single";
       return this;
@@ -176,6 +182,7 @@ export function fakeDb(
             return (x < y ? -1 : x > y ? 1 : 0) * (asc ? 1 : -1);
           });
         }
+        if (this.skip > 0) hit = hit.slice(this.skip);
         if (this.max !== null) hit = hit.slice(0, this.max);
       }
       if (!returned) return { data: null, error: null };

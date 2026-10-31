@@ -13,6 +13,7 @@ import {
   parcelFromFeature,
   parcelLayerUrl,
   parcelQueryParams,
+  pulledParcelIsResidential,
   queryParcels,
   readMapped,
   streetOf,
@@ -338,5 +339,20 @@ describe("address helpers", () => {
     expect(isResidential("520", prefixes)).toBe(false);
     expect(isResidential(null, prefixes)).toBe(false);
     expect(isResidential("510", [])).toBe(false);
+  });
+});
+
+describe("pulledParcelIsResidential", () => {
+  const prefixes = ["510", "511"];
+  it("counts a parcel with no land use as residential only when no land-use field is mapped", () => {
+    expect(pulledParcelIsResidential(null, prefixes, false)).toBe(true);
+    expect(pulledParcelIsResidential("", prefixes, false)).toBe(true);
+    expect(pulledParcelIsResidential(null, prefixes, true)).toBe(false);
+  });
+  it("still applies the prefixes to a land use that is there", () => {
+    expect(pulledParcelIsResidential("5100", prefixes, false)).toBe(true);
+    expect(pulledParcelIsResidential("400", prefixes, false)).toBe(false);
+    expect(pulledParcelIsResidential("400", prefixes, true)).toBe(false);
+    expect(pulledParcelIsResidential(511, prefixes, true)).toBe(true);
   });
 });

@@ -34,6 +34,8 @@ export type SimpleScoreInput = {
   nearCustomer: NearCustomer;
   ownerOccupied: boolean | null;
   ownerIsEntity: boolean;
+  /** True when the light was judged for the owner's chosen slot, not now: the reason then says "this slot". */
+  forSlot?: boolean;
 };
 
 export const SCORE_MAX = 12;
@@ -90,7 +92,8 @@ export function simpleScore(input: SimpleScoreInput, weights: ScoreWeights): Sim
   const candidates: { text: string; value: number }[] = [];
   candidates.push({ text: input.tier ? LAWN_REASON[input.tier] : "", value: weighted.lawn });
   candidates.push({ text: CUSTOMER_REASON[input.nearCustomer] ?? "", value: weighted.customer });
-  candidates.push({ text: input.light === "green" ? "good time now" : input.light === "yellow" ? "maybe home now" : "", value: weighted.time });
+  const when = input.forSlot ? "for this slot" : "now";
+  candidates.push({ text: input.light === "green" ? `good time ${when}` : input.light === "yellow" ? `maybe home ${when}` : "", value: weighted.time });
   candidates.push({ text: input.ownerOccupied === true && !rental ? "owner-occupied" : "", value: weighted.owner });
   // A rental scores 0 but is worth saying: it changes the pitch. Ranks after every point-earning factor.
   if (rental) candidates.push({ text: "Rental (landlord pitch)", value: 0 });

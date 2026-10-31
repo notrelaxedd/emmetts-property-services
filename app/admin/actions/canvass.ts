@@ -274,8 +274,8 @@ export async function planSessionAction(input: {
   const { date, start, end } = parsed.data
   try {
     const db = requireSupabaseAdmin()
-    // The light (and so each house's points) is judged at the slot's start.
-    const { parcels, settings } = await loadParcelViews(db, { limit: 5000, slot: slotAt(date, start) })
+    // The light (and so each house's points) is judged over the whole slot.
+    const { parcels, settings } = await loadParcelViews(db, { limit: 5000, slot: slotAt(date, start, end) })
     const byId = new Map(parcels.map((p) => [p.id, p]))
     const planParcels: PlanParcel[] = parcels.map((p) => ({
       id: p.id,
@@ -346,48 +346,6 @@ export async function rankForSlotAction(input: {
       }),
       light: areaLight(rows),
     }
-  } catch (e) {
-    return fail(e)
-  }
-}
-
-const savePlanSchema = z
-  .object({
-    date: dateSchema,
-    start: timeSchema,
-    end: timeSchema,
-    parcel_ids: z.array(idSchema).min(1).max(500),
-    notes: z.string().trim().max(2000).nullable().optional(),
-  })
-  .refine((v) => v.end > v.start, { message: "The slot must end after it starts.", path: ["end"] })
-
-/** Save a planned route so the knock logger shows the next stops that day. */
-export async function savePlanAction(input: {
-  date: string
-  start: string
-  end: string
-  parcel_ids: string[]
-  notes?: string | null
-}): Promise<ActionResult> {
-  const session = await requireOwner()
-  const parsed = savePlanSchema.safeParse(input)
-  if (!parsed.success) return { ok: false, reason: parsed.error.issues[0]?.message ?? "Invalid plan." }
-  try {
-    const db = requireSupabaseAdmin()
-    check(
-      await db.from("canvass_plans").insert({
-        for_date: parsed.data.date,
-        slot_start: parsed.data.start,
-        slot_end: parsed.data.end,
-        parcel_ids: parsed.data.parcel_ids,
-        created_by: session.profile.id,
-        notes: parsed.data.notes?.trim() ? parsed.data.notes.trim() : null,
-      }),
-      "save plan",
-    )
-    revalidatePath("/admin/canvass/plan")
-    revalidatePath("/crew/walk")
-    return { ok: true, message: `Plan saved: ${parsed.data.parcel_ids.length} stop(s) on ${parsed.data.date}.` }
   } catch (e) {
     return fail(e)
   }

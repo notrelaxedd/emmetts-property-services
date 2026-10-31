@@ -10,6 +10,7 @@ import {
   loadStreets,
   loadTodayPlan,
   loadWalk,
+  nearestFirst,
   pickStreetCode,
   slotAt,
   stopsFromViews,
@@ -87,6 +88,12 @@ describe("loadParcelViews", () => {
     expect(slotAt("2026-10-29", "17:15:00")?.at.toISOString()).toBe("2026-10-29T21:15:00.000Z");
     expect(slotAt("nope", "17:15")).toBeNull();
     expect(slotAt("2026-10-29", "late")).toBeNull();
+  });
+  it("slotAt carries the end when it is after the start", () => {
+    expect(slotAt("2026-10-29", "15:00", "17:00")?.end?.toISOString()).toBe("2026-10-29T21:00:00.000Z");
+    expect(slotAt("2026-10-29", "15:00", "14:00")?.end).toBeUndefined();
+    expect(slotAt("2026-10-29", "15:00", null)?.end).toBeUndefined();
+    expect(slotAt("2026-10-29", "15:00", "junk")?.at.toISOString()).toBe("2026-10-29T19:00:00.000Z");
   });
   it("honours ids (in the given order) and the limit", async () => {
     const { db, a, c } = seed();
@@ -271,6 +278,54 @@ describe("loadWalk", () => {
     expect(ids).not.toContain(houses[1].id);
     expect(ids).not.toContain(houses[2].id);
     expect(r.counts).toMatchObject({ dnk: 1, recent: 1, notResidential: 1, taken: 3 });
+  });
+
+  it("leaves out houses the phone already logged before taking walk_doors (a re-plan still comes back full)", async () => {
+    const { db, houses } = walkSeed({ walk_doors: 3 });
+    const first = await loadWalk(db, { ...start, now: THU_EVENING });
+    const logged = first.stops.map((s) => s.id);
+    const again = await loadWalk(db, { ...start, now: THU_EVENING, exclude: logged });
+    expect(again.stops).toHaveLength(3);
+    expect(again.stops.some((s) => logged.includes(s.id))).toBe(false);
+    expect(again.counts.recent).toBe(3);
+    expect(houses.length).toBeGreaterThan(6);
+  });
+
+  it("walks houses with no land use when the field map has no land-use field (the pull kept them all)", async () => {
+    const { db } = walkSeed();
+    for (const p of db.tables.parcels) (p as { land_use: string | null }).land_use = null;
+    const r = await loadWalk(db, { ...start, now: THU_EVENING });
+    expect(r.stops).toHaveLength(HOUSES);
+    expect(r.counts.notResidential).toBe(0);
+    // With a land-use field mapped, a parcel with no land use is not a house we know of.
+    (db.tables.canvass_settings[0] as { parcel_field_map: Record<string, unknown> }).parcel_field_map.land_use = { field: "LUC", source: "auto", candidates: [] };
+    const mapped = await loadWalk(db, { ...start, now: THU_EVENING });
+    expect(mapped.stops).toEqual([]);
+    expect(mapped.counts.notResidential).toBe(HOUSES);
+  });
+
+  it("reads the whole box before keeping the nearest, so a crowded box never drops the houses next to the crew", async () => {
+    const { db, houses } = walkSeed();
+    // 2,100 houses ~600 m north, inserted before the eight next to the crew (an unordered LIMIT 2000 would keep only them).
+    const filler = Array.from({ length: 2100 }, (_, i) =>
+      parcelRow({ block_group_geoid: GEOID, address: `${20000 + i * 2} LAKE RD`, parcel_id: `PIN-F${i}`, centroid_lat: 41.4756 + 0.0054, centroid_lng: -81.8396 + (i % 50) * 0.00002 }),
+    );
+    db.tables.parcels = [...filler, ...db.tables.parcels] as never;
+    const r = await loadWalk(db, { ...start, now: THU_EVENING });
+    const ids = r.stops.map((s) => s.id);
+    for (const h of houses) expect(ids).toContain(h.id);
+  });
+
+  it("nearestFirst keeps the closest within the radius, at most the limit", () => {
+    const rows = [
+      { id: "far", centroid_lat: 41.48, centroid_lng: -81.8396 },
+      { id: "near", centroid_lat: 41.4757, centroid_lng: -81.8396 },
+      { id: "mid", centroid_lat: 41.477, centroid_lng: -81.8396 },
+      { id: "none", centroid_lat: null, centroid_lng: null },
+    ];
+    expect(nearestFirst(rows, 41.4756, -81.8396, 800, 10).map((x) => x.p.id)).toEqual(["near", "mid", "far"]);
+    expect(nearestFirst(rows, 41.4756, -81.8396, 800, 2).map((x) => x.p.id)).toEqual(["near", "mid"]);
+    expect(nearestFirst(rows, 41.4756, -81.8396, 200, 10).map((x) => x.p.id)).toEqual(["near", "mid"]);
   });
 
   it("leaves red-light houses out and reports them", async () => {

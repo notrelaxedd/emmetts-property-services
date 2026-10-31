@@ -41,6 +41,16 @@ describe("fullAddress", () => {
   it("title-cases city names", () => {
     expect(titleCaseCity("NORTH OLMSTED")).toBe("North Olmsted");
   });
+  it("keeps mixed-case names with inner capitals and capitalises Mc names in shouting input", () => {
+    expect(titleCaseCity("McArthur")).toBe("McArthur");
+    expect(titleCaseCity("DeGraff")).toBe("DeGraff");
+    expect(titleCaseCity(titleCaseCity("McArthur"))).toBe("McArthur");
+    expect(titleCaseCity("MCARTHUR")).toBe("McArthur");
+    expect(titleCaseAddress("123 McKinley Ave")).toBe("123 McKinley Ave");
+    expect(titleCaseAddress("123 MCKINLEY AVE")).toBe("123 McKinley Ave");
+    expect(titleCaseCity("Rocky river")).toBe("Rocky River");
+    expect(titleCaseAddress("12 O'BRIEN CT")).toBe("12 O'Brien Ct");
+  });
 });
 
 describe("houseNumber (reused from score.ts)", () => {

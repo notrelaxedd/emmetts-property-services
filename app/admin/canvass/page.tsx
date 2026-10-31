@@ -12,7 +12,7 @@ import { Stat } from "@/components/ui/stat"
 import { requireOwner } from "@/lib/auth/session"
 import { areaLight, toMapParcel, toParcelRow } from "@/lib/canvass/admin-rows"
 import type { MapParcel, ParcelRow } from "@/lib/canvass/admin-rows"
-import { isResidential } from "@/lib/canvass/county"
+import { pulledParcelIsResidential } from "@/lib/canvass/county"
 import { loadParcelViews, slotAt } from "@/lib/canvass/load"
 import { areaBanner, defaultSlot, parseHomeParams, slotLabel, topList } from "@/lib/canvass/owner-view"
 import type { HomeParams } from "@/lib/canvass/owner-view"
@@ -41,7 +41,7 @@ type HomeData = {
 async function load(params: HomeParams, now: Date): Promise<HomeData> {
   const db = requireSupabaseAdmin()
   const since = new Date(now.getTime() - KNOCK_WINDOW_DAYS * 86_400_000).toISOString()
-  const slot = params.date && params.start ? slotAt(params.date, params.start) : null
+  const slot = params.date && params.start ? slotAt(params.date, params.start, params.end) : null
   const [views, parcelCount, dnkCount, recentKnocks] = await Promise.all([
     loadParcelViews(db, { slot, now }),
     db.from("parcels").select("id", { count: "exact", head: true }),
@@ -55,7 +55,10 @@ async function load(params: HomeParams, now: Date): Promise<HomeData> {
   const { settings } = views
   const rows = views.parcels.map(toParcelRow)
   const shapes = views.parcels.map(toMapParcel).filter((s): s is MapParcel => s !== null)
-  const singleFamilyIds = new Set(views.parcels.filter((p) => isResidential(p.land_use, settings.residential_land_use_prefixes)).map((p) => p.id))
+  const landUseMapped = !!settings.parcel_field_map?.land_use?.field
+  const singleFamilyIds = new Set(
+    views.parcels.filter((p) => pulledParcelIsResidential(p.land_use, settings.residential_land_use_prefixes, landUseMapped)).map((p) => p.id),
+  )
   const { top, moreMatching } = topList(rows, {
     hideDnk: params.hideDnk,
     hideRecent: params.hideRecent,
@@ -140,7 +143,9 @@ export default async function CanvassPage({ searchParams }: { searchParams?: Rec
           </div>
 
           <SlotPicker
+            key={slotChosen ? `${params.date}|${params.start}|${params.end ?? ""}` : "now"}
             defaults={defaults}
+            slot={slotChosen ? { date: params.date as string, start: params.start as string, end: params.end } : null}
             active={slotChosen}
             filters={{ hideDnk: params.hideDnk, hideRecent: params.hideRecent, singleFamily: params.singleFamily }}
             recencyDays={data.recencyDays}

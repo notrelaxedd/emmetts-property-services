@@ -356,6 +356,15 @@ export function isResidential(landUse: string | number | null | undefined, prefi
   return prefixes.some((p) => p.length > 0 && code.startsWith(p.trim()));
 }
 
+/**
+ * The residential check for a parcel already pulled. When the field map has no land-use field the pull kept every
+ * parcel (no residential filter), so a parcel with no land use counts as residential rather than as "not a house".
+ */
+export function pulledParcelIsResidential(landUse: string | number | null | undefined, prefixes: readonly string[], landUseMapped: boolean): boolean {
+  if (!landUseMapped && (landUse === null || landUse === undefined || String(landUse).trim() === "")) return true;
+  return isResidential(landUse, prefixes);
+}
+
 const present = (v: unknown) => v !== null && v !== undefined && v !== "";
 
 /** Read one key through the map: null mapping → null. Property keys are matched exactly, then case-insensitively. */

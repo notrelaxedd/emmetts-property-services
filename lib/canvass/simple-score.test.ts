@@ -110,3 +110,12 @@ describe("reasons", () => {
     expect(s.points).toBe(1);
   });
 });
+
+describe("simpleScore reasons for a chosen slot", () => {
+  it("says 'for this slot' instead of 'now' when the light was judged for a slot", () => {
+    const b = { ...base, tier: null, nearCustomer: "none" as const, ownerOccupied: null };
+    expect(simpleScore({ ...b, light: "green" }, W).reasons).toContain("good time now");
+    expect(simpleScore({ ...b, light: "green", forSlot: true }, W).reasons).toContain("good time for this slot");
+    expect(simpleScore({ ...b, light: "yellow", forSlot: true }, W).reasons).toContain("maybe home for this slot");
+  });
+});

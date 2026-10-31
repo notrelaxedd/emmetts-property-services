@@ -200,6 +200,13 @@ export function geomToLatLngs(geom: ParcelGeom): LatLng[][][] {
   return polys.map((rings) => rings.map((ring) => ring.map(([lng, lat]) => [lat, lng] as LatLng)));
 }
 
+/** True when two bounds (from `boundsOf`) are the same box, or both null. */
+export function sameBounds(a: [LatLng, LatLng] | null, b: [LatLng, LatLng] | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a[0][0] === b[0][0] && a[0][1] === b[0][1] && a[1][0] === b[1][0] && a[1][1] === b[1][1];
+}
+
 /** [[minLat, minLng], [maxLat, maxLng]] over every parcel polygon, or null when nothing has geometry. */
 export function boundsOf(parcels: readonly { geom: ParcelGeom }[]): [LatLng, LatLng] | null {
   let minLat = Infinity, minLng = Infinity, maxLat = -Infinity, maxLng = -Infinity;

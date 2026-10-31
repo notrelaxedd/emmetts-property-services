@@ -2,9 +2,8 @@
 
 import * as React from "react"
 import dynamic from "next/dynamic"
-import { useRouter } from "next/navigation"
-import { Printer, Route, Save } from "lucide-react"
-import { planSessionAction, savePlanAction } from "@/app/admin/actions/canvass"
+import { Printer, Route } from "lucide-react"
+import { planSessionAction } from "@/app/admin/actions/canvass"
 import type { LatLng } from "@/components/admin/canvass/plan-map"
 import { PlanList } from "@/components/admin/canvass/plan-list"
 import { Button } from "@/components/ui/button"
@@ -43,7 +42,6 @@ export type PlanFormProps = {
 }
 
 export function PlanForm({ defaultDate, base, baseLabel }: PlanFormProps) {
-  const router = useRouter()
   const { toast } = useToast()
   const [pending, startTransition] = React.useTransition()
   const [date, setDate] = React.useState(defaultDate)
@@ -52,7 +50,6 @@ export function PlanForm({ defaultDate, base, baseLabel }: PlanFormProps) {
   const [startMode, setStartMode] = React.useState<"base" | "map">("base")
   const [picked, setPicked] = React.useState<LatLng | null>(null)
   const [plan, setPlan] = React.useState<PlanView | null>(null)
-  const [saved, setSaved] = React.useState(false)
 
   const startPoint: LatLng | null = startMode === "base" ? base : picked
 
@@ -83,25 +80,7 @@ export function PlanForm({ defaultDate, base, baseLabel }: PlanFormProps) {
         return
       }
       setPlan(r.plan)
-      setSaved(false)
       if (r.plan.stops.length === 0) toast({ title: "No house fits this slot", description: "Try a different time or pull more streets." })
-    })
-  }
-
-  const savePlan = () => {
-    if (!plan || plan.stops.length === 0) return
-    startTransition(async () => {
-      const r = await savePlanAction({
-        date: plan.slot.date,
-        start: plan.slot.start,
-        end: plan.slot.end,
-        parcel_ids: plan.stops.map((s) => s.id),
-      })
-      toast(r.ok ? { title: r.message ?? "Plan saved", variant: "success" } : { title: "Couldn't save the plan", description: r.reason, variant: "destructive" })
-      if (r.ok) {
-        setSaved(true)
-        router.refresh()
-      }
     })
   }
 
@@ -172,13 +151,9 @@ export function PlanForm({ defaultDate, base, baseLabel }: PlanFormProps) {
         <>
           <PlanList plan={plan} />
           <div className="no-print flex flex-wrap items-center gap-2">
-            <Button type="button" disabled={pending || plan.stops.length === 0 || saved} onClick={savePlan}>
-              <Save /> {saved ? "Saved for the logger" : "Save plan for the logger"}
-            </Button>
             <Button type="button" variant="outline" disabled={plan.stops.length === 0} onClick={() => window.print()}>
               <Printer /> Print list
             </Button>
-            {saved ? <span className="text-sm text-ink-muted">Plan saved for {plan.slot.date}.</span> : null}
           </div>
         </>
       ) : null}

@@ -171,8 +171,9 @@ owner can tap a label for the four-factor breakdown; crew payloads never carry t
 
 ## Knock-now light
 
-`lib/canvass/lights.ts`: green inside the window, yellow within an hour of it (or a learned bucket mean in
-0.25–0.45), red otherwise; every house shows the light, the window in plain English (`plainWindow`) and, when red,
+`lib/canvass/lights.ts`: green inside the window, yellow within an hour of it (or, for an area-guessed or learned
+window, a learned bucket that has knocks and a mean in 0.25–0.45), red otherwise; a do-not-knock house is red with an
+all-red strip; every house shows the light, the window in plain English (`plainWindow`) and, when red,
 the next good time within 7 days. The parcel page adds a Mon–Sun strip (2pm–8pm weekdays, 9am–8pm weekends).
 
 ## Plan my session
@@ -180,7 +181,7 @@ the next good time within 7 days. The parcel page adds a Mon–Sun strip (2pm–
 Pick a date and a slot (default next weekday 3–5pm) and a start point. `planSession` drops `do_not_knock`
 houses, houses knocked in the last `recency_days` (default 14) and houses whose window does not overlap the slot,
 sorts by score, takes `doors_per_hour × hours` (default 25/hour), and orders them nearest-neighbour + 2-opt from the
-start point. "Save plan" writes `canvass_plans`. Walk Mode (`/crew/walk`, `/admin/canvass/walk`) builds its own route from the
+start point. The plan is for the owner to read or print ("Print list"); it is not handed to the crew. Walk Mode (`/crew/walk`, `/admin/canvass/walk`) builds its own route from the
 phone's location: up to `walk_doors` green / yellow houses within ~800 m, ranked by points, ordered nearest-neighbour
 + 2-opt.
 

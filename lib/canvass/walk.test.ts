@@ -50,6 +50,16 @@ describe("buildWalk filtering", () => {
   });
 });
 
+describe("buildWalk exclude", () => {
+  it("leaves out excluded houses before taking n, counting them as recent", () => {
+    const hs = [house({ points: 12 }), house({ points: 11 }), house({ points: 10 }), house({ points: 9 })];
+    const r = walk(hs, { n: 2, exclude: new Set([hs[0].id, hs[1].id]) });
+    expect(r.stops.map((s) => s.id).sort()).toEqual([hs[2].id, hs[3].id].sort());
+    expect(r.counts.recent).toBe(2);
+    expect(r.counts.taken).toBe(2);
+  });
+});
+
 describe("buildWalk ranking", () => {
   it("takes the top n by points, green before yellow on a tie, then routes them", () => {
     const parcels = [

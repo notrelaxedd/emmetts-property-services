@@ -9,7 +9,7 @@
  */
 import type { BlockGroup, CanvassSettings, Knock, KnockOutcome, Parcel } from "../db/types";
 import { fullAddress, ownerFirstName } from "./address";
-import { knockNow, plainWindow, weekStrip } from "./lights";
+import { knockNow, noKnockStrip, plainWindow, weekStrip } from "./lights";
 import type { KnockNow } from "./lights";
 import { estimateTurf, quotesForAll, turfSource } from "./quote";
 import { nearCustomerLevel } from "./score";
@@ -32,8 +32,11 @@ export type KnockRef = Pick<Knock, "id" | "parcel_id" | "knocked_at" | "outcome"
 export type BlockGroupRef = Pick<BlockGroup, "geoid" | "prior_window"> &
   Partial<Pick<BlockGroup, "median_hh_income" | "pct_not_in_lf" | "pct_hh_nonworking_parent" | "commute_dist" | "depart_dist">>;
 
-/** A chosen time to judge the light in (the owner's slot picker); without one the light is for "now". */
-export type ScoreSlot = { at: Date };
+/**
+ * A chosen time to judge the light in (the owner's slot picker); without one the light is for "now". With `end`
+ * the light covers the whole slot [at, end): green when any of it is in the window.
+ */
+export type ScoreSlot = { at: Date; end?: Date | null };
 
 export type AssembleInput = {
   parcels: readonly Parcel[];
@@ -169,6 +172,8 @@ export function assembleOne(
   const blockGroup = parcel.block_group_geoid ? (input.blockGroups.get(parcel.block_group_geoid) ?? null) : null;
   const learned = input.learned?.get(learnedGroupKey(parcel)) ?? null;
   const window = resolveWindow({ parcel, blockGroup, learned, settings });
+  // The learned layer only softens an area guess; it never overrides what a homeowner or the crew said.
+  const lightLearned = window.source === "learned" || window.source === "acs" ? learned : null;
   const at = input.slot?.at ?? input.now ?? new Date();
 
   // The estimate is recomputed from the current settings so the quote updates live when hardscape_pct changes.
@@ -177,7 +182,7 @@ export function assembleOne(
   const quotes = quotesForAll(turfParcel, settings);
   const quote = quotes[season.service];
 
-  const knock = parcel.do_not_knock ? NO_KNOCK : knockNow(window.window, at, CANVASS_TZ, learned);
+  const knock = parcel.do_not_knock ? NO_KNOCK : knockNow(window.window, at, CANVASS_TZ, lightLearned, input.slot?.end ?? null);
   const plain = plainWindow(
     window,
     blockGroup
@@ -199,6 +204,7 @@ export function assembleOne(
       nearCustomer,
       ownerOccupied: parcel.owner_occupied,
       ownerIsEntity: parcel.owner_is_entity,
+      forSlot: !!input.slot,
     },
     settings.score_weights,
   );
@@ -223,7 +229,7 @@ export function assembleOne(
     plain,
     simple,
     medianIncome: blockGroup?.median_hh_income ?? null,
-    strip: weekStrip(window.window, learned),
+    strip: parcel.do_not_knock ? noKnockStrip() : weekStrip(window.window, lightLearned),
     quote,
     quotes,
     lastKnock,

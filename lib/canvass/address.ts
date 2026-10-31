@@ -15,8 +15,14 @@ export type AddressParts = Pick<Parcel, "address" | "city" | "zip"> & { state?: 
 /** Tokens that stay upper case in a street line: compass directions, PO, route prefixes. */
 const STREET_UPPER = new Set(["N", "S", "E", "W", "NE", "NW", "SE", "SW", "PO", "US", "SR", "CR", "OH", "I"]);
 
-/** "O'BRIEN" → "O'Brien": a one-letter prefix before an apostrophe capitalises the next letter too. */
+/**
+ * "O'BRIEN" → "O'Brien": a one-letter prefix before an apostrophe capitalises the next letter too. "MCKINLEY" →
+ * "McKinley". A word that already mixes cases with a capital inside ("McArthur", "DeGraff") is left as it is.
+ */
 function capitalizeWord(word: string): string {
+  if (/[a-z]/.test(word) && /[A-Z]/.test(word.slice(1))) return word;
+  const mc = /^mc([a-z]{2,})$/i.exec(word);
+  if (mc && word === word.toUpperCase()) return `Mc${mc[1].charAt(0).toUpperCase()}${mc[1].slice(1).toLowerCase()}`;
   const lower = word.toLowerCase();
   const cap = lower.charAt(0).toUpperCase() + lower.slice(1);
   const m = /^([a-z]')([a-z].*)$/i.exec(cap);
@@ -50,7 +56,7 @@ function titleCase(text: string, keepUpper: boolean): string {
 /**
  * "1234 LAKEVIEW AVE" → "1234 Lakeview Ave"; "W 210TH ST" → "W 210th St"; "55 NE 3RD AVE" → "55 NE 3rd Ave".
  * Compass directions (N, S, E, W, NE …) stay upper case; unit numbers like "APT 4B" keep the letter upper.
- * Already mixed-case input comes back unchanged in shape, so it is safe to apply twice.
+ * Already mixed-case input keeps its inner capitals ("McKinley Ave"), so it is safe to apply twice.
  */
 export function titleCaseAddress(address: string | null | undefined): string {
   return titleCase(address ?? "", true);

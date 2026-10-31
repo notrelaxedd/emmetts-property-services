@@ -5,13 +5,14 @@
  * A light never shows a number. green = a good time, yellow = maybe, red = probably not home:
  *   green   the hour is inside the window (a range, or "anytime" on a matching day)
  *   yellow  within 1 hour before/after the range; or the day kind differs but the window is "anytime";
- *           or the learned bucket for that hour has a mean answer rate in [0.25, 0.45)
+ *           or the learned bucket for that hour has real knocks and a mean answer rate in [0.25, 0.45)
+ *           (an untouched bucket sits at its Beta(1,3) prior mean of exactly 0.25: that is not evidence)
  *   red     everything else
  */
 import type { BlockGroup, Parcel } from "../db/types";
 import { typicalCommute } from "./census";
 import type { TimeWindow, WindowResult } from "./types";
-import { CANVASS_TZ, dayKindOf, formatWindow, learnedBucketAt, type LearnedWindow } from "./windows";
+import { CANVASS_TZ, dayKindOf, formatWindow, learnedBucketAt, type LearnedBucket, type LearnedWindow } from "./windows";
 
 export type Light = "green" | "yellow" | "red";
 
@@ -95,10 +96,21 @@ function lightForSpan(window: TimeWindow, weekday: number, from: number, to: num
     light = "yellow"; // "anytime weekdays" on a Saturday: maybe
   }
   if (light === "red" && learned) {
-    const bucket = learnedBucketAt(learned, { weekday, hour: Math.floor(from) });
-    if (bucket && bucket.mean >= LEARNED_YELLOW_MIN && bucket.mean < LEARNED_YELLOW_MAX) light = "yellow";
+    // Every hour the span touches (one for a block or an instant, several for a slot).
+    const last = Math.max(Math.floor(from), Math.ceil(to) - 1);
+    for (let hour = Math.floor(from); hour <= last; hour++) {
+      if (learnedSaysMaybe(learnedBucketAt(learned, { weekday, hour }))) {
+        light = "yellow";
+        break;
+      }
+    }
   }
   return light;
+}
+
+/** A learned bucket turns red into yellow only with knocks behind it and a middling answer rate. */
+function learnedSaysMaybe(bucket: LearnedBucket | null): boolean {
+  return !!bucket && bucket.knocks > 0 && bucket.mean >= LEARNED_YELLOW_MIN && bucket.mean < LEARNED_YELLOW_MAX;
 }
 
 /** The light for one whole local hour block (hour 16 = 4:00-5:00pm) on a weekday (0 = Sunday … 6 = Saturday). */
@@ -141,11 +153,16 @@ export function nextGreenBlock(window: TimeWindow, now: Date, timezone = CANVASS
   return null;
 }
 
-/** The light right now, its label, and (when it is not green) when the next good time is. */
-export function knockNow(window: TimeWindow, now: Date, timezone = CANVASS_TZ, learned?: LearnedWindow | null): KnockNow {
+/**
+ * The light right now, its label, and (when it is not green) when the next good time is. With `until` (a slot's
+ * end) the light is for the whole span [now, until) on that local day: green if any of it is in the window.
+ */
+export function knockNow(window: TimeWindow, now: Date, timezone = CANVASS_TZ, learned?: LearnedWindow | null, until?: Date | null): KnockNow {
   const here = localParts(now, timezone);
   const t = here.hour + here.minute / 60;
-  const light = lightForSpan(window, here.weekday, t, t + EPS, learned);
+  const spanHours = until ? (until.getTime() - now.getTime()) / 3_600_000 : 0;
+  const to = Number.isFinite(spanHours) && spanHours > 0 ? Math.min(24, t + spanHours) : t + EPS;
+  const light = lightForSpan(window, here.weekday, t, to, learned);
   const next = light === "green" ? null : nextGreenBlock(window, now, timezone);
   return { light, label: LIGHT_LABELS[light], nextGoodTime: next?.label ?? null, nextGoodAt: next?.at ?? null };
 }
@@ -225,10 +242,19 @@ const STRIP_ORDER: StripDay["day"][] = [1, 2, 3, 4, 5, 6, 0];
  * 9am-8pm (hours 9..20). `timezone` is accepted for symmetry with knockNow; the strip is in local clock hours.
  */
 export function weekStrip(window: TimeWindow, learned: LearnedWindow | null, _timezone = CANVASS_TZ): StripDay[] {
+  return stripOf((day, hour) => lightAt(window, day, hour, learned));
+}
+
+/** The same seven days, every block red: a do-not-knock house never has a good time. */
+export function noKnockStrip(): StripDay[] {
+  return stripOf(() => "red");
+}
+
+function stripOf(lightOf: (day: StripDay["day"], hour: number) => Light): StripDay[] {
   return STRIP_ORDER.map((day) => {
     const first = day === 0 || day === 6 ? 9 : 14;
     const blocks: StripDay["blocks"] = [];
-    for (let hour = first; hour <= 20; hour++) blocks.push({ hour, light: lightAt(window, day, hour, learned) });
+    for (let hour = first; hour <= 20; hour++) blocks.push({ hour, light: lightOf(day, hour) });
     return { day, blocks };
   });
 }

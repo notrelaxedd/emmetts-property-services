@@ -3,6 +3,7 @@
  * price lines on the next-house card, the "Come back later" choices, and the list arithmetic for advancing and
  * re-planning. No next/* or db imports so each piece is unit-tested.
  */
+import { SERVICE_LABELS, type ServiceKey } from "./types";
 import type { WalkStopView } from "./views";
 
 /**
@@ -17,6 +18,14 @@ export function googleMapsWalkUrl(lat: number, lng: number): string {
 export function greetingFor(ownerFirstName: string | null): string {
   const name = ownerFirstName?.trim();
   return name ? `Hi, is ${name} home?` : "Hi, is the homeowner home?";
+}
+
+/**
+ * The service named on the price line: the one service the price is for ("Snow removal"), never the longer season
+ * headline ("Snow removal + spring mowing pre-sale"), which would read as a bundle at that price.
+ */
+export function priceServiceLabel(service: ServiceKey): string {
+  return SERVICE_LABELS[service] ?? "";
 }
 
 /** "$40 leaf cleanup" for a priced house; "Leaf cleanup: quote on site" otherwise. Crew never see owner-only wording. */

@@ -59,19 +59,22 @@ const makeColumns = (weights?: ScoreWeights) =>
     meta: { className: "hidden md:table-cell" },
     cell: (c) => <span className="block max-w-[12rem] truncate">{c.getValue() || "?"}</span>,
   }),
-  col.accessor("lot_sqft", {
+  // Unknown values are read as undefined (not null): TanStack's sortUndefined only recognises undefined, and a null would sort as 0.
+  col.accessor((r) => r.lot_sqft ?? undefined, {
+    id: "lot_sqft",
     header: "Lot sqft",
     meta: { className: "hidden text-right lg:table-cell", align: "right" },
     sortUndefined: "last",
-    cell: (c) => <span className="tabular-nums">{formatSqft(c.getValue()) || "?"}</span>,
+    cell: (c) => <span className="tabular-nums">{formatSqft(c.row.original.lot_sqft) || "?"}</span>,
   }),
-  col.accessor("turf_sqft", {
+  col.accessor((r) => r.turf_sqft ?? undefined, {
+    id: "turf_sqft",
     header: "Turf sqft",
     meta: { className: "text-right", align: "right" },
     sortUndefined: "last",
     cell: (c) => (
       <span className="inline-flex items-center justify-end gap-1 tabular-nums">
-        {formatSqft(c.getValue()) || "?"}
+        {formatSqft(c.row.original.turf_sqft) || "?"}
         {c.row.original.turfSource ? (
           <Badge variant={c.row.original.turfSource === "traced" ? "success" : "outline"} className="px-1.5 py-0 text-[10px]">
             {c.row.original.turfSource === "traced" ? "traced" : "est"}
@@ -80,17 +83,19 @@ const makeColumns = (weights?: ScoreWeights) =>
       </span>
     ),
   }),
-  col.accessor("market_value", {
+  col.accessor((r) => r.market_value ?? undefined, {
+    id: "market_value",
     header: "Market value",
     meta: { className: "hidden text-right lg:table-cell", align: "right" },
     sortUndefined: "last",
-    cell: (c) => <span className="tabular-nums">{formatMoney(c.getValue()) || "?"}</span>,
+    cell: (c) => <span className="tabular-nums">{formatMoney(c.row.original.market_value) || "?"}</span>,
   }),
-  col.accessor("owner_occupied", {
+  col.accessor((r) => r.owner_occupied ?? undefined, {
+    id: "owner_occupied",
     header: "Owner occ.",
     meta: { className: "hidden text-center md:table-cell", align: "center" },
     sortUndefined: "last",
-    cell: (c) => yesNo(c.getValue()),
+    cell: (c) => yesNo(c.row.original.owner_occupied),
   }),
   col.accessor("scorePoints", {
     id: "score",

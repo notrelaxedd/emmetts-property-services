@@ -2,7 +2,8 @@
 
 import * as React from "react"
 
-export type GeoStatus = "idle" | "asking" | "ok" | "denied" | "unavailable" | "unsupported"
+/** "timeout": no fix in time (a cold GPS outdoors); permission is fine, so trying again is the fix. */
+export type GeoStatus = "idle" | "asking" | "ok" | "denied" | "unavailable" | "timeout" | "unsupported"
 
 export type GeoPosition = { lat: number; lng: number; accuracy: number; at: number }
 
@@ -13,10 +14,11 @@ export type Geolocation = {
   retry: () => void
 }
 
-const OPTIONS: PositionOptions = { enableHighAccuracy: true, timeout: 8_000, maximumAge: 15_000 }
+/** A cold outdoor GPS fix can take well over 8 s; 20 s before "timeout". */
+const OPTIONS: PositionOptions = { enableHighAccuracy: true, timeout: 20_000, maximumAge: 15_000 }
 
 /**
- * One fix on mount (high accuracy, 8 s timeout), then `watchPosition` while the screen is open so the
+ * One fix on mount (high accuracy, 20 s timeout), then `watchPosition` while the screen is open so the
  * selected house follows the crew member down the street. Never throws; `status` says what happened.
  */
 export function useGeolocation(enabled = true): Geolocation {
@@ -41,7 +43,7 @@ export function useGeolocation(enabled = true): Geolocation {
     }
     const onError = (e: GeolocationPositionError) => {
       if (cancelled) return
-      setStatus(e.code === e.PERMISSION_DENIED ? "denied" : "unavailable")
+      setStatus(e.code === e.PERMISSION_DENIED ? "denied" : e.code === e.TIMEOUT ? "timeout" : "unavailable")
     }
 
     try {
@@ -75,6 +77,10 @@ export function useGeolocation(enabled = true): Geolocation {
     }
   }, [enabled, attempt])
 
-  const retry = React.useCallback(() => setAttempt((n) => n + 1), [])
+  // "asking" is set here, in the same render as the caller's own state, so nobody reads the old "denied" in between.
+  const retry = React.useCallback(() => {
+    setStatus("asking")
+    setAttempt((n) => n + 1)
+  }, [])
   return { position, status, retry }
 }

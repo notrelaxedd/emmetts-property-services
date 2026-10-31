@@ -97,6 +97,9 @@ describe("assembleParcelViews", () => {
     expect(vc.simple.points).toBe(0);
     expect(vc.simple.label).toBe("low");
     expect(vc.plain.text).toBe("Do not knock");
+    // ... and the 7-day strip has no good time either (its window is "anytime", which would read green).
+    expect(vc.strip).toHaveLength(7);
+    expect(vc.strip.every((d) => d.blocks.every((x) => x.light === "red"))).toBe(true);
 
     // d: unknown lot → "Lot size unknown", no price; customer_id set; "SMITH, MARIA" greets as Maria.
     expect(vd.turf_sqft_est).toBeNull();
@@ -135,6 +138,41 @@ describe("assembleParcelViews", () => {
     const morning = assembleParcelViews({ ...base(), parcels: [p, q], knocks, slot: { at: new Date("2026-10-29T07:00:00.000Z") } });
     expect(morning[0].knock.light).toBe("red"); // Thu 3am
     expect(morning[0].knock.nextGoodTime).toBe("today 6pm");
+  });
+
+  it("judges a slot over its whole span and words the reason for the slot", () => {
+    const p = parcelRow({ block_group_geoid: GEOID });
+    // Thu 2026-10-29 1pm Ohio against weekdays 4-6pm: red at 1pm, yellow for 1-3:30pm (inside the 3pm margin).
+    const at = new Date("2026-10-29T17:00:00.000Z");
+    const instant = assembleParcelViews({ ...base(), parcels: [p], knocks: [], slot: { at } })[0];
+    expect(instant.knock.light).toBe("red");
+    const span = assembleParcelViews({ ...base(), parcels: [p], knocks: [], slot: { at, end: new Date("2026-10-29T19:30:00.000Z") } })[0];
+    expect(span.knock.light).toBe("yellow");
+    expect(span.simple.reasons.join(" ")).not.toMatch(/now/);
+    const green = assembleParcelViews({ ...base(), parcels: [p], knocks: [], slot: { at, end: new Date("2026-10-29T21:00:00.000Z") } })[0];
+    expect(green.knock.light).toBe("green");
+    expect(green.simple.reasons).toContain("good time for this slot");
+    // No slot: the reason is still about now.
+    expect(assembleParcelViews({ ...base(), parcels: [p], knocks: [] })[0].simple.reasons).toContain("good time now");
+  });
+
+  it("never lets the learned layer override a homeowner's stated window", () => {
+    const stated = parcelRow({ block_group_geoid: GEOID, callback_window: "weekdays after 5" });
+    const other = parcelRow({ block_group_geoid: GEOID });
+    // Ten knocks make a learned layer. The weekday 10am bucket answered 1 of 4: (1 + 1) / (1 + 3 + 4) = 0.25, "maybe".
+    const tue10am = "2026-10-27T14:00:00.000Z";
+    const knocks = [
+      ...Array.from({ length: 4 }, (_, i) => knockRow({ parcel_id: other.id, knocked_at: tue10am, outcome: i === 0 ? "not_interested" : "no_answer" })),
+      ...Array.from({ length: 6 }, () => knockRow({ parcel_id: other.id, knocked_at: "2026-10-29T22:30:00.000Z", outcome: "no_answer" })),
+    ];
+    const tue10 = { at: new Date(tue10am) };
+    const [v, o] = assembleParcelViews({ ...base(), parcels: [stated, other], knocks, slot: tue10 });
+    expect(o.window.source).toBe("learned");
+    expect(o.knock.light).toBe("yellow"); // the learned band softens the area's guess
+    expect(v.window.source).toBe("homeowner");
+    expect(v.knock.light).toBe("red"); // ... but not what the homeowner said
+    // The strip outside "after 5" stays red on the weekend.
+    expect(v.strip[5].blocks.every((x) => x.light === "red")).toBe(true);
   });
 
   it("knockSummary keeps the latest knock and the count", () => {

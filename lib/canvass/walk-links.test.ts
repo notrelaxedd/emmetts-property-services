@@ -5,6 +5,7 @@ import {
   googleMapsWalkUrl,
   greetingFor,
   nextStopIndex,
+  priceServiceLabel,
   quoteLine,
   walkProgress,
 } from "./walk-links";
@@ -98,5 +99,13 @@ describe("callbackWindowText", () => {
     expect(callbackWindowText("custom", "  after   6 on Tuesdays ")).toBe("after 6 on Tuesdays");
     expect(callbackWindowText("custom", "   ")).toBeNull();
     expect(callbackWindowText("custom", "x".repeat(300))).toHaveLength(200);
+  });
+});
+
+describe("priceServiceLabel", () => {
+  it("names the one service the price is for, not the season headline", () => {
+    expect(quoteLine("$45", priceServiceLabel("snow"))).toBe("$45 snow removal");
+    expect(quoteLine("$30", priceServiceLabel("mow"))).toBe("$30 mowing");
+    expect(quoteLine("$40", priceServiceLabel("leaf_cleanup"))).toBe("$40 leaf cleanup");
   });
 });

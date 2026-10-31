@@ -52,6 +52,7 @@ type NumberField = {
   percent?: boolean
   prefix?: string
   suffix?: string
+  /** Not used by the input, which steps by 1 for `integer` fields and takes any value otherwise (17.5 %, $15.10), so the browser never blocks a value the server accepts. */
   step?: number
   integer?: boolean
   min?: number
@@ -157,7 +158,7 @@ function NumberInput({
           id={id}
           type="number"
           inputMode="decimal"
-          step={f.step ?? "any"}
+          step={f.integer ? 1 : "any"}
           min={f.min}
           max={f.max}
           value={value}
@@ -337,7 +338,8 @@ export function CanvassSettingsForm({ initial, defaultOffer }: { initial: Canvas
   const boundsPreview = parsedBounds.ok ? boundsSummary(parsedBounds.bounds) : parsedBounds.error
 
   return (
-    <form onSubmit={submit} className="space-y-4">
+    // noValidate: the submit handler (readNumber, parseBounds, parseTierDraft) and the server schema validate and say why in a toast.
+    <form onSubmit={submit} noValidate className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>Pricing</CardTitle>
@@ -372,7 +374,7 @@ export function CanvassSettingsForm({ initial, defaultOffer }: { initial: Canvas
                       id={`cs-bounds-${key}`}
                       type="number"
                       inputMode="numeric"
-                      step={100}
+                      step={1}
                       min={1}
                       value={draft.bounds[key]}
                       onChange={(e) => setDraft((d) => ({ ...d, bounds: { ...d.bounds, [key]: e.target.value } }))}
@@ -411,7 +413,7 @@ export function CanvassSettingsForm({ initial, defaultOffer }: { initial: Canvas
                   id="cs-value_tier_max"
                   type="number"
                   inputMode="decimal"
-                  step={0.5}
+                  step="any"
                   min={0}
                   max={10}
                   disabled={!draft.value_tier_enabled}
@@ -468,7 +470,7 @@ export function CanvassSettingsForm({ initial, defaultOffer }: { initial: Canvas
                   id={`cs-weight-${f.key}`}
                   type="number"
                   inputMode="decimal"
-                  step={0.1}
+                  step="any"
                   min={0}
                   max={10}
                   value={draft.weights[f.key]}

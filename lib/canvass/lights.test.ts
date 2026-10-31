@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { LearnedWindow } from "./windows";
 import type { TimeWindow, WindowResult } from "./types";
-import { knockNow, lightAt, nextGreenBlock, plainWindow, weekStrip } from "./lights";
+import { knockNow, lightAt, nextGreenBlock, noKnockStrip, plainWindow, weekStrip } from "./lights";
+import { emptyLearnedBuckets } from "./windows";
 
 const range = (days: TimeWindow["days"], start: number, end: number): TimeWindow => ({ kind: "range", days, start, end });
 const anytime = (days: TimeWindow["days"]): TimeWindow => ({ kind: "anytime", days });
@@ -107,6 +108,33 @@ describe("knockNow", () => {
     // learned never downgrades a green hour
     expect(knockNow(w, WED_17, "America/New_York", learned(0.3)).light).toBe("green");
   });
+
+  it("ignores untouched learned buckets (their 0.25 prior mean is not evidence)", () => {
+    const buckets = emptyLearnedBuckets(range("weekdays", 16, 18));
+    const untouched = buckets["weekdays:10"];
+    expect(untouched.knocks).toBe(0);
+    expect(untouched.mean).toBeCloseTo(0.25, 10); // exactly the yellow band's floor
+    const learned = { window: range("weekdays", 17, 19), reason: "", knocks: 12, best: {} as never, buckets } as LearnedWindow;
+    const w = range("weekdays", 17, 19);
+    expect(knockNow(w, WED_10, "America/New_York", learned).light).toBe("red");
+    expect(knockNow(w, SAT_10, "America/New_York", learned).light).toBe("red");
+    // The strip stays red outside the window too (weekends were all yellow before).
+    const strip = weekStrip(w, learned);
+    expect(strip[5].blocks.every((b) => b.light === "red")).toBe(true);
+    // A bucket with knocks in the band still turns red yellow.
+    const knocked = { ...learned, buckets: { ...buckets, "weekdays:10": { ...untouched, knocks: 4, answers: 1, mean: 2 / 8 } } } as LearnedWindow;
+    expect(knockNow(w, WED_10, "America/New_York", knocked).light).toBe("yellow");
+  });
+
+  it("judges a slot over its whole span when given an end", () => {
+    const evenings = range("weekdays", 17, 19);
+    const wed15 = new Date("2026-10-28T19:00:00Z"); // Wed 3pm
+    const wed17 = new Date("2026-10-28T21:00:00Z");
+    expect(knockNow(evenings, wed15).light).toBe("red"); // the instant: two hours before the window
+    expect(knockNow(evenings, wed15, "America/New_York", null, wed17).light).toBe("yellow"); // 3-5pm brushes the 4pm margin
+    expect(knockNow(evenings, wed15, "America/New_York", null, new Date("2026-10-28T22:00:00Z")).light).toBe("green"); // 3-6pm overlaps 5pm
+    expect(knockNow(evenings, wed15, "America/New_York", null, wed15).light).toBe("red"); // an empty span is the instant
+  });
 });
 
 describe("lightAt", () => {
@@ -211,5 +239,10 @@ describe("weekStrip", () => {
     expect(s[5].blocks.find((b) => b.hour === 10)?.light).toBe("yellow");
     expect(s[5].blocks.find((b) => b.hour === 11)?.light).toBe("yellow"); // same 10-12 bucket
     expect(s[5].blocks.find((b) => b.hour === 12)?.light).toBe("red");
+  });
+  it("noKnockStrip is the same shape, all red", () => {
+    const s = noKnockStrip();
+    expect(s.map((d) => d.blocks.length)).toEqual(weekStrip(anytime("any"), null).map((d) => d.blocks.length));
+    expect(s.every((d) => d.blocks.every((b) => b.light === "red"))).toBe(true);
   });
 });

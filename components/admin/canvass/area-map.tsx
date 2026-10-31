@@ -9,7 +9,7 @@ import * as React from "react"
 import { Eraser, MapPinned, Pencil, Undo2 } from "lucide-react"
 import { MapContainer, Polygon, Popup } from "react-leaflet"
 import type { LatLng, MapParcel, ParcelRow } from "@/lib/canvass/admin-rows"
-import { boundsOf, CUSTOMER_COLOR, DO_NOT_KNOCK_COLOR, geomToLatLngs, outcomeLabel, scoreColor } from "@/lib/canvass/admin-rows"
+import { boundsOf, CUSTOMER_COLOR, sameBounds, DO_NOT_KNOCK_COLOR, geomToLatLngs, outcomeLabel, scoreColor } from "@/lib/canvass/admin-rows"
 import { LIGHT_EMOJI } from "./light-badge"
 import { scoreLabelText } from "@/lib/canvass/simple-score"
 import type { GeoPolygon } from "@/lib/canvass/types"
@@ -68,7 +68,12 @@ function parcelStyle(p: MapParcel) {
 export function AreaMap({ shapes, rows, center, pulling, onPull }: AreaMapProps) {
   const draw = useDrawPolygon()
   const byId = React.useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows])
-  const bounds = React.useMemo(() => boundsOf(shapes), [shapes])
+  // Re-fit only when the area itself changes (a pull), not on every page reload that sends the same shapes again
+  // (a filter toggle or a slot change): that would throw away the owner's zoom and pan.
+  const freshBounds = React.useMemo(() => boundsOf(shapes), [shapes])
+  const boundsRef = React.useRef(freshBounds)
+  if (!sameBounds(boundsRef.current, freshBounds)) boundsRef.current = freshBounds
+  const bounds = boundsRef.current
   const { MapEvents, DrawLayer } = draw
 
   const polygons = React.useMemo(

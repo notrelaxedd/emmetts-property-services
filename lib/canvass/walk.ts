@@ -65,6 +65,11 @@ export type WalkInput<T extends WalkParcel = WalkParcel> = {
   recencyDays: number;
   /** "Now" for the recency rule; defaults to the real clock. */
   now?: Date | string;
+  /**
+   * Houses already logged this session that the server may not have yet (still queued on the phone): left out like
+   * a recent knock, before the top `n` are taken, so a re-plan still comes back with `n` doors.
+   */
+  exclude?: ReadonlySet<string>;
 };
 
 export type WalkResult<T extends WalkParcel = WalkParcel> = {
@@ -118,6 +123,10 @@ export function buildWalk<T extends WalkParcel>(input: WalkInput<T>): WalkResult
   for (const p of input.parcels) {
     if (p.do_not_knock) {
       counts.dnk++;
+      continue;
+    }
+    if (input.exclude?.has(p.id)) {
+      counts.recent++;
       continue;
     }
     if (p.lastKnockAt) {

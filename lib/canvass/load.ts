@@ -9,7 +9,7 @@ import { check } from "../ops/types";
 import type { Db } from "../ops/types";
 import { assembleParcelViews, learnedWindowsFor } from "./assemble";
 import type { BlockGroupRef, CustomerRef, KnockRef, ScoreSlot } from "./assemble";
-import { isResidential } from "./county";
+import { pulledParcelIsResidential } from "./county";
 import { distanceMeters } from "./geometry";
 import { hangerConversions } from "./hangers";
 import type { HangerEventRow } from "./hangers";
@@ -164,11 +164,22 @@ async function loadParcelRows(db: Db, opts: { ids?: string[]; limit?: number }):
 
 // ---------- Public loaders ----------
 
-/** The instant of a local "YYYY-MM-DD" + "HH:MM" (Ohio time) as a slot, or null when either is malformed. */
-export function slotAt(date: string, hhmm: string): ScoreSlot | null {
+/**
+ * The instant of a local "YYYY-MM-DD" + "HH:MM" (Ohio time) as a slot, or null when either is malformed. With an
+ * `endHhmm` later than the start the slot also carries its end, so the light is judged over the whole slot.
+ */
+export function slotAt(date: string, hhmm: string, endHhmm?: string | null): ScoreSlot | null {
   try {
     const at = zonedToUtc(date, hhmm.slice(0, 5));
-    return Number.isFinite(at.getTime()) ? { at } : null;
+    if (!Number.isFinite(at.getTime())) return null;
+    if (!endHhmm) return { at };
+    let end: Date | null = null;
+    try {
+      end = zonedToUtc(date, endHhmm.slice(0, 5));
+    } catch {
+      end = null; // a junk end leaves the slot as its start instant
+    }
+    return end && Number.isFinite(end.getTime()) && end.getTime() > at.getTime() ? { at, end } : { at };
   } catch {
     return null;
   }
@@ -215,29 +226,56 @@ export function bboxAround(lat: number, lng: number, meters: number): { minLat: 
   return { minLat: lat - dLat, maxLat: lat + dLat, minLng: lng - dLng, maxLng: lng + dLng };
 }
 
-/** Parcels within `radiusMeters` of a point (bounding box on the centroid columns), nearest first. */
+/** Rows per request when reading a bounding box (at or under PostgREST's default `max_rows` of 1000). */
+const BOX_PAGE = 1000;
+/** Most rows read from one box before giving up on the rest (a very dense box still keeps its nearest houses). */
+const BOX_MAX_ROWS = 20_000;
+
+/**
+ * Parcels within `radiusMeters` of a point (bounding box on the centroid columns), nearest first, at most `rowLimit`.
+ * The box is read in full (paged, in id order) before the nearest are kept: a plain LIMIT on an unordered box would
+ * keep an arbitrary strip of it and could drop the houses right next to the crew.
+ */
 async function parcelsWithin(db: Db, lat: number, lng: number, radiusMeters: number, rowLimit: number): Promise<{ p: Parcel; meters: number }[]> {
   const box = bboxAround(lat, lng, radiusMeters);
-  const rows =
-    check(
-      await db
-        .from("parcels")
-        .select("*")
-        .gte("centroid_lat", box.minLat)
-        .lte("centroid_lat", box.maxLat)
-        .gte("centroid_lng", box.minLng)
-        .lte("centroid_lng", box.maxLng)
-        .limit(rowLimit),
-      "nearby parcels",
-    ) ?? [];
+  const rows: Parcel[] = [];
+  for (let from = 0; from < BOX_MAX_ROWS; from += BOX_PAGE) {
+    const page =
+      check(
+        await db
+          .from("parcels")
+          .select("*")
+          .gte("centroid_lat", box.minLat)
+          .lte("centroid_lat", box.maxLat)
+          .gte("centroid_lng", box.minLng)
+          .lte("centroid_lng", box.maxLng)
+          .order("id", { ascending: true })
+          .range(from, from + BOX_PAGE - 1),
+        "nearby parcels",
+      ) ?? [];
+    rows.push(...page);
+    if (page.length < BOX_PAGE) break;
+  }
+  return nearestFirst(rows, lat, lng, radiusMeters, rowLimit);
+}
+
+/** The parcels within `radiusMeters` of the point, nearest first, at most `limit` of them. */
+export function nearestFirst<T extends Pick<Parcel, "centroid_lat" | "centroid_lng">>(
+  rows: readonly T[],
+  lat: number,
+  lng: number,
+  radiusMeters: number,
+  limit: number,
+): { p: T; meters: number }[] {
   const here: Position = [lng, lat];
   return rows
     .map((p) => ({ p, meters: p.centroid_lat !== null && p.centroid_lng !== null ? distanceMeters(here, [p.centroid_lng, p.centroid_lat]) : Infinity }))
     .filter((x) => x.meters <= radiusMeters)
-    .sort((a, b) => a.meters - b.meters);
+    .sort((a, b) => a.meters - b.meters)
+    .slice(0, Math.max(0, limit));
 }
 
-/** Houses considered around the walk's start (a bounding box this size holds well over a thousand lots). */
+/** Houses considered around the walk's start: the nearest this many in the box. */
 const WALK_PARCEL_LIMIT = 2000;
 
 /**
@@ -247,7 +285,7 @@ const WALK_PARCEL_LIMIT = 2000;
  */
 export async function loadWalk(
   db: Db,
-  opts: { lat: number; lng: number; radiusMeters?: number; now?: Date },
+  opts: { lat: number; lng: number; radiusMeters?: number; now?: Date; exclude?: readonly string[] },
 ): Promise<WalkResultView> {
   const { lat, lng } = opts;
   const now = opts.now ?? new Date();
@@ -275,6 +313,7 @@ export async function loadWalk(
     { settings, now },
   );
   const byId = new Map(views.map((v) => [v.id, v]));
+  const landUseMapped = !!settings.parcel_field_map?.land_use?.field;
   const candidates: (WalkParcel & { view: ParcelView })[] = views.map((v) => ({
     id: v.id,
     centroid: v.centroid_lat !== null && v.centroid_lng !== null ? [v.centroid_lng, v.centroid_lat] : null,
@@ -282,12 +321,19 @@ export async function loadWalk(
     points: v.simple.points,
     lastKnockAt: v.lastKnock?.knocked_at ?? null,
     do_not_knock: v.do_not_knock,
-    isResidential: isResidential(v.land_use, settings.residential_land_use_prefixes),
+    isResidential: pulledParcelIsResidential(v.land_use, settings.residential_land_use_prefixes, landUseMapped),
     street: v.street,
     houseNumber: houseNumber(v.address),
     view: v,
   }));
-  const walk = buildWalk({ parcels: candidates, start: { lat, lng }, n: settings.walk_doors, recencyDays: settings.recency_days, now });
+  const walk = buildWalk({
+    parcels: candidates,
+    start: { lat, lng },
+    n: settings.walk_doors,
+    recencyDays: settings.recency_days,
+    now,
+    exclude: opts.exclude?.length ? new Set(opts.exclude) : undefined,
+  });
   return {
     stops: walk.stops.flatMap((stop) => {
       const v = byId.get(stop.id);
