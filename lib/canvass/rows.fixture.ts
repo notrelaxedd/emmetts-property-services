@@ -5,7 +5,14 @@
 import { randomUUID } from "node:crypto";
 import { CANVASS_SETTINGS_ID } from "../db/types";
 import type { BlockGroup, CanvassSettings, Knock, Parcel } from "../db/types";
-import { DEFAULT_BASE_PRICES, DEFAULT_SEASON_MAP, emptyParcelFieldMap } from "./types";
+import {
+  DEFAULT_PRICE_TIERS,
+  DEFAULT_SCORE_WEIGHTS,
+  DEFAULT_SEASON_MAP,
+  DEFAULT_TIER_BOUNDS,
+  DEFAULT_TIER_MINUTES,
+  emptyParcelFieldMap,
+} from "./types";
 import type { GeoPolygon } from "./types";
 
 export const T0 = "2026-01-01T00:00:00.000Z";
@@ -30,9 +37,11 @@ export function canvassSettingsRow(over: Partial<CanvassSettings> = {}): Canvass
     created_at: T0,
     updated_at: T0,
     hardscape_pct: 0.12,
-    rate_per_1000_sqft: 6,
-    min_charge: 40,
-    base_prices: { ...DEFAULT_BASE_PRICES },
+    price_tiers: structuredClone(DEFAULT_PRICE_TIERS),
+    tier_bounds: { ...DEFAULT_TIER_BOUNDS },
+    tier_minutes: structuredClone(DEFAULT_TIER_MINUTES),
+    crew_size: 3,
+    pay_rate: 15,
     value_tier_enabled: false,
     value_tier_max: 1.1,
     doors_per_hour: 25,
@@ -47,6 +56,8 @@ export function canvassSettingsRow(over: Partial<CanvassSettings> = {}): Canvass
     parcel_field_map: emptyParcelFieldMap(),
     acs_vintage: "2023",
     offer_text: null,
+    score_weights: { ...DEFAULT_SCORE_WEIGHTS },
+    walk_doors: 25,
     ...over,
   };
 }
@@ -62,6 +73,7 @@ export function parcelRow(over: Partial<Parcel> = {}): Parcel {
     address: "19000 DETROIT RD",
     street: "DETROIT RD",
     city: "ROCKY RIVER",
+    state: "OH",
     zip: "44116",
     owner_display: "SMITH JOHN",
     mailing_address: "19000 DETROIT RD",

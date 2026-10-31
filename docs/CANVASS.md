@@ -134,14 +134,21 @@ chosen slot.
 - **Map-trace**: on the parcel page the crew draws the real lawn polygon(s) on the satellite view; the area comes
   from `@turf/area` (m² × 10.7639) and is saved as `turf_sqft_traced` + `turf_geom`. **Traced always overrides the
   estimate** (`effectiveTurf`).
-- **Range**: `price = base_prices[service] + rate_per_1000_sqft × turf / 1000`, floored at `min_charge`;
-  `low = round5(0.9 × price)`, `high = round5(1.15 × price)`, shown as "$75–$95". The `basis` string explains the
-  arithmetic on hover.
+- **Tiers, one price per service**: the effective turf picks a lot-size tier from `tier_bounds` (default small ≤ 4,000
+  < medium ≤ 8,000 < large ≤ 12,000 < xl sqft; each upper bound is inclusive). `price_tiers[service][tier]` is the
+  one price the owner sets in Settings (`quoteFor` / `quotesForAll` in `quote.ts`). Labels: `$40`, **Quote on site**
+  (an XL lot with no XL price), **Owner to fill in** (a blank cell), **Lot size unknown** (no turf at all).
+  Acceptance: turf 6,000 → medium → leaf cleanup **$40**; editing the table changes it.
+- **Profit check (owner pages only)**: when `tier_minutes[service][tier]` is filled in, `laborCost = crew_size ×
+  pay_rate × minutes ÷ 60` and `profit = price − laborCost`; a negative profit is flagged "under labor cost". Crew
+  surfaces (knock logger, Walk Mode) show only the price label, never labor, profit or score points.
 - **Value tier** (default **off**): when enabled, ×`value_tier_max` for houses valued ≥ $400k, half of that bump
-  at ≥ $250k, nothing below. The code caps the multiplier at **1.10** whatever the settings row says.
+  at ≥ $250k, nothing below. It applies to priced tiers only, and the code caps the multiplier at **1.10** whatever
+  the settings row says.
 
-Defaults: mow $35, edge $15, leaf cleanup $150, gutters $120, snow $45 per visit; $6.00 per 1,000 sqft; $40
-minimum.
+Defaults: leaf cleanup $30 / $40 / $50 (small / medium / large), XL quote on site; every other service blank
+("Owner to fill in") until the owner enters prices; crew of 3 at $15/hour; no minutes filled in. The old
+`base_prices` / `rate_per_1000_sqft` / `min_charge` columns were dropped in migration 1900.
 
 ## Priority score
 

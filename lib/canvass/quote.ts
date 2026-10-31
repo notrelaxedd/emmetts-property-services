@@ -2,14 +2,18 @@
  * Door quotes for the Canvass tab. Pure: no next/* or db imports.
  *
  * Turf comes from the county estimate (lot − building footprint − a hardscape share) unless the crew traced the
- * lawn on the satellite map, in which case the traced area wins. Every quote is a low/high RANGE built from the
- * settings row: base price per service + a rate per 1,000 sqft of turf, floored at the minimum charge, and (only when
- * the owner turns it on) nudged up by a value tier that the code caps at ×1.10 whatever the settings say.
+ * lawn on the satellite map, in which case the traced area wins. The turf picks a lot-size tier (small / medium /
+ * large / xl, cut by `tier_bounds`) and every service has ONE owner-set price per tier (`price_tiers`). A blank price
+ * is "Owner to fill in"; a blank XL price is "Quote on site". When the owner turns the value tier on, priced tiers
+ * are nudged up by a multiplier the code caps at ×1.10 whatever the settings say.
+ *
+ * Owner pages also get a profit check: crew_size × pay_rate × the tier's minutes ÷ 60 against the price. Crew-facing
+ * surfaces show only `label`.
  */
 import area from "@turf/area";
 import type { CanvassSettings, Parcel } from "../db/types";
-import { SERVICE_KEYS, SERVICE_LABELS } from "./types";
-import type { GeoFeatureCollection, ParcelGeom, QuoteRange, ServiceKey } from "./types";
+import { SERVICE_KEYS } from "./types";
+import type { GeoFeatureCollection, ParcelGeom, Quote, ServiceKey, TierBounds, TierKey } from "./types";
 
 export { seasonService } from "./season";
 
@@ -22,32 +26,19 @@ export const VALUE_TIER_FULL_AT = 400_000;
 /** Market value at which half of the value-tier multiplier applies. */
 export const VALUE_TIER_HALF_AT = 250_000;
 
-export const LOW_FACTOR = 0.9;
-export const HIGH_FACTOR = 1.15;
-
 export type TurfInput = Pick<Parcel, "lot_sqft" | "footprint_sqft" | "living_sqft" | "stories">;
 export type TurfParcel = Pick<Parcel, "turf_sqft_traced" | "turf_sqft_est">;
 export type QuoteSettings = Pick<
   CanvassSettings,
-  "base_prices" | "rate_per_1000_sqft" | "min_charge" | "value_tier_enabled" | "value_tier_max"
+  "price_tiers" | "tier_bounds" | "tier_minutes" | "crew_size" | "pay_rate" | "value_tier_enabled" | "value_tier_max"
 >;
 
 export type TurfSource = "traced" | "estimate";
 
-export type QuoteInput = {
-  /** Effective turf in sqft; null when the lot is unknown (the base price alone is quoted). */
-  turf_sqft: number | null;
-  market_value: number | null;
-  service: ServiceKey;
-  /** Where the turf number came from; only used in `basis`. */
-  turf_source?: TurfSource | null;
-};
-
 const finite = (v: number | null | undefined): v is number => typeof v === "number" && Number.isFinite(v);
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
-export const round5 = (n: number): number => Math.round(n / 5) * 5;
+const cents = (n: number): number => Math.round(n * 100) / 100;
 
-const sqft = (n: number) => `${Math.round(n).toLocaleString("en-US")} sqft`;
 const dollars = (n: number) => `$${Number.isInteger(n) ? n.toLocaleString("en-US") : n.toFixed(2)}`;
 
 /**
@@ -103,50 +94,83 @@ export function valueTierMultiplier(
   return Math.round((1 + (max - 1) * tier) * 1000) / 1000;
 }
 
-/** Low / high / mid dollars for one service, with a one-line `basis` for hover. */
-export function quoteRange(input: QuoteInput, settings: QuoteSettings): QuoteRange {
-  const service = input.service;
-  const base = finite(settings.base_prices?.[service]) ? Math.max(0, settings.base_prices[service]) : 0;
-  const rate = finite(settings.rate_per_1000_sqft) ? Math.max(0, settings.rate_per_1000_sqft) : 0;
-  const minCharge = finite(settings.min_charge) ? Math.max(0, settings.min_charge) : 0;
-  const turf = finite(input.turf_sqft) && input.turf_sqft >= 0 ? input.turf_sqft : null;
-
-  const parts: string[] = [`${SERVICE_LABELS[service]}: ${dollars(base)} base`];
-  let price = base;
-  if (turf !== null) {
-    price += (rate * turf) / 1000;
-    const source = input.turf_source === "traced" ? " traced" : input.turf_source === "estimate" ? " est." : "";
-    parts.push(`+ ${dollars(rate)}/1,000 sqft × ${sqft(turf)}${source}`);
-  } else {
-    parts.push("(turf unknown)");
-  }
-  if (price < minCharge) {
-    price = minCharge;
-    parts.push(`→ min charge ${dollars(minCharge)}`);
-  }
-  const tier = valueTierMultiplier(input.market_value, settings);
-  if (tier > 1) {
-    price *= tier;
-    parts.push(`× ${tier.toFixed(2)} value tier`);
-  }
-
-  const mid = Math.round(price);
-  const low = Math.max(0, round5(price * LOW_FACTOR));
-  const high = Math.max(low, round5(price * HIGH_FACTOR));
-  return { low, high, mid, basis: `${parts.join(" ")} = ${dollars(mid)}` };
+/**
+ * The lot-size tier for a turf area: small ≤ `small_max`, medium ≤ `medium_max`, large ≤ `large_max`, xl above
+ * (the upper bound of each tier is inclusive). Null when the turf is unknown.
+ */
+export function tierFor(turfSqft: number | null | undefined, bounds: TierBounds): TierKey | null {
+  if (!finite(turfSqft) || turfSqft < 0) return null;
+  if (turfSqft <= bounds.small_max) return "small";
+  if (turfSqft <= bounds.medium_max) return "medium";
+  if (turfSqft <= bounds.large_max) return "large";
+  return "xl";
 }
 
-/** A quote range for every service, from the parcel's effective turf and market value. */
-export function quoteRangesForAll(
-  parcel: TurfParcel & Pick<Parcel, "market_value">,
-  settings: QuoteSettings,
-): Record<ServiceKey, QuoteRange> {
-  const turf_sqft = effectiveTurf(parcel);
-  const turf_source = turfSource(parcel);
-  const out = {} as Record<ServiceKey, QuoteRange>;
-  for (const service of SERVICE_KEYS) {
-    out[service] = quoteRange({ turf_sqft, market_value: parcel.market_value, service, turf_source }, settings);
+/** The text for a quote: "$40", "Quote on site", "Owner to fill in" or "Lot size unknown". */
+export function formatQuote(q: Pick<Quote, "status" | "price">): string {
+  switch (q.status) {
+    case "priced":
+      return finite(q.price) ? dollars(q.price) : "Owner to fill in";
+    case "quote_on_site":
+      return "Quote on site";
+    case "unpriced":
+      return "Owner to fill in";
+    case "unknown_turf":
+      return "Lot size unknown";
   }
+}
+
+const cell = (table: QuoteSettings["price_tiers"] | undefined, service: ServiceKey, tier: TierKey): number | null => {
+  const v = table?.[service]?.[tier];
+  return finite(v) && v >= 0 ? v : null;
+};
+
+/**
+ * One service's quote for a house: the tier from its effective turf, the owner's price for that tier (after the
+ * value-tier multiplier when enabled; priced tiers only), and the labor / profit check when the tier has minutes.
+ */
+export function quoteFor(
+  service: ServiceKey,
+  parcel: TurfParcel & { market_value?: number | null },
+  settings: QuoteSettings,
+): Quote {
+  const turfSqft = effectiveTurf(parcel);
+  const tier = tierFor(turfSqft, settings.tier_bounds);
+  if (tier === null) {
+    const unknown = { service, tier, turfSqft, price: null, laborCost: null, profit: null, underCost: false } as const;
+    return { ...unknown, status: "unknown_turf", label: formatQuote({ status: "unknown_turf", price: null }) };
+  }
+
+  const base = cell(settings.price_tiers, service, tier);
+  const price = base === null ? null : cents(base * valueTierMultiplier(parcel.market_value, settings));
+  const status: Quote["status"] = price !== null ? "priced" : tier === "xl" ? "quote_on_site" : "unpriced";
+
+  const minutes = cell(settings.tier_minutes, service, tier);
+  const crew = finite(settings.crew_size) ? Math.max(1, settings.crew_size) : 1;
+  const rate = finite(settings.pay_rate) ? Math.max(0, settings.pay_rate) : 0;
+  const laborCost = minutes === null ? null : cents((crew * rate * minutes) / 60);
+  const profit = price !== null && laborCost !== null ? cents(price - laborCost) : null;
+
+  return {
+    service,
+    tier,
+    turfSqft,
+    status,
+    price,
+    label: formatQuote({ status, price }),
+    laborCost,
+    profit,
+    underCost: profit !== null && profit < 0,
+  };
+}
+
+/** A quote for every service, from the parcel's effective turf and market value. */
+export function quotesForAll(
+  parcel: TurfParcel & { market_value?: number | null },
+  settings: QuoteSettings,
+): Record<ServiceKey, Quote> {
+  const out = {} as Record<ServiceKey, Quote>;
+  for (const service of SERVICE_KEYS) out[service] = quoteFor(service, parcel, settings);
   return out;
 }
 
@@ -164,8 +188,3 @@ export function tracedAreaSqft(traced: GeoFeatureCollection | ParcelGeom | null 
 
 /** Spec name for `tracedAreaSqft`. */
 export const tracedArea = tracedAreaSqft;
-
-/** "$45–$60" (en dash, thousands separators). */
-export function formatRange(range: Pick<QuoteRange, "low" | "high">): string {
-  return `${dollars(Math.round(range.low))}–${dollars(Math.round(range.high))}`;
-}

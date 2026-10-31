@@ -9,14 +9,16 @@
  */
 
 import type {
-  BasePrices,
   CanvassSummaryContent,
   GeoFeatureCollection,
   KnockWeather,
   ParcelFieldMap,
   ParcelGeom,
   PriorWindow,
+  ScoreWeights,
   SeasonMap,
+  TierBounds,
+  TierTable,
 } from "../canvass/types";
 
 // ---------- Enums (Postgres enum types with the same names) ----------
@@ -533,6 +535,8 @@ export type Parcel = Base & {
   /** Street name without the house number, upper-cased (hanger codes, learned layer grouping). */
   street: string;
   city: string | null;
+  /** Two-letter state; county pulls are Ohio. */
+  state: string;
   zip: string | null;
   /** Owner name from the county record. Display / greeting only. */
   owner_display: string | null;
@@ -667,9 +671,15 @@ export type CanvassSummary = Base & {
 export type CanvassSettings = Base & {
   /** Single row; id is always `00000000-0000-0000-0000-000000000001`. */
   hardscape_pct: number;
-  rate_per_1000_sqft: number;
-  min_charge: number;
-  base_prices: BasePrices;
+  /** One price per service per lot-size tier; null = owner has not filled it in (xl null = "Quote on site"). */
+  price_tiers: TierTable;
+  /** Turf sqft cut-offs between the tiers. */
+  tier_bounds: TierBounds;
+  /** Estimated crew minutes per service per tier (null = unknown). Owner-only profit check. */
+  tier_minutes: TierTable;
+  crew_size: number;
+  /** Dollars per crew member per hour. */
+  pay_rate: number;
   value_tier_enabled: boolean;
   /** 1.0..1.10 */
   value_tier_max: number;
@@ -689,6 +699,10 @@ export type CanvassSettings = Base & {
   acs_vintage: string;
   /** Season offer printed on hangers; null = default copy. */
   offer_text: string | null;
+  /** Multipliers on the four simple-score factors. */
+  score_weights: ScoreWeights;
+  /** Doors in one Walk Mode route. */
+  walk_doors: number;
 };
 
 export const CANVASS_SETTINGS_ID = "00000000-0000-0000-0000-000000000001";

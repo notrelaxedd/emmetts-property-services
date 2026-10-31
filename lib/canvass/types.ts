@@ -123,8 +123,22 @@ export const SERVICE_LABELS: Record<ServiceKey, string> = {
   snow: "Snow removal",
 };
 
-/** `canvass_settings.base_prices`: dollars per visit per service. */
-export type BasePrices = Record<ServiceKey, number>;
+/** Lot-size tier, cut by turf sqft (`TierBounds`). */
+export type TierKey = "small" | "medium" | "large" | "xl";
+export const TIER_KEYS: TierKey[] = ["small", "medium", "large", "xl"];
+export const TIER_LABELS: Record<TierKey, string> = { small: "Small", medium: "Medium", large: "Large", xl: "XL" };
+
+/**
+ * `canvass_settings.price_tiers` (dollars per visit) and `tier_minutes` (crew minutes): service → tier → number.
+ * null = not filled in (an xl price of null reads "Quote on site"; a null minutes value means unknown).
+ */
+export type TierTable = Record<ServiceKey, Record<TierKey, number | null>>;
+
+/** `canvass_settings.tier_bounds`: small ≤ small_max < medium ≤ medium_max < large ≤ large_max < xl (turf sqft). */
+export type TierBounds = { small_max: number; medium_max: number; large_max: number };
+
+/** `canvass_settings.score_weights`: multipliers on the four simple-score factors. */
+export type ScoreWeights = { time: number; lawn: number; customer: number; owner: number };
 
 /** `canvass_settings.season_map`: month ("1".."12") → featured service. */
 export type SeasonMap = Record<string, ServiceKey>;
@@ -147,12 +161,57 @@ export type ScoreBreakdown = {
   neighborBoost: number;
 };
 
-export type QuoteRange = { low: number; high: number; mid: number; basis: string };
+/** One service's quote for one house (lib/canvass/quote.ts `quoteFor`). */
+export type Quote = {
+  service: ServiceKey;
+  /** Null when the turf is unknown. */
+  tier: TierKey | null;
+  turfSqft: number | null;
+  status: "priced" | "quote_on_site" | "unpriced" | "unknown_turf";
+  /** Dollars, after the value-tier multiplier when enabled. */
+  price: number | null;
+  /** "$40" | "Quote on site" | "Owner to fill in" | "Lot size unknown" */
+  label: string;
+  /** crew_size × pay_rate × minutes / 60 when tier_minutes has a value. Owner pages only. */
+  laborCost: number | null;
+  /** price − laborCost. Owner pages only. */
+  profit: number | null;
+  /** profit !== null && profit < 0. Owner pages only. */
+  underCost: boolean;
+};
 
 // ---------- Defaults shared by the settings helper and the pure modules ----------
 
-/** Mirrors the `canvass_settings.base_prices` column default (dollars per visit). */
-export const DEFAULT_BASE_PRICES: BasePrices = { mow: 35, edge: 15, leaf_cleanup: 150, gutters: 120, snow: 45 };
+const nullTiers = (): Record<TierKey, number | null> => ({ small: null, medium: null, large: null, xl: null });
+
+/** Mirrors the `canvass_settings.price_tiers` column default: only leaf cleanup is priced ($30 / $40 / $50, XL on site). */
+export const DEFAULT_PRICE_TIERS: TierTable = {
+  leaf_cleanup: { small: 30, medium: 40, large: 50, xl: null },
+  mow: nullTiers(),
+  edge: nullTiers(),
+  gutters: nullTiers(),
+  snow: nullTiers(),
+};
+
+/** Mirrors the `canvass_settings.tier_minutes` column default: every value unknown. */
+export const DEFAULT_TIER_MINUTES: TierTable = {
+  leaf_cleanup: nullTiers(),
+  mow: nullTiers(),
+  edge: nullTiers(),
+  gutters: nullTiers(),
+  snow: nullTiers(),
+};
+
+/** Mirrors the `canvass_settings.tier_bounds` column default (turf sqft). */
+export const DEFAULT_TIER_BOUNDS: TierBounds = { small_max: 4000, medium_max: 8000, large_max: 12000 };
+
+/** Mirrors the `canvass_settings.score_weights` column default. */
+export const DEFAULT_SCORE_WEIGHTS: ScoreWeights = { time: 1, lawn: 1, customer: 1, owner: 1 };
+
+/** Mirrors the `canvass_settings.crew_size` / `pay_rate` / `walk_doors` column defaults. */
+export const DEFAULT_CREW_SIZE = 3;
+export const DEFAULT_PAY_RATE = 15;
+export const DEFAULT_WALK_DOORS = 25;
 
 /** Mirrors the `canvass_settings.season_map` column default: Dec–Mar snow, Apr–Aug mowing, Sep–Nov leaf cleanup. */
 export const DEFAULT_SEASON_MAP: SeasonMap = {
