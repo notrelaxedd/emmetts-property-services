@@ -12,7 +12,7 @@ GPS location) stripped; do the same for new photos of customers' homes
 
 | File | Where it shows | Status |
 | --- | --- | --- |
-| `hero-leaf-blowing.jpg` | Hero, top of the page (first thing people see) | **Real**: a crew member with a backpack blower pushing a pile of leaves under a gold maple. The crop focus is set in `components/sections/hero.tsx` (`position`). |
+| `hero-leaf-blowing.jpg` | Hero, top of the page (first thing people see) | **Real**: a crew member in an orange shirt sending red maple leaves flying with a backpack blower. The crop focus is set in `components/sections/hero.tsx` (`position`). |
 | `mower-lawn.jpg` | "Three seasons. One crew." section, Spring & Summer circle | Stand-in. Shoot: your mower on freshly cut grass, low angle, clean stripes if you can get them. |
 | `fall-leaves-lawn.jpg` | "Three seasons. One crew." section, Fall circle | **Real**: a customer's front lawn under maple leaves, before cleanup. |
 | `snow-driveway.jpg` | "Three seasons. One crew." section, Winter circle | Stand-in. Shoot: your snowblower clearing a driveway. Also handy for a winter version of the hero. |
@@ -26,12 +26,12 @@ laptop; phones scroll the strip sideways.
 
 | File | What it shows |
 | --- | --- |
-| `leaf-pile-blower.jpg` | A crew member walking a leaf pile across the lawn with a backpack blower |
+| `red-maples.jpg` | A crew member pushing a pile of red maple leaves across a lawn, red maples behind |
+| `gold-maple-pile.jpg` | A crew member working a long pile of leaves under a gold maple at dusk |
 | `blower-close.jpg` | Leaves lifting off the grass in front of the blower nozzle |
 | `leaves-before.jpg` | A leaf-covered yard with a stone wall and the house behind, before cleanup |
 | `crew-pair.jpg` | Two crew members with backpack blowers on a sunny front lawn |
 | `crew-tree.jpg` | A crew member blowing leaves out from under a big oak by the sidewalk |
-| `crew-sunny.jpg` | A crew member with a backpack blower on a bright fall morning |
 
 When picking photos, skip ones that show a readable house number, license plate, or a neighbor's yard sign.
 Still nice to have: a photo of **Emmett, Kevin, and Chase together** with the equipment.
