@@ -27,12 +27,13 @@ laptop; phones scroll the strip sideways.
 | File | What it shows |
 | --- | --- |
 | `red-maples.jpg` | A crew member pushing a pile of red maple leaves across a lawn, red maples behind |
-| `gold-maple-pile.jpg` | A crew member working a long pile of leaves under a gold maple at dusk |
-| `blower-close.jpg` | Leaves lifting off the grass in front of the blower nozzle |
+| `crew-pair.jpg` | Two crew members with backpack blowers on a sunny front lawn (levelled 2°, shadow cropped) |
 | `leaves-before.jpg` | A leaf-covered yard with a stone wall and the house behind, before cleanup |
-| `crew-pair.jpg` | Two crew members with backpack blowers on a sunny front lawn |
-| `crew-tree.jpg` | A crew member blowing leaves out from under a big oak by the sidewalk |
+| `crew-walk.jpg` | A crew member walking the lawn with a backpack blower (left edge cropped to drop a yard sign) |
+| `crew-tree.jpg` | A crew member blowing leaves out from under a big oak (left edge cropped) |
+| `crew-blowers.jpg` | Two crew members with backpack blowers by the street (levelled 2.5°) |
 
+Only sharp, daylight shots go in the strip: the dusk photos are motion-blurred and read as amateur next to these.
 When picking photos, skip ones that show a readable house number, license plate, or a neighbor's yard sign.
 Still nice to have: a photo of **Emmett, Kevin, and Chase together** with the equipment.
 
