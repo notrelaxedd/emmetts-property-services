@@ -4,29 +4,52 @@
  * next/*, no db: safe to import from server components and client islands alike.
  */
 import type { HomePattern, KnockOutcome } from "../db/types";
-import type { ParcelGeom, WindowSource } from "./types";
+import type { Light } from "./lights";
+import { scoreColor as labelColor } from "./simple-score";
+import type { ScoreLabel } from "./simple-score";
+import type { ParcelGeom, TierKey, WindowSource } from "./types";
 import type { ParcelView } from "./views";
 
-/** One table row: everything the list shows, nothing heavy. */
+/** One table row: everything the list shows, nothing heavy. Owner pages only (it carries points and profit). */
 export type ParcelRow = {
   id: string;
   parcel_id: string;
   address: string;
+  /** "1234 Lakeview Ave, Rocky River, OH 44116". */
+  fullAddress: string;
   street: string;
   owner_display: string | null;
+  ownerFirstName: string | null;
   owner_is_entity: boolean;
   lot_sqft: number | null;
   turf_sqft: number | null;
   turfSource: "traced" | "estimate" | null;
+  tier: TierKey | null;
   market_value: number | null;
   owner_occupied: boolean | null;
   windowLabel: string;
   windowReason: string;
   windowSource: WindowSource;
-  quoteLow: number;
-  quoteHigh: number;
-  score: number;
-  quintile: number;
+  /** The knock-now light ("green" | "yellow" | "red"), its label and the next good time. */
+  light: Light;
+  lightLabel: string;
+  nextGoodTime: string | null;
+  /** The plain-English window and why ("Weekdays after 4:30pm, Saturdays all day" / "most people here commute ..."). */
+  plainText: string;
+  plainReason: string;
+  /** Simple score: points 0..12, hot / good / low, the reasons joined with " · " and the four factors. */
+  scorePoints: number;
+  scoreLabel: ScoreLabel;
+  scoreEmoji: string;
+  scoreReason: string;
+  scoreBreakdown: { time: number; lawn: number; customer: number; owner: number };
+  /** The season service's quote: "$40" | "Quote on site" | "Owner to fill in" | "Lot size unknown". */
+  quoteLabel: string;
+  quotePrice: number | null;
+  laborCost: number | null;
+  profit: number | null;
+  underCost: boolean;
+  medianIncome: number | null;
   lastOutcome: KnockOutcome | null;
   lastKnockAt: string | null;
   knockCount: number;
@@ -38,31 +61,64 @@ export type ParcelRow = {
 export type MapParcel = {
   id: string;
   geom: ParcelGeom;
-  quintile: number;
+  /** hot = brand green, good = amber, low = gray (see `scoreColor`). */
+  label: ScoreLabel;
   do_not_knock: boolean;
   isCustomer: boolean;
 };
 
+/**
+ * The light for the whole area: the most common light among the houses that can be knocked (do-not-knock ones
+ * do not vote). Ties go to the better light. Null when there is nobody to vote.
+ */
+export function areaLight(rows: readonly { light: Light; do_not_knock: boolean }[]): Light | null {
+  const counts: Record<Light, number> = { green: 0, yellow: 0, red: 0 };
+  let voters = 0;
+  for (const r of rows) {
+    if (r.do_not_knock) continue;
+    counts[r.light]++;
+    voters++;
+  }
+  if (voters === 0) return null;
+  return counts.green >= counts.yellow && counts.green >= counts.red ? "green" : counts.yellow >= counts.red ? "yellow" : "red";
+}
+
 export function toParcelRow(v: ParcelView): ParcelRow {
+  const reasons = v.simple.reasons.join(" · ");
   return {
     id: v.id,
     parcel_id: v.parcel_id,
     address: v.address,
+    fullAddress: v.fullAddress,
     street: v.street,
     owner_display: v.owner_display,
+    ownerFirstName: v.ownerFirstName,
     owner_is_entity: v.owner_is_entity,
     lot_sqft: v.lot_sqft,
     turf_sqft: v.turf_sqft_traced ?? v.turf_sqft_est,
     turfSource: v.turfSource,
+    tier: v.quote.tier,
     market_value: v.market_value,
     owner_occupied: v.owner_occupied,
     windowLabel: v.window.label,
     windowReason: v.window.reason,
     windowSource: v.window.source,
-    quoteLow: v.quote.low,
-    quoteHigh: v.quote.high,
-    score: v.score,
-    quintile: v.quintile,
+    light: v.knock.light,
+    lightLabel: v.knock.label,
+    nextGoodTime: v.knock.nextGoodTime,
+    plainText: v.plain.text,
+    plainReason: v.plain.reason,
+    scorePoints: v.simple.points,
+    scoreLabel: v.simple.label,
+    scoreEmoji: v.simple.emoji,
+    scoreReason: reasons.charAt(0).toUpperCase() + reasons.slice(1),
+    scoreBreakdown: v.simple.breakdown,
+    quoteLabel: v.quote.label,
+    quotePrice: v.quote.price,
+    laborCost: v.quote.laborCost,
+    profit: v.quote.profit,
+    underCost: v.quote.underCost,
+    medianIncome: v.medianIncome,
     lastOutcome: v.lastKnock?.outcome ?? null,
     lastKnockAt: v.lastKnock?.knocked_at ?? null,
     knockCount: v.knockCount,
@@ -74,7 +130,7 @@ export function toParcelRow(v: ParcelView): ParcelRow {
 /** Null for parcels without a polygon (they still show in the table). */
 export function toMapParcel(v: ParcelView): MapParcel | null {
   if (!v.geom) return null;
-  return { id: v.id, geom: v.geom, quintile: v.quintile, do_not_knock: v.do_not_knock, isCustomer: v.isCustomer };
+  return { id: v.id, geom: v.geom, label: v.simple.label, do_not_knock: v.do_not_knock, isCustomer: v.isCustomer };
 }
 
 // ---------- Labels ----------
@@ -121,30 +177,15 @@ export function formatMoney(n: number | null | undefined): string {
   return typeof n === "number" && Number.isFinite(n) ? `$${intFormat.format(Math.round(n))}` : "";
 }
 
-/** "$45–$60" (en dash, a range). */
-export function formatQuote(low: number, high: number): string {
-  return `$${Math.round(low)}–$${Math.round(high)}`;
-}
-
 /** "Yes" / "No" / "?" for a nullable boolean. */
 export function yesNo(v: boolean | null | undefined): string {
   return v === true ? "Yes" : v === false ? "No" : "?";
 }
 
-/** Tiny percent label for the score popover: "32%". */
-export function percentLabel(p: number): string {
-  return `${Math.round(Math.max(0, Math.min(1, p)) * 100)}%`;
-}
-
 // ---------- Colour scale ----------
 
-/** Quintile 0 (lowest) gray through quintile 4 (highest) brand green. */
-export const QUINTILE_COLORS = ["#9A9E9C", "#B5C7A0", "#9FD279", "#65C435", "#327213"] as const;
-
-export function scoreColor(quintile: number): string {
-  const q = Number.isFinite(quintile) ? Math.max(0, Math.min(QUINTILE_COLORS.length - 1, Math.round(quintile))) : 0;
-  return QUINTILE_COLORS[q];
-}
+/** Map colour for a score label: hot "#65C435" (brand green), good "#F59E0B" (amber), low "#9A9E9C" (gray). */
+export const scoreColor = (label: ScoreLabel): string => labelColor(label);
 
 export const DO_NOT_KNOCK_COLOR = "#DC2626";
 export const CUSTOMER_COLOR = "#2563EB";
@@ -157,6 +198,13 @@ export type LatLng = [lat: number, lng: number];
 export function geomToLatLngs(geom: ParcelGeom): LatLng[][][] {
   const polys = geom.type === "Polygon" ? [geom.coordinates] : geom.coordinates;
   return polys.map((rings) => rings.map((ring) => ring.map(([lng, lat]) => [lat, lng] as LatLng)));
+}
+
+/** True when two bounds (from `boundsOf`) are the same box, or both null. */
+export function sameBounds(a: [LatLng, LatLng] | null, b: [LatLng, LatLng] | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a[0][0] === b[0][0] && a[0][1] === b[0][1] && a[1][0] === b[1][0] && a[1][1] === b[1][1];
 }
 
 /** [[minLat, minLng], [maxLat, maxLng]] over every parcel polygon, or null when nothing has geometry. */

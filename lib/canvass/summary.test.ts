@@ -79,28 +79,29 @@ describe("helpers", () => {
     expect(yesterdayLocal(new Date("2026-10-30T12:00:00.000Z"))).toBe("2026-10-29");
     expect(dayBounds("2026-10-29")).toEqual({ start: "2026-10-29T04:00:00.000Z", end: "2026-10-30T04:00:00.000Z" });
   });
-  it("windowsByStreet picks the most common label and skips do-not-knock houses", () => {
+  it("windowsByStreet picks the most common plain-English window and skips do-not-knock houses", () => {
     const w = windowsByStreet([
-      { street: "Elm St", window: { label: "A" }, do_not_knock: false },
-      { street: "ELM ST", window: { label: "B" }, do_not_knock: false },
-      { street: "ELM ST", window: { label: "B" }, do_not_knock: false },
-      { street: "OAK AVE", window: { label: "Do not knock" }, do_not_knock: true },
+      { street: "Elm St", plain: { text: "A" }, window: { source: "acs" }, do_not_knock: false },
+      { street: "ELM ST", plain: { text: "Weekdays after 4pm, Saturdays all day" }, window: { source: "acs" }, do_not_knock: false },
+      { street: "ELM ST", plain: { text: "Weekdays after 4pm, Saturdays all day" }, window: { source: "acs" }, do_not_knock: false },
+      { street: "OAK AVE", plain: { text: "Do not knock" }, window: { source: "none" }, do_not_knock: true },
     ]);
-    expect(w.get("ELM ST")).toBe("B");
+    expect(w.get("ELM ST")).toBe("Weekdays after 4pm, Saturdays all day");
     expect(w.has("OAK AVE")).toBe(false);
   });
-  it("windowsByStreet never passes a homeowner's or crew's per-house label to the digest", () => {
+  it("windowsByStreet never passes a homeowner's or crew's per-house words to the digest", () => {
     const w = windowsByStreet([
-      { street: "ELM RD", window: { label: "Homeowner: Ask for Maria, she works at the clinic", source: "homeowner" }, do_not_knock: false },
-      { street: "ELM RD", window: { label: "Homeowner: call 555-0100", source: "homeowner" }, do_not_knock: false },
-      { street: "ELM RD", window: { label: "Weekends likely", source: "crew" }, do_not_knock: false },
-      { street: "ELM RD", window: { label: "Weekdays 4–6pm likely", source: "acs" }, do_not_knock: false },
-      { street: "OAK AVE", window: { label: "Homeowner: Ask for Maria", source: "homeowner" }, do_not_knock: false },
+      { street: "ELM RD", plain: { text: "Homeowner said: Ask for Maria, she works at the clinic." }, window: { source: "homeowner" }, do_not_knock: false },
+      { street: "ELM RD", plain: { text: "Homeowner said: call 555-0100." }, window: { source: "homeowner" }, do_not_knock: false },
+      { street: "ELM RD", plain: { text: "Crew noted: weekends only." }, window: { source: "crew" }, do_not_knock: false },
+      { street: "ELM RD", plain: { text: "Weekdays 4–6pm" }, window: { source: "learned" }, do_not_knock: false },
+      { street: "OAK AVE", plain: { text: "Homeowner said: Ask for Maria." }, window: { source: "homeowner" }, do_not_knock: false },
     ]);
-    expect(w.get("ELM RD")).toBe("Weekdays 4–6pm likely");
+    expect(w.get("ELM RD")).toBe("Weekdays 4–6pm");
     expect(w.has("OAK AVE")).toBe(false);
     const d = digestFromRows({ forDate: "2026-10-29", knocks: [], knockerNames: new Map(), pitchNames: new Map(), windowsByStreet: w, season: "Leaf cleanup" });
-    expect(JSON.stringify(d)).not.toContain("Homeowner:");
+    expect(JSON.stringify(d)).not.toContain("Homeowner");
+    expect(JSON.stringify(d)).not.toContain("Crew noted");
   });
   it("storeCanvassSummary inserts once and replaces on re-run", async () => {
     const db = fakeDb();

@@ -4,20 +4,33 @@
  */
 import type { CanvassPlan, CanvassSettings, HangerCode, Knock, KnockOutcome, Parcel, Pitch } from "../db/types";
 import type { HangerConversion } from "./hangers";
+import type { KnockNow, Light, StripDay } from "./lights";
 import type { SeasonFocus } from "./season";
+import type { SimpleScore } from "./simple-score";
 import type { KnockStatRow } from "./stats";
-import type { CanvassSummaryContent, QuoteRange, ScoreBreakdown, ServiceKey, WindowResult } from "./types";
+import type { CanvassSummaryContent, Quote, ServiceKey, WindowResult } from "./types";
+import type { WalkCounts } from "./walk";
 
-/** A parcel with everything the map, table and detail page show: window, quotes, score, last knock. */
+/** A parcel with everything the map, list and detail page show: window, light, simple score, quotes, last knock. */
 export type ParcelView = Parcel & {
+  /** "1234 Lakeview Ave, Rocky River, OH 44116". */
+  fullAddress: string;
+  /** "Maria" for a greeting; null when the county owner name has no usable first name. */
+  ownerFirstName: string | null;
   window: WindowResult;
+  /** The light for "now" (or for the requested slot) with the next good time. */
+  knock: KnockNow;
+  /** What the crew reads: the window in plain English and why. */
+  plain: { text: string; reason: string };
+  /** Points, label and reasons (owner pages may show the breakdown; crew never sees points). */
+  simple: SimpleScore;
+  /** Block-group median household income (Census area, not this household); null when unknown. */
+  medianIncome: number | null;
+  /** The 7-day strip (Mon..Sun) of coloured hour blocks. */
+  strip: StripDay[];
   /** For the current season service. */
-  quote: QuoteRange;
-  quotes: Record<ServiceKey, QuoteRange>;
-  score: number;
-  breakdown: ScoreBreakdown;
-  /** 0 (lowest) .. 4 (highest), among the parcels loaded together. */
-  quintile: number;
+  quote: Quote;
+  quotes: Record<ServiceKey, Quote>;
   lastKnock: { knocked_at: string; outcome: KnockOutcome; knocker_name: string } | null;
   knockCount: number;
   isCustomer: boolean;
@@ -30,12 +43,17 @@ export type PlanStopView = {
   id: string;
   order: number;
   address: string;
+  fullAddress: string;
   owner_display: string | null;
   street: string;
   centroid_lat: number | null;
   centroid_lng: number | null;
   window: WindowResult;
-  quote: QuoteRange;
+  knock: KnockNow;
+  /** The window in plain English and why (shown next to the light). */
+  plain: { text: string; reason: string };
+  quote: Quote;
+  /** Simple-score points (0..12); owner pages only. */
   score: number;
   walkMeters: number;
 };
@@ -48,30 +66,31 @@ export type PlanView = {
   slot: { date: string; start: string; end: string };
 };
 
-/** What the knock logger needs per house near the crew's position. */
-export type NearbyParcel = Pick<
-  Parcel,
-  | "id"
-  | "parcel_id"
-  | "address"
-  | "street"
-  | "owner_display"
-  | "owner_is_entity"
-  | "geom"
-  | "centroid_lat"
-  | "centroid_lng"
-  | "do_not_knock"
-  | "callback_window"
-  | "home_pattern"
-> & {
-  window: WindowResult;
-  quote: QuoteRange;
-  /** "$45–$60" */
+/** One house on a Walk Mode route: only what the crew card shows (no score points, profit or labor cost). */
+export type WalkStopView = {
+  id: string;
+  /** 1-based walking order. */
+  order: number;
+  fullAddress: string;
+  ownerFirstName: string | null;
+  lat: number;
+  lng: number;
+  /** The season pitch one-liner. */
+  pitch: string;
+  /** The featured service's quote label ("$40 ..." price text). */
   quoteLabel: string;
-  lastKnock: ParcelView["lastKnock"];
-  isCustomer: boolean;
-  /** Metres from the crew's position (0 for a text search). */
-  meters: number;
+  light: Light;
+  callback_window: string | null;
+  /** Metres from the previous stop (the start for the first). */
+  walkMeters: number;
+};
+
+export type WalkResultView = {
+  stops: WalkStopView[];
+  totalMeters: number;
+  counts: WalkCounts;
+  season: { service: ServiceKey; label: string; pitch: string };
+  pitches: Pick<Pitch, "id" | "name" | "script">[];
 };
 
 export type SummaryView = { for_date: string; summary: CanvassSummaryContent; created_at: string };

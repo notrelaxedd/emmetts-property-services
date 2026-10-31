@@ -1,6 +1,6 @@
 /**
  * Pure parts of the knock logger's offline queue (the localStorage glue lives in
- * components/crew/knock/offline-queue.ts). Every item carries a `client_id` so re-sending after a
+ * components/canvass/offline-queue.ts). Every item carries a `client_id` so re-sending after a
  * dropped connection is safe: the server ignores a client_id it has already stored.
  */
 import type { HomePattern, KnockOutcome } from "../db/types";

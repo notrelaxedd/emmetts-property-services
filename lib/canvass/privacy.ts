@@ -33,6 +33,7 @@ export const ALLOWED_LINK_HOSTS: readonly string[] = [
   "www.esri.com", // imagery attribution link
   "myplace.cuyahogacounty.gov", // the county's public property lookup, for spot checks
   "www.w3.org", // xmlns
+  "www.google.com", // Walk Mode "Open in Google Maps" directions link: link only, never fetched
 ];
 
 /** Substrings that must never appear in canvass source (case-insensitive). */
@@ -57,6 +58,8 @@ export const GUARDED_DIRS: readonly string[] = [
   "app/api/cron",
   "components/admin/canvass",
   "components/crew/knock",
+  "app/crew/walk", // v3 Walk Mode (crew)
+  "components/canvass", // v3 shared Walk Mode components
 ];
 
 const HOST_RE = /https?:\/\/([A-Za-z0-9.-]+)(?::\d+)?/g;

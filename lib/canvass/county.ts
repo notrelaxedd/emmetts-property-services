@@ -8,6 +8,7 @@
  * in `canvass_settings.parcel_field_map` (owner-editable in Settings) and `parcelFromFeature` reads attributes
  * only through that map. A key whose mapping is null simply yields null.
  */
+import { zip5 } from "./address";
 import { centroidOf, polygonAreaSqft } from "./geometry";
 import {
   DERIVED_FIELD_KEYS,
@@ -302,6 +303,8 @@ export type ParcelInput = {
   address: string;
   street: string;
   city: string | null;
+  /** County pulls are Ohio. */
+  state: string;
   zip: string | null;
   owner_display: string | null;
   mailing_address: string | null;
@@ -351,6 +354,15 @@ export function isResidential(landUse: string | number | null | undefined, prefi
   const code = String(landUse).trim();
   if (!code) return false;
   return prefixes.some((p) => p.length > 0 && code.startsWith(p.trim()));
+}
+
+/**
+ * The residential check for a parcel already pulled. When the field map has no land-use field the pull kept every
+ * parcel (no residential filter), so a parcel with no land use counts as residential rather than as "not a house".
+ */
+export function pulledParcelIsResidential(landUse: string | number | null | undefined, prefixes: readonly string[], landUseMapped: boolean): boolean {
+  if (!landUseMapped && (landUse === null || landUse === undefined || String(landUse).trim() === "")) return true;
+  return isResidential(landUse, prefixes);
 }
 
 const present = (v: unknown) => v !== null && v !== undefined && v !== "";
@@ -457,7 +469,9 @@ export function parcelFromFeature(
     address,
     street: mappedStreet || streetOf(address),
     city: text(readMapped(props, map, "site_city")),
-    zip: text(readMapped(props, map, "site_zip")),
+    state: "OH",
+    // "44116-1234" / 44116.0 → "44116"; anything without five digits is no zip.
+    zip: zip5(text(readMapped(props, map, "site_zip"))) || null,
     owner_display: owner,
     mailing_address: mailing,
     land_use: text(readMapped(props, map, "land_use")),

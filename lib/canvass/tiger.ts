@@ -19,7 +19,7 @@ export const GEOCODER_CONCURRENCY = 2;
 
 type ArcgisError = { error?: { code?: number; message?: string } };
 
-async function getJson<T>(f: typeof fetch, url: string, what: string): Promise<T> {
+export async function getJson<T>(f: typeof fetch, url: string, what: string): Promise<T> {
   const res = await f(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(TIGER_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`${what} ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const json = (await res.json()) as T & ArcgisError;
@@ -51,6 +51,30 @@ export async function findBlockGroupLayerId(opts: { fetchImpl?: typeof fetch; se
     layers.find((l) => (l.name ?? "").toLowerCase().includes("block group"));
   if (!hit || typeof hit.id !== "number") throw new Error(`tigerweb: no "${BLOCK_GROUP_LAYER_NAME}" layer in ${serviceUrl}`);
   layerIdCache.set(serviceUrl, hit.id);
+  return hit.id;
+}
+
+/**
+ * The id of any layer by its name (exact, case-insensitive; else the first whose name contains one of `fallbacks`),
+ * cached per service URL + name. Used for "Incorporated Places" and "ZIP Code Tabulation Areas" (lib/canvass/reverse.ts).
+ */
+export async function findLayerIdByName(
+  name: string,
+  opts: { fetchImpl?: typeof fetch; serviceUrl?: string; fallbacks?: string[] } = {},
+): Promise<number> {
+  const f = opts.fetchImpl ?? fetch;
+  const serviceUrl = (opts.serviceUrl ?? TIGERWEB_SERVICE).replace(/\/+$/, "");
+  const cacheKey = `${serviceUrl}#${name.toLowerCase()}`;
+  const cached = layerIdCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  const json = await getJson<{ layers?: Array<{ id?: number; name?: string }> }>(f, `${serviceUrl}?f=pjson`, "tigerweb service");
+  const layers = json.layers ?? [];
+  const want = name.trim().toLowerCase();
+  const hit =
+    layers.find((l) => (l.name ?? "").trim().toLowerCase() === want) ??
+    layers.find((l) => (opts.fallbacks ?? []).some((fb) => (l.name ?? "").toLowerCase().includes(fb.toLowerCase())));
+  if (!hit || typeof hit.id !== "number") throw new Error(`tigerweb: no "${name}" layer in ${serviceUrl}`);
+  layerIdCache.set(cacheKey, hit.id);
   return hit.id;
 }
 

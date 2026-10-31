@@ -1,5 +1,5 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { formatRange } from "@/lib/canvass/quote"
+import { LightBadge } from "./light-badge"
 import type { PlanView } from "@/lib/canvass/views"
 
 /** "Skipped: 3 do-not-knock, 5 knocked recently, 12 outside the window" (only the non-zero parts). */
@@ -44,9 +44,8 @@ export function PlanList({ plan }: { plan: PlanView }) {
               <TableHead className="w-10">#</TableHead>
               <TableHead>Address</TableHead>
               <TableHead className="hidden md:table-cell">Owner</TableHead>
-              <TableHead>Window</TableHead>
+              <TableHead>Light and window</TableHead>
               <TableHead className="text-right">Quote</TableHead>
-              <TableHead className="hidden text-right sm:table-cell">Score</TableHead>
               <TableHead className="text-right">Walk</TableHead>
             </TableRow>
           </TableHeader>
@@ -55,15 +54,19 @@ export function PlanList({ plan }: { plan: PlanView }) {
               <TableRow key={s.id}>
                 <TableCell className="font-semibold tabular-nums text-ink">{s.order}</TableCell>
                 <TableCell>
-                  <div className="font-medium text-ink">{s.address}</div>
+                  <div className="font-medium text-ink">{s.fullAddress}</div>
                   <div className="text-xs text-ink-muted md:hidden">{s.owner_display ?? "Resident"}</div>
                 </TableCell>
                 <TableCell className="hidden md:table-cell">{s.owner_display ?? "Resident"}</TableCell>
                 <TableCell>
-                  <span title={s.window.reason}>{s.window.label}</span>
+                  <span title={s.plain.reason} className="block max-w-[16rem] text-sm">
+                    <LightBadge light={s.knock.light} label={s.knock.label} plain={s.plain.text} nextGoodTime={s.knock.nextGoodTime} className="flex flex-col" />
+                  </span>
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-right tabular-nums">{formatRange(s.quote)}</TableCell>
-                <TableCell className="hidden text-right tabular-nums sm:table-cell">{Math.round(s.score)}</TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {s.quote.label}
+                  {s.quote.underCost ? <span className="block text-xs font-semibold text-red-700">Under labor cost</span> : null}
+                </TableCell>
                 <TableCell className="whitespace-nowrap text-right tabular-nums">{s.walkMeters} m</TableCell>
               </TableRow>
             ))}

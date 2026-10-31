@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { Db } from "../ops/types";
 import { settingsRow } from "../ops/test-utils";
-import { createDoorLeadAndQuote, doorCustomerName, findDoorCustomer, repriceDoorQuote, type DoorParcel } from "./door-booking";
+import { canvassSettingsRow, parcelRow } from "./rows.fixture";
+import { createDoorLeadAndQuote, defaultDoorPrice, doorAmounts, doorCustomerName, findDoorCustomer, repriceDoorQuote, type DoorParcel } from "./door-booking";
 
 /**
  * A tiny chainable supabase-js stand-in: from(t).select()/insert()/update() with eq / in / ilike /
@@ -132,7 +133,51 @@ describe("doorCustomerName", () => {
   });
 });
 
+describe("doorAmounts / defaultDoorPrice", () => {
+  it("typed amounts win; else the tier price for both ends; else unpriced 0", () => {
+    expect(doorAmounts({ amount_low: 45, amount_high: 60, default_price: 40 })).toEqual({ low: 45, high: 60, price: 52.5, priced: true });
+    expect(doorAmounts({ amount_low: 55, default_price: 40 })).toEqual({ low: 55, high: 55, price: 55, priced: true });
+    expect(doorAmounts({ amount_low: null, amount_high: null, default_price: 40 })).toEqual({ low: 40, high: 40, price: 40, priced: true });
+    expect(doorAmounts({ default_price: null })).toEqual({ low: 0, high: 0, price: 0, priced: false });
+    expect(doorAmounts({})).toMatchObject({ price: 0, priced: false });
+  });
+  it("the default price is the featured service's tier price when priced, else null", () => {
+    const settings = canvassSettingsRow();
+    // 8,276 sqft lot, 1,624 sqft living on 1.5 stories, 12% hardscape: ~6,200 sqft of turf → medium → $40 leaf cleanup.
+    const medium = parcelRow({ lot_sqft: 8276.4, living_sqft: 1624, stories: 1.5, footprint_sqft: null, turf_sqft_traced: null });
+    expect(defaultDoorPrice(medium, settings, "leaf_cleanup")).toBe(40);
+    // Mowing has no prices filled in yet.
+    expect(defaultDoorPrice(medium, settings, "mow")).toBeNull();
+    // A traced lawn changes the tier (3,000 sqft is small: $30); an unknown lot has no price.
+    expect(defaultDoorPrice({ ...medium, turf_sqft_traced: 3000 }, settings, "leaf_cleanup")).toBe(30);
+    expect(defaultDoorPrice(parcelRow({ lot_sqft: null, living_sqft: null }), settings, "leaf_cleanup")).toBeNull();
+    // Editing the tiers changes it.
+    expect(defaultDoorPrice(medium, canvassSettingsRow({ price_tiers: { ...settings.price_tiers, leaf_cleanup: { small: 30, medium: 55, large: 50, xl: null } } }), "leaf_cleanup")).toBe(55);
+  });
+});
+
 describe("createDoorLeadAndQuote", () => {
+  it("uses the house's tier price when no amount was typed (quote_given and booked)", async () => {
+    const db = smallDb({ ...base(), customers: [], parcels: [{ id: "parcel-1", customer_id: null }] });
+    const res = await createDoorLeadAndQuote(db, { parcel: parcel(), knocker_name: "Sam", outcome: "booked", default_price: 40, service: "leaf_cleanup" });
+    const quote = db.tables.quotes.find((q) => q.id === res.quote_id)!;
+    expect(quote.price_total).toBe(40);
+    expect(quote.rationale).toBe("Door quote by Sam: $40 for Leaf cleanup.");
+    expect(db.tables.quote_items[0].price).toBe(40);
+    expect(await repriceDoorQuote(db, res.quote_id, 55, 55)).toBe(true);
+    expect(db.tables.quotes[0].rationale).toBe("Door quote by Sam: $55 for Leaf cleanup.");
+  });
+
+  it("books at 0 with a 'price to be set' note when the tier is not priced and nothing was typed", async () => {
+    const db = smallDb({ ...base(), customers: [], parcels: [{ id: "parcel-1", customer_id: null }] });
+    const res = await createDoorLeadAndQuote(db, { parcel: parcel(), knocker_name: "Sam", outcome: "quote_given", amount_low: null, amount_high: null, default_price: null, service: "mow" });
+    const quote = db.tables.quotes[0];
+    expect(quote.price_total).toBe(0);
+    expect(quote.rationale).toContain("price to be set");
+    expect(await repriceDoorQuote(db, res.quote_id, 70, 70)).toBe(true);
+    expect(db.tables.quotes[0].rationale).toBe("Door quote by Sam for Mowing: $70.");
+  });
+
   it("reuses the customer linked on the parcel and sends a quote for quote_given", async () => {
     const existing = { id: "cust-1", name: "Jane", address: "19000 Detroit Rd, Rocky River", parcel_id: null, created_at: "2026-01-01" };
     const db = smallDb({ ...base(), customers: [existing], parcels: [{ id: "parcel-1", customer_id: "cust-1" }] });
@@ -233,7 +278,9 @@ describe("repriceDoorQuote", () => {
     const quote = db.tables.quotes[0];
     expect(quote.price_total).toBe(120);
     expect(quote.profit_total).toBe(120 - (quote.labor_total as number));
-    expect(quote.rationale).toContain("$120–$120");
+    expect(quote.rationale).toContain("for Mowing."); // "$120" replaced the typed range
+    expect(quote.rationale).toContain("$120");
+    expect(quote.rationale).not.toContain("$120–");
     expect(db.tables.quote_items[0].price).toBe(120);
   });
   it("leaves a paid or declined quote alone", async () => {

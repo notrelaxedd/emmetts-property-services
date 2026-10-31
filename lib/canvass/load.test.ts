@@ -2,21 +2,25 @@ import { describe, expect, it } from "vitest";
 import { fakeDb } from "../ops/test-utils";
 import {
   bboxAround,
+  crewSafeStops,
   loadCanvassStats,
   loadLatestSummary,
-  loadNearbyParcels,
   loadParcelDetail,
   loadParcelViews,
   loadStreets,
   loadTodayPlan,
+  loadWalk,
+  nearestFirst,
   pickStreetCode,
-  searchParcels,
+  slotAt,
   stopsFromViews,
-  toNearbyParcel,
 } from "./load";
 import { blockGroupRow, canvassSettingsRow, knockRow, parcelRow } from "./rows.fixture";
 
 const GEOID = "390351621021";
+/** Thu 2026-10-29 5:15pm in Ohio: inside the seeded block group's weekdays 4-6pm window. */
+const THU_EVENING = new Date("2026-10-29T21:15:00.000Z");
+const SAT_MORNING = new Date("2026-10-31T14:00:00.000Z");
 const profiles = [
   { id: "knocker-a", user_id: "u1", role: "crew", name: "Emmett" },
   { id: "knocker-b", user_id: "u2", role: "crew", name: "Sam" },
@@ -51,9 +55,9 @@ function seed() {
 }
 
 describe("loadParcelViews", () => {
-  it("loads newest-fetched first with window, quote, score, last knock and customer count", async () => {
+  it("loads newest-fetched first with window, light, simple score, last knock and customer count", async () => {
     const { db, a, b, c } = seed();
-    const r = await loadParcelViews(db);
+    const r = await loadParcelViews(db, { now: THU_EVENING });
     expect(r.parcels.map((p) => p.id)).toEqual([b.id, a.id, c.id]);
     expect(r.settings.doors_per_hour).toBe(25);
     expect(r.season.service).toBeDefined();
@@ -61,11 +65,35 @@ describe("loadParcelViews", () => {
     expect(va.window.source).toBe("acs");
     expect(va.lastKnock).toEqual({ knocked_at: "2026-10-28T21:00:00.000Z", outcome: "booked", knocker_name: "Sam" });
     expect(va.knockCount).toBe(2);
-    expect(va.breakdown.neighborBoost).toBe(1.5); // customer at 19002
-    expect(va.score).toBeGreaterThan(0);
+    expect(va.fullAddress).toBe("19000 Detroit Rd, Rocky River, OH 44116");
+    expect(va.knock.light).toBe("green");
+    expect(va.simple.breakdown.customer).toBe(3); // customer at 19002
+    expect(va.simple.points).toBeGreaterThan(0);
+    expect(va.medianIncome).toBe(85000);
     const vc = r.parcels.find((p) => p.id === c.id)!;
-    expect(vc.score).toBe(0);
+    expect(vc.simple.points).toBe(0);
+    expect(vc.knock.light).toBe("red");
     expect(r.customersCount).toBe(0);
+  });
+  it("judges the light in the requested slot", async () => {
+    const { db, a } = seed();
+    const sat = await loadParcelViews(db, { ids: [a.id], slot: { at: SAT_MORNING } });
+    expect(sat.parcels[0].knock.light).toBe("red");
+    expect(sat.parcels[0].knock.nextGoodTime).toBe("Monday 4pm");
+    const thu = await loadParcelViews(db, { ids: [a.id], slot: slotAt("2026-10-29", "17:15") });
+    expect(thu.parcels[0].knock.light).toBe("green");
+  });
+  it("slotAt reads local Ohio time and rejects junk", () => {
+    expect(slotAt("2026-10-29", "17:15")?.at.toISOString()).toBe("2026-10-29T21:15:00.000Z");
+    expect(slotAt("2026-10-29", "17:15:00")?.at.toISOString()).toBe("2026-10-29T21:15:00.000Z");
+    expect(slotAt("nope", "17:15")).toBeNull();
+    expect(slotAt("2026-10-29", "late")).toBeNull();
+  });
+  it("slotAt carries the end when it is after the start", () => {
+    expect(slotAt("2026-10-29", "15:00", "17:00")?.end?.toISOString()).toBe("2026-10-29T21:00:00.000Z");
+    expect(slotAt("2026-10-29", "15:00", "14:00")?.end).toBeUndefined();
+    expect(slotAt("2026-10-29", "15:00", null)?.end).toBeUndefined();
+    expect(slotAt("2026-10-29", "15:00", "junk")?.at.toISOString()).toBe("2026-10-29T19:00:00.000Z");
   });
   it("honours ids (in the given order) and the limit", async () => {
     const { db, a, c } = seed();
@@ -113,37 +141,11 @@ describe("loadParcelDetail", () => {
   });
 });
 
-describe("nearby helpers", () => {
-  it("bboxAround covers the radius and toNearbyParcel carries the logger fields", async () => {
+describe("bboxAround", () => {
+  it("covers the radius, wider in longitude than latitude away from the equator", () => {
     const box = bboxAround(41.4756, -81.8396, 250);
     expect(box.maxLat - box.minLat).toBeCloseTo(0.0045, 3);
     expect(box.maxLng - box.minLng).toBeGreaterThan(box.maxLat - box.minLat);
-    const { db, a } = seed();
-    const { parcels } = await loadParcelViews(db, { ids: [a.id] });
-    const n = toNearbyParcel(parcels[0], 12.6);
-    expect(n).toMatchObject({ id: a.id, address: "19000 DETROIT RD", meters: 13, isCustomer: false });
-    expect(n.quoteLabel).toMatch(/^\$\d+–\$\d+$/);
-    expect(Object.keys(n)).not.toContain("raw");
-  });
-
-  it("loadNearbyParcels returns houses inside the radius, closest first, and nothing for a bad point", async () => {
-    const { db, a, b } = seed();
-    const near = await loadNearbyParcels(db, a.centroid_lat as number, a.centroid_lng as number, 250, 40);
-    expect(near.map((p) => p.id)).toEqual([a.id, b.id]);
-    expect(near[0].meters).toBe(0);
-    expect(near[1].meters).toBeGreaterThan(0);
-    expect(near[1].meters).toBeLessThanOrEqual(250);
-    expect(await loadNearbyParcels(db, a.centroid_lat as number, a.centroid_lng as number, 10, 40)).toHaveLength(1);
-    expect(await loadNearbyParcels(db, Number.NaN, 0)).toEqual([]);
-  });
-
-  it("searchParcels matches the address case-insensitively with meters 0", async () => {
-    const { db, a, b } = seed();
-    const hits = await searchParcels(db, "detroit");
-    expect(hits.map((p) => p.id)).toEqual([a.id, b.id]);
-    expect(hits.every((p) => p.meters === 0 && p.quoteLabel.startsWith("$"))).toBe(true);
-    expect(await searchParcels(db, "   ")).toEqual([]);
-    expect(await searchParcels(db, "nowhere")).toEqual([]);
   });
 });
 
@@ -193,7 +195,155 @@ describe("summary, stats, streets, plan", () => {
       [2, a.id],
     ]);
     expect(r?.stops[1].walkMeters).toBeGreaterThan(0);
+    expect(r?.stops[0].fullAddress).toBe("19004 Detroit Rd, Rocky River, OH 44116");
+    expect(r?.stops[0].knock.light).toBe("yellow"); // judged at the plan's 3pm start: an hour before the 4-6pm window
+    expect(typeof r?.stops[0].score).toBe("number");
+    // Crew copies drop the owner-only numbers.
+    const crew = crewSafeStops(r!.stops);
+    expect(crew.map((s) => s.id)).toEqual(r!.stops.map((s) => s.id));
+    expect(crew.every((s) => s.score === 0 && s.quote.profit === null && s.quote.laborCost === null && !s.quote.underCost)).toBe(true);
+    expect(crew[0].quote.label).toBe(r!.stops[0].quote.label);
     const stops = stopsFromViews([], null);
     expect(stops).toEqual([]);
+  });
+});
+
+describe("loadWalk", () => {
+  const HOUSES = 8;
+  function walkSeed(settingsOver: Parameters<typeof canvassSettingsRow>[0] = {}) {
+    const houses = Array.from({ length: HOUSES }, (_, i) =>
+      parcelRow({
+        block_group_geoid: GEOID,
+        address: `${19000 + i * 2} DETROIT RD`,
+        parcel_id: `PIN-W${i}`,
+        centroid_lng: -81.8396 + i * 0.0003,
+        owner_display: i === 0 ? "GARCIA MARIA" : "SMITH JOHN",
+        callback_window: i === 1 ? "weekdays after 5" : null,
+      }),
+    );
+    const db = fakeDb({
+      canvass_settings: [canvassSettingsRow(settingsOver)],
+      parcels: houses,
+      block_groups: [blockGroupRow({ geoid: GEOID })],
+      knocks: [],
+      profiles: profiles as never,
+      customers: [],
+      pitches: [
+        { id: "p1", name: "Neighbor special", script: "Hi!", active: true, sort_order: 0 },
+        { id: "p2", name: "Retired", script: "Old", active: false, sort_order: 1 },
+      ],
+    });
+    return { db, houses };
+  }
+  const start = { lat: 41.4756, lng: -81.8396 };
+
+  it("returns the next doors in walking order with crew-safe fields", async () => {
+    const { db, houses } = walkSeed();
+    const r = await loadWalk(db, { ...start, now: THU_EVENING });
+    expect(r.stops).toHaveLength(HOUSES);
+    expect(r.stops.map((s) => s.order)).toEqual(houses.map((_, i) => i + 1));
+    const first = r.stops[0];
+    expect(first.id).toBe(houses[0].id);
+    expect(first).toMatchObject({
+      fullAddress: "19000 Detroit Rd, Rocky River, OH 44116",
+      ownerFirstName: "Maria",
+      quoteLabel: "$40",
+      light: "green",
+      callback_window: null,
+    });
+    expect(first.pitch).toBe(r.season.pitch);
+    expect(r.stops[1].callback_window).toBe("weekdays after 5");
+    expect(r.stops[1].walkMeters).toBeGreaterThan(0);
+    expect(r.totalMeters).toBe(r.stops.reduce((m, s) => m + s.walkMeters, 0));
+    expect(r.counts).toMatchObject({ candidates: HOUSES, taken: HOUSES, dnk: 0, recent: 0 });
+    // Only the crew-safe fields: no score points, profit or labor cost.
+    expect(Object.keys(first).sort()).toEqual(
+      ["callback_window", "fullAddress", "id", "lat", "light", "lng", "order", "ownerFirstName", "pitch", "quoteLabel", "walkMeters"].sort(),
+    );
+    expect(r.season.service).toBe("leaf_cleanup");
+    expect(r.pitches.map((p) => p.id)).toEqual(["p1"]);
+  });
+
+  it("takes walk_doors houses and skips do-not-knock, recently knocked and non-residential ones", async () => {
+    const { db, houses } = walkSeed({ walk_doors: 3 });
+    expect((await loadWalk(db, { ...start, now: THU_EVENING })).stops).toHaveLength(3);
+
+    const t = db.tables;
+    (t.parcels[0] as { do_not_knock: boolean }).do_not_knock = true;
+    (t.parcels[1] as { land_use: string }).land_use = "400";
+    t.knocks = [knockRow({ parcel_id: houses[2].id, knocked_at: "2026-10-28T21:00:00.000Z", outcome: "no_answer" })];
+    const r = await loadWalk(db, { ...start, now: THU_EVENING });
+    const ids = r.stops.map((s) => s.id);
+    expect(ids).not.toContain(houses[0].id);
+    expect(ids).not.toContain(houses[1].id);
+    expect(ids).not.toContain(houses[2].id);
+    expect(r.counts).toMatchObject({ dnk: 1, recent: 1, notResidential: 1, taken: 3 });
+  });
+
+  it("leaves out houses the phone already logged before taking walk_doors (a re-plan still comes back full)", async () => {
+    const { db, houses } = walkSeed({ walk_doors: 3 });
+    const first = await loadWalk(db, { ...start, now: THU_EVENING });
+    const logged = first.stops.map((s) => s.id);
+    const again = await loadWalk(db, { ...start, now: THU_EVENING, exclude: logged });
+    expect(again.stops).toHaveLength(3);
+    expect(again.stops.some((s) => logged.includes(s.id))).toBe(false);
+    expect(again.counts.recent).toBe(3);
+    expect(houses.length).toBeGreaterThan(6);
+  });
+
+  it("walks houses with no land use when the field map has no land-use field (the pull kept them all)", async () => {
+    const { db } = walkSeed();
+    for (const p of db.tables.parcels) (p as { land_use: string | null }).land_use = null;
+    const r = await loadWalk(db, { ...start, now: THU_EVENING });
+    expect(r.stops).toHaveLength(HOUSES);
+    expect(r.counts.notResidential).toBe(0);
+    // With a land-use field mapped, a parcel with no land use is not a house we know of.
+    (db.tables.canvass_settings[0] as { parcel_field_map: Record<string, unknown> }).parcel_field_map.land_use = { field: "LUC", source: "auto", candidates: [] };
+    const mapped = await loadWalk(db, { ...start, now: THU_EVENING });
+    expect(mapped.stops).toEqual([]);
+    expect(mapped.counts.notResidential).toBe(HOUSES);
+  });
+
+  it("reads the whole box before keeping the nearest, so a crowded box never drops the houses next to the crew", async () => {
+    const { db, houses } = walkSeed();
+    // 2,100 houses ~600 m north, inserted before the eight next to the crew (an unordered LIMIT 2000 would keep only them).
+    const filler = Array.from({ length: 2100 }, (_, i) =>
+      parcelRow({ block_group_geoid: GEOID, address: `${20000 + i * 2} LAKE RD`, parcel_id: `PIN-F${i}`, centroid_lat: 41.4756 + 0.0054, centroid_lng: -81.8396 + (i % 50) * 0.00002 }),
+    );
+    db.tables.parcels = [...filler, ...db.tables.parcels] as never;
+    const r = await loadWalk(db, { ...start, now: THU_EVENING });
+    const ids = r.stops.map((s) => s.id);
+    for (const h of houses) expect(ids).toContain(h.id);
+  });
+
+  it("nearestFirst keeps the closest within the radius, at most the limit", () => {
+    const rows = [
+      { id: "far", centroid_lat: 41.48, centroid_lng: -81.8396 },
+      { id: "near", centroid_lat: 41.4757, centroid_lng: -81.8396 },
+      { id: "mid", centroid_lat: 41.477, centroid_lng: -81.8396 },
+      { id: "none", centroid_lat: null, centroid_lng: null },
+    ];
+    expect(nearestFirst(rows, 41.4756, -81.8396, 800, 10).map((x) => x.p.id)).toEqual(["near", "mid", "far"]);
+    expect(nearestFirst(rows, 41.4756, -81.8396, 800, 2).map((x) => x.p.id)).toEqual(["near", "mid"]);
+    expect(nearestFirst(rows, 41.4756, -81.8396, 200, 10).map((x) => x.p.id)).toEqual(["near", "mid"]);
+  });
+
+  it("leaves red-light houses out and reports them", async () => {
+    const { db } = walkSeed();
+    // Saturday 10am: the block group's weekdays 4-6pm window is red for everyone.
+    const r = await loadWalk(db, { ...start, now: SAT_MORNING });
+    expect(r.stops).toEqual([]);
+    expect(r.counts.badLight).toBe(HOUSES);
+  });
+
+  it("only walks houses within the radius and handles an empty area or a bad point", async () => {
+    const { db, houses } = walkSeed();
+    // 0.0003 deg of longitude is ~25 m: a 60 m radius from the first house reaches the first three.
+    const near = await loadWalk(db, { ...start, radiusMeters: 60, now: THU_EVENING });
+    expect(near.stops.map((s) => s.id)).toEqual(houses.slice(0, 3).map((h) => h.id));
+    const far = await loadWalk(db, { lat: 40, lng: -80, now: THU_EVENING });
+    expect(far.stops).toEqual([]);
+    expect(far.pitches).toHaveLength(1);
+    expect((await loadWalk(db, { lat: Number.NaN, lng: 0, now: THU_EVENING })).stops).toEqual([]);
   });
 });

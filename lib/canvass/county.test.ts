@@ -13,6 +13,7 @@ import {
   parcelFromFeature,
   parcelLayerUrl,
   parcelQueryParams,
+  pulledParcelIsResidential,
   queryParcels,
   readMapped,
   streetOf,
@@ -225,6 +226,7 @@ describe("parcelFromFeature", () => {
       address: "19000 DETROIT RD",
       street: "DETROIT RD",
       city: "ROCKY RIVER",
+      state: "OH",
       zip: "44116",
       owner_display: "SMITH JOHN & JANE",
       mailing_address: "19000 DETROIT RD",
@@ -243,6 +245,13 @@ describe("parcelFromFeature", () => {
     expect(p!.centroid_lng).toBeCloseTo(-81.8395, 4);
     expect(p!.centroid_lat).toBeCloseTo(41.47575, 4);
     expect(p!.raw).toEqual(parcelFeaturesFixtureA[0].properties);
+  });
+
+  it("reads city and a five-digit zip from the mapped fields, and the state is Ohio", () => {
+    const feature = { ...parcelFeaturesFixtureA[0], properties: { ...parcelFeaturesFixtureA[0].properties, PARCEL_ZIP: "44116-2210" } };
+    expect(parcelFromFeature(feature, mapA)).toMatchObject({ city: "ROCKY RIVER", zip: "44116", state: "OH" });
+    const noZip = { ...parcelFeaturesFixtureA[0], properties: { ...parcelFeaturesFixtureA[0].properties, PARCEL_ZIP: "  ", PARCEL_CITY: null } };
+    expect(parcelFromFeature(noZip, mapA)).toMatchObject({ city: null, zip: null, state: "OH" });
   });
 
   it("falls back to polygon area, mailing comparison and flags entity owners", () => {
@@ -330,5 +339,20 @@ describe("address helpers", () => {
     expect(isResidential("520", prefixes)).toBe(false);
     expect(isResidential(null, prefixes)).toBe(false);
     expect(isResidential("510", [])).toBe(false);
+  });
+});
+
+describe("pulledParcelIsResidential", () => {
+  const prefixes = ["510", "511"];
+  it("counts a parcel with no land use as residential only when no land-use field is mapped", () => {
+    expect(pulledParcelIsResidential(null, prefixes, false)).toBe(true);
+    expect(pulledParcelIsResidential("", prefixes, false)).toBe(true);
+    expect(pulledParcelIsResidential(null, prefixes, true)).toBe(false);
+  });
+  it("still applies the prefixes to a land use that is there", () => {
+    expect(pulledParcelIsResidential("5100", prefixes, false)).toBe(true);
+    expect(pulledParcelIsResidential("400", prefixes, false)).toBe(false);
+    expect(pulledParcelIsResidential("400", prefixes, true)).toBe(false);
+    expect(pulledParcelIsResidential(511, prefixes, true)).toBe(true);
   });
 });

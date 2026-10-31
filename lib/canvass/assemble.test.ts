@@ -1,19 +1,7 @@
 import { describe, expect, it } from "vitest";
-import {
-  answerProbabilityFor,
-  assembleParcelViews,
-  convertRowsFrom,
-  fitModelFrom,
-  knockSummary,
-  learnedGroupKey,
-  learnedWindowsFor,
-  neighborBoostFor,
-  representativeSlot,
-} from "./assemble";
+import { assembleParcelViews, knockSummary, learnedGroupKey, learnedWindowsFor, nearCustomerFor } from "./assemble";
 import { blockGroupRow, canvassSettingsRow, knockRow, parcelRow } from "./rows.fixture";
-import { emptyConvertModel } from "./score";
 import { seasonFocus } from "./season";
-import { answerProbability, learnedWindow } from "./windows";
 
 const settings = canvassSettingsRow();
 const season = seasonFocus(10, settings.season_map); // October → leaf cleanup
@@ -22,7 +10,9 @@ const bg = blockGroupRow({ geoid: GEOID });
 const blockGroups = new Map([[GEOID, bg]]);
 const names = new Map([["knocker-a", "Emmett"]]);
 
-const base = () => ({ blockGroups, knockerNames: names, customers: [], settings, season, model: emptyConvertModel() });
+/** Thu 2026-10-29 5:15pm in Ohio (EDT): inside the block group's weekdays 4-6pm prior. */
+const NOW = new Date("2026-10-29T21:15:00.000Z");
+const base = () => ({ blockGroups, knockerNames: names, customers: [], settings, season, now: NOW });
 
 describe("learned grouping", () => {
   it("pools by block group, else by street", () => {
@@ -45,58 +35,23 @@ describe("learned grouping", () => {
   });
 });
 
-describe("conversion rows", () => {
-  it("joins knocks to their parcels' features and skips unknown parcels", () => {
-    const p = parcelRow({ lot_sqft: 5000, owner_occupied: false, street: "ELM ST" });
-    const rows = convertRowsFrom(
-      [knockRow({ parcel_id: p.id, outcome: "booked", knocker_id: "k1", pitch_id: "p1" }), knockRow({ parcel_id: "nope" })],
-      [p],
-      [],
-      settings,
-    );
-    expect(rows).toEqual([{ outcome: "booked", lotBand: "small", ownerOccupied: false, nearCustomer: false, street: "ELM ST", knockerId: "k1", pitchId: "p1" }]);
-    const model = fitModelFrom([knockRow({ parcel_id: p.id, outcome: "booked" })], [p], [], settings);
-    expect(model.n).toBe(1);
-    expect(model.converts).toBe(1);
-  });
-});
-
-describe("neighbor boost", () => {
+describe("near customer", () => {
   it("ignores the parcel's own customer row but counts a neighbour", () => {
     const p = parcelRow({ customer_id: "c-self", parcel_id: "PIN-1", address: "19000 DETROIT RD" });
     const self = { id: "c-self", address: "19000 Detroit Rd", lat: p.centroid_lat, lng: p.centroid_lng, parcel_id: "PIN-1" };
-    expect(neighborBoostFor(p, [self], settings)).toBe(1);
+    expect(nearCustomerFor(p, [self], settings)).toBe("none");
     const neighbour = { id: "c-2", address: "19004 Detroit Rd", lat: null, lng: null, parcel_id: null };
-    expect(neighborBoostFor(p, [self, neighbour], settings)).toBe(1.5);
-  });
-});
-
-describe("answer probability", () => {
-  it("uses the prior bucket mean inside the window and the other prior outside, without learned data", () => {
-    const window = { kind: "range" as const, days: "weekdays" as const, start: 16, end: 18 };
-    expect(representativeSlot(window)).toEqual({ weekday: 1, hour: 16 });
-    expect(answerProbabilityFor(window, null, null)).toBeCloseTo(answerProbability({ knocks: 0, answers: 0, isPrior: true }), 10);
-    expect(answerProbabilityFor(window, null, { weekday: 2, hour: 10 })).toBeCloseTo(answerProbability({ knocks: 0, answers: 0, isPrior: false }), 10);
-    expect(answerProbabilityFor(window, null, { weekday: 6, hour: 16 })).toBeCloseTo(0.25, 10);
-  });
-  it("prefers the learned bucket's posterior mean for the slot", () => {
-    const window = { kind: "range" as const, days: "weekdays" as const, start: 16, end: 18 };
-    const knocks = Array.from({ length: 8 }, (_, i) => ({ knocked_at: "2026-10-29T22:30:00.000Z", outcome: i < 6 ? ("booked" as const) : ("no_answer" as const) }));
-    const learned = learnedWindow(knocks, window, 8);
-    expect(learned).not.toBeNull();
-    // Thu 6pm bucket: (1 + 6) / (1 + 3 + 8)
-    expect(answerProbabilityFor(window, learned, { weekday: 4, hour: 18 })).toBeCloseTo(7 / 12, 10);
-    // Off hours → falls back to the prior rule.
-    expect(answerProbabilityFor(window, learned, { weekday: 4, hour: 2 })).toBeCloseTo(0.25, 10);
+    expect(nearCustomerFor(p, [self, neighbour], settings)).toBe("adjacent");
+    expect(nearCustomerFor(p, [self, neighbour], { neighbor_n: 1 })).toBe("street");
   });
 });
 
 describe("assembleParcelViews", () => {
-  it("resolves window, quotes, score, last knock, customer flag and quintiles", () => {
+  it("resolves window, light, plain text, simple score, quotes, last knock and customer flag", () => {
     const a = parcelRow({ block_group_geoid: GEOID, lot_sqft: 8276.4, living_sqft: 1624, stories: 1.5, address: "19000 DETROIT RD" });
     const b = parcelRow({ block_group_geoid: GEOID, callback_window: "weekdays after 5", address: "19004 DETROIT RD", parcel_id: "PIN-B" });
     const c = parcelRow({ block_group_geoid: null, do_not_knock: true, do_not_knock_reason: "sign", address: "19008 DETROIT RD" });
-    const d = parcelRow({ block_group_geoid: GEOID, lot_sqft: null, living_sqft: null, address: "19012 DETROIT RD", customer_id: "cust-d" });
+    const d = parcelRow({ block_group_geoid: GEOID, lot_sqft: null, living_sqft: null, address: "19012 DETROIT RD", customer_id: "cust-d", owner_display: "SMITH, MARIA" });
     const knocks = [
       knockRow({ parcel_id: a.id, knocked_at: "2026-10-20T21:00:00.000Z", outcome: "no_answer" }),
       knockRow({ parcel_id: a.id, knocked_at: "2026-10-28T21:00:00.000Z", outcome: "call_back" }),
@@ -106,53 +61,118 @@ describe("assembleParcelViews", () => {
     const [va, vb, vc, vd] = views;
 
     // a: ACS prior window from the block group; the estimate is recomputed from settings (lot − footprint − 12%).
+    expect(va.fullAddress).toBe("19000 Detroit Rd, Rocky River, OH 44116");
+    expect(va.ownerFirstName).toBe("John");
     expect(va.window.source).toBe("acs");
     expect(va.window.label).toBe("Weekdays 4–6pm likely");
     expect(va.turf_sqft_est).toBe(Math.round(8276.4 - 1624 / 1.5 - 8276.4 * 0.12));
     expect(va.turfSource).toBe("estimate");
     expect(va.quote).toEqual(va.quotes.leaf_cleanup);
-    expect(va.quote.mid).toBe(Math.round(150 + (6 * va.turf_sqft_est!) / 1000));
+    // ~6,200 sqft of turf is a medium lot: leaf cleanup $40 from the default price tiers.
+    expect(va.quote).toMatchObject({ service: "leaf_cleanup", tier: "medium", status: "priced", price: 40, label: "$40" });
     expect(va.lastKnock).toEqual({ knocked_at: "2026-10-28T21:00:00.000Z", outcome: "call_back", knocker_name: "Emmett" });
     expect(va.knockCount).toBe(2);
     expect(va.isCustomer).toBe(false);
-    expect(va.breakdown.pAnswer).toBeCloseTo(4 / 6, 10);
-    expect(va.breakdown.pConvert).toBeCloseTo(0.08, 10);
-    expect(va.breakdown.neighborBoost).toBe(1.5); // 19002 is one house from 19000 on the same street
-    expect(va.score).toBeCloseTo((4 / 6) * 0.08 * va.quote.mid * 1.5, 1);
+    // Thu 5:15pm is inside weekdays 4-6pm: green. Medium lot 2 + adjacent customer (19002) 3 + green 3 + owner-occupied 3.
+    expect(va.knock).toMatchObject({ light: "green", label: "Good now", nextGoodTime: null });
+    expect(va.plain.text).toMatch(/^Weekdays after 4pm/);
+    expect(va.simple.breakdown).toEqual({ time: 3, lawn: 2, customer: 3, owner: 3 });
+    expect(va.simple.points).toBe(11);
+    expect(va.simple.label).toBe("hot");
+    expect(va.medianIncome).toBe(85000);
+    expect(va.strip).toHaveLength(7);
+    expect(va.strip[0].day).toBe(1);
+    expect("score" in va).toBe(false);
+    expect("quintile" in va).toBe(false);
 
-    // b: the homeowner's words win; it is a customer by county PIN.
+    // b: the homeowner's words win; it is a customer by county PIN, so its own customer row does not count for it.
     expect(vb.window.source).toBe("homeowner");
     expect(vb.isCustomer).toBe(true);
-    expect(vb.breakdown.neighborBoost).toBe(1); // its own customer row does not boost it
+    expect(vb.simple.breakdown.customer).toBe(0);
+    expect(vb.plain.text).toBe("Homeowner said: weekdays after 5.");
 
-    // c: do not knock → score 0, lowest quintile.
+    // c: do not knock → nothing scores; never green.
     expect(vc.window.label).toBe("Do not knock");
-    expect(vc.score).toBe(0);
-    expect(vc.quintile).toBe(0);
+    expect(vc.knock.light).toBe("red");
+    expect(vc.simple.points).toBe(0);
+    expect(vc.simple.label).toBe("low");
+    expect(vc.plain.text).toBe("Do not knock");
+    // ... and the 7-day strip has no good time either (its window is "anytime", which would read green).
+    expect(vc.strip).toHaveLength(7);
+    expect(vc.strip.every((d) => d.blocks.every((x) => x.light === "red"))).toBe(true);
 
-    // d: unknown lot → base price only; customer_id set.
+    // d: unknown lot → "Lot size unknown", no price; customer_id set; "SMITH, MARIA" greets as Maria.
     expect(vd.turf_sqft_est).toBeNull();
     expect(vd.turfSource).toBeNull();
-    expect(vd.quote.mid).toBe(150);
+    expect(vd.quote).toMatchObject({ tier: null, status: "unknown_turf", price: null, label: "Lot size unknown" });
     expect(vd.isCustomer).toBe(true);
-
-    const quintiles = views.map((v) => v.quintile);
-    expect(Math.max(...quintiles)).toBeGreaterThan(0);
-    expect(views.every((v) => v.quintile >= 0 && v.quintile <= 4)).toBe(true);
+    expect(vd.ownerFirstName).toBe("Maria");
+    expect(vd.simple.breakdown.lawn).toBe(1);
   });
 
-  it("judges P(answer) in a chosen slot and uses the learned layer once a group has enough knocks", () => {
+  it("judges the light in a chosen slot and gives the next good time", () => {
+    const p = parcelRow({ block_group_geoid: GEOID });
+    // Sat 2026-10-31 10am Ohio: the block group's window is weekdays 4-6pm, so a Saturday morning is not a good time.
+    const sat = assembleParcelViews({ ...base(), parcels: [p], knocks: [], slot: { at: new Date("2026-10-31T14:00:00.000Z") } })[0];
+    expect(sat.knock.light).toBe("red");
+    expect(sat.knock.nextGoodTime).toBe("Monday 4pm");
+    expect(sat.simple.breakdown.time).toBe(0);
+    const thu = assembleParcelViews({ ...base(), parcels: [p], knocks: [], slot: { at: new Date("2026-10-29T20:30:00.000Z") } })[0];
+    expect(thu.knock.light).toBe("green");
+    expect(thu.simple.breakdown.time).toBe(3);
+    // No slot: "now" is the injected clock.
+    expect(assembleParcelViews({ ...base(), parcels: [p], knocks: [] })[0].knock.light).toBe("green");
+  });
+
+  it("uses the learned layer for the window and the light once a group has enough knocks", () => {
     const p = parcelRow({ block_group_geoid: GEOID });
     const q = parcelRow({ block_group_geoid: GEOID });
     const knocks = Array.from({ length: 9 }, (_, i) =>
       knockRow({ parcel_id: i % 2 ? p.id : q.id, knocked_at: "2026-10-29T22:30:00.000Z", outcome: i < 8 ? "not_interested" : "no_answer" }),
     );
-    const views = assembleParcelViews({ ...base(), parcels: [p, q], knocks, slot: { weekday: 4, hour: 18 } });
+    const views = assembleParcelViews({ ...base(), parcels: [p, q], knocks, slot: { at: new Date("2026-10-29T22:30:00.000Z") } });
     expect(views[0].window.source).toBe("learned");
     expect(views[0].window.label).toBe("Weekdays 6–8pm likely");
-    expect(views[0].breakdown.pAnswer).toBeCloseTo((1 + 8) / (1 + 3 + 9), 10);
-    const morning = assembleParcelViews({ ...base(), parcels: [p, q], knocks, slot: { weekday: 4, hour: 8 } });
-    expect(morning[0].breakdown.pAnswer).toBeCloseTo(1 / 4, 10);
+    expect(views[0].plain.reason).toBe("that's when doors on this block have opened for us.");
+    expect(views[0].knock.light).toBe("green"); // Thu 6:30pm
+    const morning = assembleParcelViews({ ...base(), parcels: [p, q], knocks, slot: { at: new Date("2026-10-29T07:00:00.000Z") } });
+    expect(morning[0].knock.light).toBe("red"); // Thu 3am
+    expect(morning[0].knock.nextGoodTime).toBe("today 6pm");
+  });
+
+  it("judges a slot over its whole span and words the reason for the slot", () => {
+    const p = parcelRow({ block_group_geoid: GEOID });
+    // Thu 2026-10-29 1pm Ohio against weekdays 4-6pm: red at 1pm, yellow for 1-3:30pm (inside the 3pm margin).
+    const at = new Date("2026-10-29T17:00:00.000Z");
+    const instant = assembleParcelViews({ ...base(), parcels: [p], knocks: [], slot: { at } })[0];
+    expect(instant.knock.light).toBe("red");
+    const span = assembleParcelViews({ ...base(), parcels: [p], knocks: [], slot: { at, end: new Date("2026-10-29T19:30:00.000Z") } })[0];
+    expect(span.knock.light).toBe("yellow");
+    expect(span.simple.reasons.join(" ")).not.toMatch(/now/);
+    const green = assembleParcelViews({ ...base(), parcels: [p], knocks: [], slot: { at, end: new Date("2026-10-29T21:00:00.000Z") } })[0];
+    expect(green.knock.light).toBe("green");
+    expect(green.simple.reasons).toContain("good time for this slot");
+    // No slot: the reason is still about now.
+    expect(assembleParcelViews({ ...base(), parcels: [p], knocks: [] })[0].simple.reasons).toContain("good time now");
+  });
+
+  it("never lets the learned layer override a homeowner's stated window", () => {
+    const stated = parcelRow({ block_group_geoid: GEOID, callback_window: "weekdays after 5" });
+    const other = parcelRow({ block_group_geoid: GEOID });
+    // Ten knocks make a learned layer. The weekday 10am bucket answered 1 of 4: (1 + 1) / (1 + 3 + 4) = 0.25, "maybe".
+    const tue10am = "2026-10-27T14:00:00.000Z";
+    const knocks = [
+      ...Array.from({ length: 4 }, (_, i) => knockRow({ parcel_id: other.id, knocked_at: tue10am, outcome: i === 0 ? "not_interested" : "no_answer" })),
+      ...Array.from({ length: 6 }, () => knockRow({ parcel_id: other.id, knocked_at: "2026-10-29T22:30:00.000Z", outcome: "no_answer" })),
+    ];
+    const tue10 = { at: new Date(tue10am) };
+    const [v, o] = assembleParcelViews({ ...base(), parcels: [stated, other], knocks, slot: tue10 });
+    expect(o.window.source).toBe("learned");
+    expect(o.knock.light).toBe("yellow"); // the learned band softens the area's guess
+    expect(v.window.source).toBe("homeowner");
+    expect(v.knock.light).toBe("red"); // ... but not what the homeowner said
+    // The strip outside "after 5" stays red on the weekend.
+    expect(v.strip[5].blocks.every((x) => x.light === "red")).toBe(true);
   });
 
   it("knockSummary keeps the latest knock and the count", () => {

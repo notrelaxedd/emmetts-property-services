@@ -25,15 +25,20 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { ParcelRow } from "@/lib/canvass/admin-rows"
-import { formatMoney, formatQuote, formatSqft, outcomeLabel, yesNo } from "@/lib/canvass/admin-rows"
+import { formatMoney, formatSqft, outcomeLabel, yesNo } from "@/lib/canvass/admin-rows"
 import { localDate } from "@/lib/scheduler/time"
+import type { ScoreWeights } from "@/lib/canvass/types"
 import { cn } from "@/lib/utils"
+import { LightBadge } from "./light-badge"
+import { PointsPopover } from "./points-popover"
 
 const PAGE_SIZE = 50
 const col = createColumnHelper<ParcelRow>()
 
-const columns = [
-  col.accessor("address", {
+const makeColumns = (weights?: ScoreWeights) =>
+  [
+  col.accessor("fullAddress", {
+    id: "address",
     header: "Address",
     cell: (c) => (
       <span className="block min-w-[10rem]">
@@ -54,19 +59,22 @@ const columns = [
     meta: { className: "hidden md:table-cell" },
     cell: (c) => <span className="block max-w-[12rem] truncate">{c.getValue() || "?"}</span>,
   }),
-  col.accessor("lot_sqft", {
+  // Unknown values are read as undefined (not null): TanStack's sortUndefined only recognises undefined, and a null would sort as 0.
+  col.accessor((r) => r.lot_sqft ?? undefined, {
+    id: "lot_sqft",
     header: "Lot sqft",
     meta: { className: "hidden text-right lg:table-cell", align: "right" },
     sortUndefined: "last",
-    cell: (c) => <span className="tabular-nums">{formatSqft(c.getValue()) || "?"}</span>,
+    cell: (c) => <span className="tabular-nums">{formatSqft(c.row.original.lot_sqft) || "?"}</span>,
   }),
-  col.accessor("turf_sqft", {
+  col.accessor((r) => r.turf_sqft ?? undefined, {
+    id: "turf_sqft",
     header: "Turf sqft",
     meta: { className: "text-right", align: "right" },
     sortUndefined: "last",
     cell: (c) => (
       <span className="inline-flex items-center justify-end gap-1 tabular-nums">
-        {formatSqft(c.getValue()) || "?"}
+        {formatSqft(c.row.original.turf_sqft) || "?"}
         {c.row.original.turfSource ? (
           <Badge variant={c.row.original.turfSource === "traced" ? "success" : "outline"} className="px-1.5 py-0 text-[10px]">
             {c.row.original.turfSource === "traced" ? "traced" : "est"}
@@ -75,36 +83,65 @@ const columns = [
       </span>
     ),
   }),
-  col.accessor("market_value", {
+  col.accessor((r) => r.market_value ?? undefined, {
+    id: "market_value",
     header: "Market value",
     meta: { className: "hidden text-right lg:table-cell", align: "right" },
     sortUndefined: "last",
-    cell: (c) => <span className="tabular-nums">{formatMoney(c.getValue()) || "?"}</span>,
+    cell: (c) => <span className="tabular-nums">{formatMoney(c.row.original.market_value) || "?"}</span>,
   }),
-  col.accessor("owner_occupied", {
+  col.accessor((r) => r.owner_occupied ?? undefined, {
+    id: "owner_occupied",
     header: "Owner occ.",
     meta: { className: "hidden text-center md:table-cell", align: "center" },
     sortUndefined: "last",
-    cell: (c) => yesNo(c.getValue()),
+    cell: (c) => yesNo(c.row.original.owner_occupied),
   }),
-  col.accessor("windowLabel", {
-    header: "Window",
-    cell: (c) => (
-      <span title={c.row.original.windowReason} className="block max-w-[11rem] cursor-help truncate underline decoration-dotted underline-offset-4">
-        {c.getValue()}
-      </span>
-    ),
+  col.accessor("scorePoints", {
+    id: "score",
+    header: "Priority",
+    cell: (c) => {
+      const r = c.row.original
+      return (
+        <span className="block min-w-[10rem] space-y-0.5">
+          <PointsPopover
+            label={r.scoreLabel}
+            points={r.scorePoints}
+            breakdown={r.scoreBreakdown}
+            reason={r.scoreReason}
+            weights={weights}
+            className="inline-flex items-center gap-1.5 rounded-md border border-ink/20 bg-white px-2 py-0.5 text-sm font-medium text-ink hover:bg-gray-light"
+          />
+          {r.scoreReason ? <span className="block text-xs text-ink-muted">{r.scoreReason}</span> : null}
+        </span>
+      )
+    },
   }),
-  col.accessor("quoteLow", {
+  col.accessor("plainText", {
+    id: "window",
+    header: "Light and window",
+    cell: (c) => {
+      const r = c.row.original
+      return (
+        <span title={r.plainReason} className="block max-w-[14rem] text-sm">
+          <LightBadge light={r.light} label={r.lightLabel} className="flex flex-col" plain={r.plainText} nextGoodTime={r.nextGoodTime} />
+        </span>
+      )
+    },
+  }),
+  col.accessor("quoteLabel", {
     id: "quote",
     header: "Quote",
     meta: { className: "text-right", align: "right" },
-    cell: (c) => <span className="whitespace-nowrap tabular-nums">{formatQuote(c.row.original.quoteLow, c.row.original.quoteHigh)}</span>,
-  }),
-  col.accessor("score", {
-    header: "Score",
-    meta: { className: "hidden text-right sm:table-cell", align: "right" },
-    cell: (c) => <span className="tabular-nums">{c.getValue().toFixed(1)}</span>,
+    cell: (c) => {
+      const r = c.row.original
+      return (
+        <span className="block whitespace-nowrap tabular-nums">
+          {c.getValue()}
+          {r.underCost ? <span className="block text-xs font-semibold text-red-700">Under labor cost</span> : null}
+        </span>
+      )
+    },
   }),
   col.accessor((r) => r.lastOutcome ?? "", {
     id: "status",
@@ -125,7 +162,8 @@ const columns = [
 
 type ColMeta = { className?: string; align?: "right" | "center" }
 
-export function ParcelTable({ rows }: { rows: ParcelRow[] }) {
+export function ParcelTable({ rows, weights }: { rows: ParcelRow[]; weights?: ScoreWeights }) {
+  const columns = React.useMemo(() => makeColumns(weights), [weights])
   const [sorting, setSorting] = React.useState<SortingState>([{ id: "score", desc: true }])
   const [filter, setFilter] = React.useState("")
   const [hideDnk, setHideDnk] = React.useState(true)
@@ -142,7 +180,7 @@ export function ParcelTable({ rows }: { rows: ParcelRow[] }) {
       const q = value.trim().toLowerCase()
       if (!q) return true
       const r = row.original
-      return [r.address, r.owner_display ?? "", r.street, r.parcel_id, r.windowLabel].some((s) => s.toLowerCase().includes(q))
+      return [r.fullAddress, r.owner_display ?? "", r.street, r.parcel_id, r.plainText, r.scoreReason].some((s) => s.toLowerCase().includes(q))
     },
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),

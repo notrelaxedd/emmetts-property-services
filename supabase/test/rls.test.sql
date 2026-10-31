@@ -735,17 +735,38 @@ select tests.claims(null, 'service_role');
 select tests.check((select count(*) from public.canvass_settings) = 1, 'canvass_settings has exactly one row');
 select tests.check((select id from public.canvass_settings) = '00000000-0000-0000-0000-000000000001', 'canvass_settings row has the fixed id');
 select tests.check(
-  (select hardscape_pct = 0.12 and rate_per_1000_sqft = 6 and min_charge = 40 and not value_tier_enabled and value_tier_max = 1.10
+  (select hardscape_pct = 0.12 and not value_tier_enabled and value_tier_max = 1.10
           and doors_per_hour = 25 and neighbor_n = 3 and recency_days = 14 and work_hours = 8.5 and learned_min_knocks = 8
           and acs_vintage = '2023' and offer_text is null and parcel_field_map = '{}'::jsonb
    from public.canvass_settings),
   'canvass_settings defaults match the spec');
 select tests.check(
-  (select base_prices = '{"mow":35,"edge":15,"leaf_cleanup":150,"gutters":120,"snow":45}'::jsonb
-          and season_map ->> '1' = 'snow' and season_map ->> '4' = 'mow' and season_map ->> '9' = 'leaf_cleanup' and season_map ->> '12' = 'snow'
+  (select season_map ->> '1' = 'snow' and season_map ->> '4' = 'mow' and season_map ->> '9' = 'leaf_cleanup' and season_map ->> '12' = 'snow'
           and residential_land_use_prefixes = '{"510","511","512","513","514","515","516","517","518","519"}'::text[]
    from public.canvass_settings),
-  'canvass_settings.base_prices / season_map / residential prefixes default as in lib/canvass/types.ts');
+  'canvass_settings.season_map / residential prefixes default as in lib/canvass/types.ts');
+select tests.check(
+  (select price_tiers #>> '{leaf_cleanup,small}' = '30' and price_tiers #>> '{leaf_cleanup,medium}' = '40'
+          and price_tiers #>> '{leaf_cleanup,large}' = '50' and (price_tiers -> 'leaf_cleanup' -> 'xl') = 'null'::jsonb
+          and (price_tiers -> 'mow' -> 'medium') = 'null'::jsonb and (select count(*) from jsonb_object_keys(price_tiers)) = 5
+          and tier_bounds = '{"small_max":4000,"medium_max":8000,"large_max":12000}'::jsonb
+          and (select count(*) from jsonb_object_keys(tier_minutes)) = 5 and (tier_minutes -> 'snow' -> 'xl') = 'null'::jsonb
+          and crew_size = 3 and pay_rate = 15 and walk_doors = 25
+          and score_weights = '{"time":1,"lawn":1,"customer":1,"owner":1}'::jsonb
+   from public.canvass_settings),
+  'canvass_settings v3 pricing tiers / bounds / minutes / crew / weights / walk_doors default as in lib/canvass/types.ts');
+select tests.check(
+  tests.run($$update public.canvass_settings set crew_size = 0$$) like 'err:23514:%'
+  and tests.run($$update public.canvass_settings set pay_rate = -1$$) like 'err:23514:%'
+  and tests.run($$update public.canvass_settings set walk_doors = 0$$) like 'err:23514:%'
+  and tests.run($$update public.canvass_settings set walk_doors = 201$$) like 'err:23514:%'
+  and tests.run($$update public.canvass_settings set price_tiers = '[]'::jsonb$$) like 'err:23514:%'
+  and tests.run($$update public.canvass_settings set score_weights = '5'::jsonb$$) like 'err:23514:%',
+  'canvass_settings v3 checks: crew_size >= 1, pay_rate >= 0, walk_doors 1..200, jsonb columns are objects');
+select tests.check(
+  (select column_name from information_schema.columns where table_schema = 'public' and table_name = 'canvass_settings' and column_name in ('base_prices', 'rate_per_1000_sqft', 'min_charge') limit 1) is null
+  and (select state from public.parcels limit 0) is null,
+  'canvass_settings v1 pricing columns are gone; parcels.state exists');
 select tests.check(
   tests.run($$insert into public.canvass_settings (id) values ('00000000-0000-0000-0000-000000000002')$$) like 'err:23514:%',
   'canvass_settings is a singleton');
@@ -859,7 +880,7 @@ reset role;
 select tests.claims(tests.id('crew_a_uid'));
 set role authenticated;
 select tests.check((select count(*) from public.parcels) = 2, 'crew can read parcels');
-select tests.check((select count(*) from public.canvass_settings) = 1, 'crew can read canvass_settings');
+select tests.check((select count(*) from public.canvass_settings) = 0, 'crew cannot read canvass_settings (pay rate / tier minutes are owner-only since v3)');
 select tests.check((select count(*) from public.block_groups) = 1, 'crew can read block_groups');
 select tests.check((select count(*) from public.pitches) = 3, 'crew can read pitches');
 select tests.check((select count(*) from public.canvass_plans) = 1, 'crew can read canvass_plans');

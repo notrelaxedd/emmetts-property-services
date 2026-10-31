@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { requireOwner } from "@/lib/auth/session"
 import { opsConfig } from "@/lib/config"
-import { loadParcelViews, stopsFromViews } from "@/lib/canvass/load"
+import { areaLight, toMapParcel, toParcelRow } from "@/lib/canvass/admin-rows"
+import type { MapParcel, ParcelRow } from "@/lib/canvass/admin-rows"
+import type { Light } from "@/lib/canvass/lights"
+import { loadParcelViews, slotAt, stopsFromViews } from "@/lib/canvass/load"
 import { planSession } from "@/lib/canvass/plan"
 import type { PlanParcel } from "@/lib/canvass/plan"
 import { inspectCountyLayer, pullParcels, refreshBlockGroupPriors } from "@/lib/canvass/pull"
@@ -12,7 +15,7 @@ import { tracedAreaSqft } from "@/lib/canvass/quote"
 import { updateCanvassSettings } from "@/lib/canvass/settings"
 import type { CanvassSettingsPatch } from "@/lib/canvass/settings"
 import { runNightlySummary, yesterdayLocal } from "@/lib/canvass/summary"
-import { PARCEL_FIELD_KEYS, SERVICE_KEYS } from "@/lib/canvass/types"
+import { PARCEL_FIELD_KEYS, SERVICE_KEYS, TIER_KEYS } from "@/lib/canvass/types"
 import type { GeoFeatureCollection, GeoPolygon, ParcelFieldKey, ParcelFieldMap } from "@/lib/canvass/types"
 import type { PlanView } from "@/lib/canvass/views"
 import type { HomePattern } from "@/lib/db/types"
@@ -116,11 +119,35 @@ const fieldMapPatchSchema = z.object({
   fetched_at: z.string().max(40).optional(),
 })
 
+/** One price / minutes cell: a number, or null to clear it ("owner to fill in" / unknown). */
+const tierCell = z.number().min(0).max(100000).nullable().optional()
+const tierRow = z.object(Object.fromEntries(TIER_KEYS.map((t) => [t, tierCell])))
+/** service → tier → cell; any service or tier may be left out (the merge keeps the stored cell). */
+const tierTableSchema = z.object(Object.fromEntries(SERVICE_KEYS.map((k) => [k, tierRow.optional()])))
+const tierBoundsSchema = z
+  .object({
+    small_max: z.number().positive().max(1_000_000).optional(),
+    medium_max: z.number().positive().max(1_000_000).optional(),
+    large_max: z.number().positive().max(1_000_000).optional(),
+  })
+  .refine(
+    (b) =>
+      (b.small_max === undefined || b.medium_max === undefined || b.small_max < b.medium_max) &&
+      (b.medium_max === undefined || b.large_max === undefined || b.medium_max < b.large_max) &&
+      (b.small_max === undefined || b.large_max === undefined || b.small_max < b.large_max),
+    { message: "Lot size bounds must go up: small, then medium, then large." },
+  )
+const weight = z.number().min(0).max(10).optional()
+
 const settingsPatchSchema = z.object({
   hardscape_pct: z.number().min(0).max(1).optional(),
-  rate_per_1000_sqft: z.number().min(0).max(10000).optional(),
-  min_charge: z.number().min(0).max(100000).optional(),
-  base_prices: z.object(Object.fromEntries(SERVICE_KEYS.map((k) => [k, z.number().min(0).max(100000).optional()]))).optional(),
+  price_tiers: tierTableSchema.optional(),
+  tier_minutes: tierTableSchema.optional(),
+  tier_bounds: tierBoundsSchema.optional(),
+  crew_size: z.number().int().min(1).max(50).optional(),
+  pay_rate: z.number().min(0).max(1000).optional(),
+  score_weights: z.object({ time: weight, lawn: weight, customer: weight, owner: weight }).optional(),
+  walk_doors: z.number().int().min(1).max(200).optional(),
   value_tier_enabled: z.boolean().optional(),
   value_tier_max: z.number().min(1).max(1.1).optional(),
   doors_per_hour: z.number().int().min(1).max(200).optional(),
@@ -247,14 +274,13 @@ export async function planSessionAction(input: {
   const { date, start, end } = parsed.data
   try {
     const db = requireSupabaseAdmin()
-    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay()
-    const hour = Number(start.slice(0, 2))
-    const { parcels, settings } = await loadParcelViews(db, { limit: 5000, slot: { weekday, hour } })
+    // The light (and so each house's points) is judged over the whole slot.
+    const { parcels, settings } = await loadParcelViews(db, { limit: 5000, slot: slotAt(date, start, end) })
     const byId = new Map(parcels.map((p) => [p.id, p]))
     const planParcels: PlanParcel[] = parcels.map((p) => ({
       id: p.id,
       centroid: p.centroid_lat !== null && p.centroid_lng !== null ? [p.centroid_lng, p.centroid_lat] : null,
-      score: p.score,
+      score: p.simple.points,
       window: p.window.window,
       lastKnockAt: p.lastKnock?.knocked_at ?? null,
       do_not_knock: p.do_not_knock,
@@ -287,43 +313,39 @@ export async function planSessionAction(input: {
   }
 }
 
-const savePlanSchema = z
-  .object({
-    date: dateSchema,
-    start: timeSchema,
-    end: timeSchema,
-    parcel_ids: z.array(idSchema).min(1).max(500),
-    notes: z.string().trim().max(2000).nullable().optional(),
-  })
-  .refine((v) => v.end > v.start, { message: "The slot must end after it starts.", path: ["end"] })
+const rankInputSchema = z.object({
+  at: z.string().datetime({ offset: true, message: "Pick a valid date and time." }),
+  limit: z.number().int().min(1).max(5000).optional(),
+})
 
-/** Save a planned route so the knock logger shows the next stops that day. */
-export async function savePlanAction(input: {
-  date: string
-  start: string
-  end: string
-  parcel_ids: string[]
-  notes?: string | null
-}): Promise<ActionResult> {
-  const session = await requireOwner()
-  const parsed = savePlanSchema.safeParse(input)
-  if (!parsed.success) return { ok: false, reason: parsed.error.issues[0]?.message ?? "Invalid plan." }
+/**
+ * Re-rank the Canvass home for a chosen moment (the slot picker): every parcel's light, simple score and label are
+ * judged at `at` instead of now. Returns the slim table rows and map shapes (owner pages only: rows carry points and
+ * profit), plus the area's majority light at that moment. The server page can equally read `?at=<ISO>` and call
+ * `loadParcelViews(db, { slot: { at: new Date(at) } })` itself.
+ */
+export async function rankForSlotAction(input: {
+  at: string
+  limit?: number
+}): Promise<{ ok: true; at: string; rows: ParcelRow[]; map: MapParcel[]; light: Light | null } | { ok: false; reason: string }> {
+  await requireOwner()
+  const parsed = rankInputSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, reason: parsed.error.issues[0]?.message ?? "Invalid time." }
   try {
     const db = requireSupabaseAdmin()
-    check(
-      await db.from("canvass_plans").insert({
-        for_date: parsed.data.date,
-        slot_start: parsed.data.start,
-        slot_end: parsed.data.end,
-        parcel_ids: parsed.data.parcel_ids,
-        created_by: session.profile.id,
-        notes: parsed.data.notes?.trim() ? parsed.data.notes.trim() : null,
+    const at = new Date(parsed.data.at)
+    const { parcels } = await loadParcelViews(db, { limit: parsed.data.limit, slot: { at } })
+    const rows = parcels.map(toParcelRow)
+    return {
+      ok: true,
+      at: at.toISOString(),
+      rows,
+      map: parcels.flatMap((v) => {
+        const m = toMapParcel(v)
+        return m ? [m] : []
       }),
-      "save plan",
-    )
-    revalidatePath("/admin/canvass/plan")
-    revalidatePath("/crew/knock")
-    return { ok: true, message: `Plan saved: ${parsed.data.parcel_ids.length} stop(s) on ${parsed.data.date}.` }
+      light: areaLight(rows),
+    }
   } catch (e) {
     return fail(e)
   }
