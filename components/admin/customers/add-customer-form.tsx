@@ -12,8 +12,11 @@ import { useToast } from "@/components/ui/toast"
 
 const EMPTY: NewCustomer = { name: "", phone: "", email: "", address: "", parcel_id: "", notes: "" }
 
-/** "Add a customer": only the name is required. Opens their page once saved (add a paid job there). */
-export function AddCustomerForm() {
+/**
+ * "Add a customer": only the name is required. Opens their page once saved (add a paid job there).
+ * `detailHref` is the prefix the new (or already-on-file) customer's id is appended to.
+ */
+export function AddCustomerForm({ detailHref = "/admin/customers/" }: { detailHref?: string } = {}) {
   const { toast } = useToast()
   const router = useRouter()
   const [pending, startTransition] = React.useTransition()
@@ -27,7 +30,7 @@ export function AddCustomerForm() {
       const r = await addCustomer(v)
       if (r.ok) {
         toast({ title: r.message, variant: "success" })
-        router.push(`/admin/customers/${r.id}`)
+        router.push(`${detailHref}${r.id}`)
       } else if (r.existingId) {
         setExisting({ id: r.existingId, reason: r.reason })
       } else {
@@ -65,7 +68,7 @@ export function AddCustomerForm() {
       {existing ? (
         <p className="text-sm text-ink" role="alert">
           {existing.reason}{" "}
-          <Link href={`/admin/customers/${existing.id}`} className="font-medium underline underline-offset-4">
+          <Link href={`${detailHref}${existing.id}`} className="font-medium underline underline-offset-4">
             Open them
           </Link>
         </p>

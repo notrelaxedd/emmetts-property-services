@@ -21,7 +21,7 @@ function currentSeason(): (typeof SEASONS)[number] {
 }
 
 /** Queues an `ad_draft` fleet task; Claude's draft comes back as an inbox card. */
-export function DraftAdForm() {
+export function DraftAdForm({ submitLabel = "Draft ad" }: { submitLabel?: string } = {}) {
   const { pending, run } = useActionRunner()
   const [channel, setChannel] = React.useState("facebook")
   const [season, setSeason] = React.useState<string>(currentSeason)
@@ -73,7 +73,7 @@ export function DraftAdForm() {
             />
           </div>
           <Button type="submit" disabled={pending}>
-            {pending ? "Queuing…" : "Draft ad"}
+            {pending ? "Queuing…" : submitLabel}
           </Button>
         </form>
       </CardContent>

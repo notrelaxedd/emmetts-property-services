@@ -1,12 +1,12 @@
 "use client"
 
 import Link from "next/link"
-import { CheckCircle2, ExternalLink } from "lucide-react"
+import { Check, CheckCircle2, ExternalLink, ImageIcon } from "lucide-react"
 import { markAdPosted } from "@/app/admin/actions/ads"
 import { targetingSummary } from "@/components/admin/inbox/cards/ad-card"
 import { CopyButton } from "@/components/admin/inbox/copy-button"
 import { dateTime, label } from "@/components/admin/inbox/format"
-import { useActionRunner } from "@/components/admin/inbox/use-action"
+import { useActionRunner, useDecide } from "@/components/admin/inbox/use-action"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
@@ -29,11 +29,44 @@ export function adCopyText(ad: Pick<Ad, "headline" | "body" | "cta">): string {
   return [ad.headline, ad.body, ad.cta].filter(Boolean).join("\n\n")
 }
 
-export function AdItem({ ad }: { ad: Ad }) {
-  const { pending, run } = useActionRunner()
+/** True when `image_path` is something a browser can load directly (absolute URL or a site path). */
+function imageSrc(path: string | null): string | null {
+  if (!path) return null
+  return /^https?:\/\//i.test(path) || path.startsWith("/") ? path : null
+}
+
+/** How the post will look: the ad's image, or a branded block where the image goes. */
+function AdPreview({ ad }: { ad: Ad }) {
+  const src = imageSrc(ad.image_path)
+  return (
+    <div className="-mx-4 mb-2 overflow-hidden border-y border-ink/10 bg-brand-green/15">
+      {src ? (
+        // Ad images are plain URLs (no next/image config for them).
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" className="aspect-video w-full object-cover" loading="lazy" />
+      ) : (
+        <div className="flex aspect-video w-full flex-col items-center justify-center gap-1.5 text-brand-green-dark">
+          <ImageIcon className="size-8" aria-hidden="true" />
+          <span className="text-xs font-semibold uppercase tracking-wide">{ad.image_path ? "Image on file" : "Add a photo when you post"}</span>
+          {ad.image_path ? <span className="max-w-[90%] truncate font-mono text-[0.6875rem] text-ink-muted">{ad.image_path}</span> : null}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * One ad. On the Ads page it's the plain card; with `preview` (the front page's Ads stage) it shows the
+ * post as it will look (image or a branded block) and, for a draft with its pending inbox card
+ * (`approvalId`), an Approve button that runs the same decision as the inbox ad card.
+ */
+export function AdItem({ ad, preview = false, approvalId = null }: { ad: Ad; preview?: boolean; approvalId?: string | null }) {
+  const { pending: runPending, run } = useActionRunner()
+  const d = useDecide(approvalId ?? "")
+  const pending = runPending || d.pending
   const dest = AD_DESTINATIONS[ad.channel]
   return (
-    <Card className="flex h-full flex-col">
+    <Card className={preview ? "flex h-full flex-col overflow-hidden" : "flex h-full flex-col"}>
       <CardHeader className="pb-2">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline">{label(ad.channel)}</Badge>
@@ -43,6 +76,7 @@ export function AdItem({ ad }: { ad: Ad }) {
         </div>
       </CardHeader>
       <CardContent className="flex-1 space-y-2">
+        {preview ? <AdPreview ad={ad} /> : null}
         <p className="font-semibold text-ink">{ad.headline}</p>
         <p className="whitespace-pre-line text-sm text-ink-body">{ad.body}</p>
         {ad.cta ? <p className="inline-block rounded-full bg-ink px-3 py-1 text-xs font-semibold text-white">{ad.cta}</p> : null}
@@ -67,9 +101,15 @@ export function AdItem({ ad }: { ad: Ad }) {
       </CardContent>
       <CardFooter className="flex flex-wrap gap-2 border-t border-ink/10 pt-3">
         <CopyButton text={adCopyText(ad)} label="Copy text" />
+        {ad.status === "draft" && preview && approvalId ? (
+          <Button type="button" size="sm" disabled={pending} onClick={() => void d.decide("approved")}>
+            <Check aria-hidden="true" />
+            {d.pending ? "Approving…" : "Approve"}
+          </Button>
+        ) : null}
         {ad.status === "draft" ? (
           <Button asChild size="sm" variant="ghost">
-            <Link href="/admin/inbox?filter=ads">Review in inbox</Link>
+            <Link href="/admin/inbox?filter=ads">{preview && approvalId ? "Edit in inbox" : "Review in inbox"}</Link>
           </Button>
         ) : (
           <Button asChild size="sm" variant="outline">
