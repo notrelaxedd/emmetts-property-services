@@ -311,7 +311,7 @@ export function QuoteEditor({
                       />
                       {item.is_custom ? <ItemStatusBadge status={status} /> : null}
                       {item.id && pendingCustomItemIds.includes(item.id) ? (
-                        <Link href="/admin?filter=custom" className="text-xs underline">
+                        <Link href="/admin/inbox?filter=custom" className="text-xs underline">
                           Card in inbox
                         </Link>
                       ) : null}

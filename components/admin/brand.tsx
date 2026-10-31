@@ -1,7 +1,7 @@
 import Image from "next/image"
 import Link from "next/link"
 
-/** Compact console lockup. Links to the inbox (not the marketing site). */
+/** Compact console lockup. Links to the console home (not the marketing site). */
 export function AdminBrand() {
   return (
     <Link href="/admin" className="flex items-center gap-2.5" aria-label="Owner console home">

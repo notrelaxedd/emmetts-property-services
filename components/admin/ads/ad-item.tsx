@@ -69,7 +69,7 @@ export function AdItem({ ad }: { ad: Ad }) {
         <CopyButton text={adCopyText(ad)} label="Copy text" />
         {ad.status === "draft" ? (
           <Button asChild size="sm" variant="ghost">
-            <Link href="/admin?filter=ads">Review in inbox</Link>
+            <Link href="/admin/inbox?filter=ads">Review in inbox</Link>
           </Button>
         ) : (
           <Button asChild size="sm" variant="outline">
