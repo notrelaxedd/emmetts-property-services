@@ -1,14 +1,10 @@
 import "server-only"
 
 import type { ScheduleCrew, ScheduleJob } from "@/components/admin/schedule/types"
+import { initials } from "@/components/admin/stages/stages"
 import type { AssignmentStatus, Job, PaymentMethod } from "@/lib/db/types"
 import type { Db } from "@/lib/ops/types"
 import { formatDayLabel, formatTimeRange, localDate, localTime, parseHHMM } from "@/lib/scheduler/time"
-
-export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase() || "?"
-}
 
 /** Minutes after local midnight of `date` for an instant, clamped to that day. */
 export function minutesOfDay(ms: number, date: string): number {

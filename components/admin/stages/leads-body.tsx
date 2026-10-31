@@ -117,6 +117,7 @@ export async function LeadsBody({ status, variant = "page" }: { status: LeadStat
                         {[services(l), street(c?.address)].filter(Boolean).join(" · ") || "No services picked"}
                       </span>
                       {note ? <span className="mt-0.5 block truncate text-xs text-ink-muted">&ldquo;{note}&rdquo;</span> : null}
+                      <span className="mt-0.5 block text-xs text-ink-muted sm:hidden">{dateTime(l.created_at)}</span>
                     </span>
                     <span className="hidden shrink-0 text-xs text-ink-muted sm:block">{dateTime(l.created_at)}</span>
                     <ChevronRight className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />

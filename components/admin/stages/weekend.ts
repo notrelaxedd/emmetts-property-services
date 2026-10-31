@@ -2,12 +2,10 @@ import type { CrewAvailability, CrewException } from "@/lib/db/types"
 import { crewAvailableForDay } from "@/lib/scheduler/capacity"
 import { addDays, localDate, weekdayOf } from "@/lib/scheduler/time"
 
-/** The coming Saturday and Sunday (today when it is one), as local "YYYY-MM-DD". */
+/** The next Saturday on or after today, and the Sunday after it, as local "YYYY-MM-DD". */
 export function upcomingWeekend(now: Date = new Date()): { sat: string; sun: string } {
   const today = localDate(now)
-  const wd = weekdayOf(today)
-  const sat = wd === 0 ? addDays(today, -1) : addDays(today, (6 - wd + 7) % 7)
-  // On a Sunday the weekend in progress is the one shown (Saturday already passed, Sunday is today).
+  const sat = addDays(today, (6 - weekdayOf(today) + 7) % 7)
   return { sat, sun: addDays(sat, 1) }
 }
 
