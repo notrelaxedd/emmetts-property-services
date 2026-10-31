@@ -507,15 +507,3 @@ export function resolveWindow({ parcel, blockGroup, learned, settings }: Resolve
 
   return { window: { ...DEFAULT_WINDOW }, label: `${formatWindow(DEFAULT_WINDOW, "")} (default)`, source: "none", reason: NO_DATA_REASON };
 }
-
-// ---------- Slot overlap ----------
-
-export type Slot = { weekday: number; start: number; end: number };
-
-/** True when a knock in the slot (local weekday, hours start..end) falls inside the window. */
-export function windowOverlapsSlot(window: TimeWindow, slot: Slot): boolean {
-  const days = dayKindOf(slot.weekday);
-  if (window.days !== "any" && window.days !== days) return false;
-  if (window.kind === "anytime") return slot.end > slot.start;
-  return window.start < slot.end && window.end > slot.start;
-}

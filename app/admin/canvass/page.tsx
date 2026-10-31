@@ -3,18 +3,18 @@ import { Footprints, MapPinned } from "lucide-react"
 import { CanvassTabs } from "@/components/admin/canvass/canvass-tabs"
 import { ParcelTable } from "@/components/admin/canvass/parcel-table"
 import { PullPanel } from "@/components/admin/canvass/pull-panel"
-import { SlotPicker } from "@/components/admin/canvass/slot-picker"
+import { TopFilters } from "@/components/admin/canvass/top-filters"
 import { TopList } from "@/components/admin/canvass/top-list"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageHeader } from "@/components/ui/page-header"
 import { Stat } from "@/components/ui/stat"
 import { requireOwner } from "@/lib/auth/session"
-import { areaLight, toMapParcel, toParcelRow } from "@/lib/canvass/admin-rows"
+import { toMapParcel, toParcelRow } from "@/lib/canvass/admin-rows"
 import type { MapParcel, ParcelRow } from "@/lib/canvass/admin-rows"
 import { pulledParcelIsResidential } from "@/lib/canvass/county"
-import { loadParcelViews, slotAt } from "@/lib/canvass/load"
-import { areaBanner, defaultSlot, parseHomeParams, slotLabel, topList } from "@/lib/canvass/owner-view"
+import { loadParcelViews } from "@/lib/canvass/load"
+import { parseHomeParams, topList } from "@/lib/canvass/owner-view"
 import type { HomeParams } from "@/lib/canvass/owner-view"
 import type { ScoreWeights } from "@/lib/canvass/types"
 import { opsConfig } from "@/lib/config"
@@ -31,7 +31,6 @@ type HomeData = {
   shapes: MapParcel[]
   top: ParcelRow[]
   moreMatching: number
-  light: ReturnType<typeof areaLight>
   weights: ScoreWeights
   recencyDays: number
   season: string
@@ -41,9 +40,8 @@ type HomeData = {
 async function load(params: HomeParams, now: Date): Promise<HomeData> {
   const db = requireSupabaseAdmin()
   const since = new Date(now.getTime() - KNOCK_WINDOW_DAYS * 86_400_000).toISOString()
-  const slot = params.date && params.start ? slotAt(params.date, params.start, params.end) : null
   const [views, parcelCount, dnkCount, recentKnocks] = await Promise.all([
-    loadParcelViews(db, { slot, now }),
+    loadParcelViews(db),
     db.from("parcels").select("id", { count: "exact", head: true }),
     db.from("parcels").select("id", { count: "exact", head: true }).eq("do_not_knock", true),
     db.from("knocks").select("parcel_id").gte("knocked_at", since).limit(20_000),
@@ -72,7 +70,6 @@ async function load(params: HomeParams, now: Date): Promise<HomeData> {
     shapes,
     top,
     moreMatching,
-    light: areaLight(rows),
     weights: settings.score_weights,
     recencyDays: settings.recency_days,
     season: views.season.label,
@@ -101,8 +98,6 @@ export default async function CanvassPage({ searchParams }: { searchParams?: Rec
 
   const params = parseHomeParams(searchParams ?? {})
   const now = new Date()
-  const defaults = defaultSlot(now)
-  const slotChosen = !!params.date && !!params.start
 
   let data: HomeData | null = null
   let error: string | null = null
@@ -112,27 +107,25 @@ export default async function CanvassPage({ searchParams }: { searchParams?: Rec
     error = e instanceof Error ? e.message : String(e)
   }
 
-  const banner = data ? areaBanner(data.light, slotChosen ? slotLabel(params.date as string, params.start as string) : null) : null
-
   return (
     <div className="space-y-4">
       <PageHeader
         title="Canvass"
-        description={data ? `Door to door planning. Season focus: ${data.season}.` : "Door to door planning: pull parcels, see who to knock and when."}
+        description={data ? `Door to door planning. Season focus: ${data.season}.` : "Door to door planning: pull parcels and see which houses to knock first."}
       />
       <CanvassTabs active="map" />
 
-      {error || !data || !banner ? (
+      {error || !data ? (
         <EmptyState icon={MapPinned} title="Couldn't load the canvass map" description={error ?? undefined} />
       ) : (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink/10 bg-white p-4 shadow-sm">
             <div className="min-w-0">
-              <p className="text-lg font-semibold leading-tight text-ink sm:text-xl" role="status">
-                <span aria-hidden="true">{banner.emoji}</span> {banner.text}
+              <p className="text-lg font-semibold leading-tight text-ink sm:text-xl">
+                {data.stats.loaded === 0 ? "No houses pulled yet" : `${data.stats.loaded.toLocaleString("en-US")} houses in the area`}
               </p>
               <p className="mt-0.5 text-sm text-ink-muted">
-                {data.stats.loaded === 0 ? "Pull a few streets to get started." : `Based on ${data.stats.loaded.toLocaleString("en-US")} houses in the area.`}
+                {data.stats.loaded === 0 ? "Pull a few streets to get started." : "The best ones to knock first are listed below."}
               </p>
             </div>
             <Button asChild size="cta-sm" className="w-full sm:w-auto">
@@ -142,14 +135,7 @@ export default async function CanvassPage({ searchParams }: { searchParams?: Rec
             </Button>
           </div>
 
-          <SlotPicker
-            key={slotChosen ? `${params.date}|${params.start}|${params.end ?? ""}` : "now"}
-            defaults={defaults}
-            slot={slotChosen ? { date: params.date as string, start: params.start as string, end: params.end } : null}
-            active={slotChosen}
-            filters={{ hideDnk: params.hideDnk, hideRecent: params.hideRecent, singleFamily: params.singleFamily }}
-            recencyDays={data.recencyDays}
-          />
+          <TopFilters filters={{ hideDnk: params.hideDnk, hideRecent: params.hideRecent, singleFamily: params.singleFamily }} recencyDays={data.recencyDays} />
 
           <section className="space-y-2" aria-labelledby="area-heading">
             <h2 id="area-heading" className="text-base font-semibold text-ink">
@@ -161,13 +147,12 @@ export default async function CanvassPage({ searchParams }: { searchParams?: Rec
           <section className="space-y-2" aria-labelledby="top-heading">
             <h2 id="top-heading" className="text-base font-semibold text-ink">
               Top 25
-              {slotChosen ? <span className="ml-2 text-sm font-normal text-ink-muted">for {slotLabel(params.date as string, params.start as string)}</span> : null}
             </h2>
             {data.rows.length === 0 ? (
               <EmptyState
                 icon={MapPinned}
                 title="No parcels yet"
-                description="Open Pull parcels above the map, draw an area and pull it. Residential lots inside it are loaded from the county, with their best time to knock and a price."
+                description="Open Pull parcels above the map, draw an area and pull it. Residential lots inside it are loaded from the county, with a priority and a price."
               />
             ) : (
               <TopList rows={data.top} weights={data.weights} moreMatching={data.moreMatching} />

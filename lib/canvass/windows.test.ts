@@ -14,7 +14,6 @@ import {
   parseStatedWindow,
   priorHasData,
   resolveWindow,
-  windowOverlapsSlot,
 } from "./windows";
 
 const SETTINGS = {
@@ -282,21 +281,5 @@ describe("resolveWindow", () => {
     const r = resolveWindow({ parcel: { ...base, callback_window: "evenings", do_not_knock: true }, blockGroup: acs, settings: SETTINGS });
     expect(r.source).toBe("none");
     expect(r.label).toBe("Do not knock");
-  });
-});
-
-describe("windowOverlapsSlot", () => {
-  it("matches days and hours", () => {
-    const w = range("weekdays", 16, 18);
-    expect(windowOverlapsSlot(w, { weekday: 4, start: 15, end: 17 })).toBe(true);
-    expect(windowOverlapsSlot(w, { weekday: 4, start: 18, end: 20 })).toBe(false);
-    expect(windowOverlapsSlot(w, { weekday: 6, start: 16, end: 18 })).toBe(false);
-    expect(windowOverlapsSlot(range("any", 16, 18), { weekday: 0, start: 17, end: 19 })).toBe(true);
-    expect(windowOverlapsSlot(range("weekends", 10, 12), { weekday: 0, start: 11.5, end: 13 })).toBe(true);
-  });
-  it("treats anytime as any hour on those days", () => {
-    expect(windowOverlapsSlot({ kind: "anytime", days: "weekends" }, { weekday: 3, start: 9, end: 11 })).toBe(false);
-    expect(windowOverlapsSlot({ kind: "anytime", days: "weekends" }, { weekday: 6, start: 9, end: 11 })).toBe(true);
-    expect(windowOverlapsSlot({ kind: "anytime", days: "any" }, { weekday: 1, start: 9, end: 11 })).toBe(true);
   });
 });

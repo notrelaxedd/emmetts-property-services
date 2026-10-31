@@ -1,27 +1,32 @@
 # Canvass: door-to-door planning
 
-The **Canvass** tab (`/admin/canvass`) tells the crew which houses to knock, a time **range** to knock them, and
-what to quote at the door. It is built for a three-person crew selling mowing, leaf cleanup and snow removal on
-foot in Rocky River: pull a street's parcels from the county, see a window and a price range per house, plan a
-walking route for a slot, log every knock from a phone in under three seconds, hang QR door hangers per street and
-read what worked the next morning.
+The **Canvass** tab (`/admin/canvass`) tells the crew which houses to knock and what to quote at the door. It is
+built for a three-person crew selling mowing, leaf cleanup and snow removal on foot in Rocky River: pull a street's
+parcels from the county, see a score and a price per house, plan a walking route for a session, log every knock from a
+phone in under three seconds, hang QR door hangers per street and read what worked the next morning.
+
+There is no "when to knock" feature. The knock-now lights, time windows, 7-day strip and slot picker were retired
+(the owner's call: they did not work the way he wanted). The score now uses only lawn size, a customer nearby and
+owner-occupancy (see "Simple score"). The only timing left on screen is plain text: what the homeowner said
+(`callback_window`, shown as "Homeowner said: ...") and what the crew noted (`home_pattern`, shown as "Crew noted:
+Home weekdays / Evenings only / Weekends only / Unknown").
 
 ```
-draw an area ──▶ pull county parcels ──▶ block-group ACS prior ──▶ window + quote + score per house
+draw an area ──▶ pull county parcels ──▶ block-group Census aggregates ──▶ quote + score per house
                                                                           │
-   nightly summary ◀── knock log + QR scans ◀── crew logs at the door ◀── plan my session (route for a slot)
+   nightly summary ◀── knock log + QR scans ◀── crew logs at the door ◀── plan my session (route)
 ```
 
 | Route | Who | What |
 | --- | --- | --- |
-| `/admin/canvass` | owner | Knock-now banner, slot picker, area map (hot / good / low), Top 25 list, "Show all" parcel table, stat cards |
+| `/admin/canvass` | owner | Area map (hot / good / low), Top 25 list, "Show all" parcel table, stat cards |
 | `/admin/canvass/walk` | owner | Walk Mode inside the admin shell |
-| `/admin/canvass/parcels/[id]` | owner | Parcel detail: quote (estimate + traced), lawn tracing, window + reason, knock history, homeowner / crew edits |
+| `/admin/canvass/parcels/[id]` | owner | Parcel detail: quote (estimate + traced), lawn tracing, what the homeowner said / crew noted, knock history, homeowner / crew edits |
 | `/admin/canvass/plan` | owner | Plan my session |
 | `/admin/canvass/hangers` | owner | Hanger code per street, conversions, link to the print sheet |
 | `/admin/canvass/hangers/[code]/print` | owner | Letter 3-up hanger sheet with QR |
 | `/admin/canvass/insights` | owner | Nightly summary card, knocker + pitch stats, hanger conversions, pitch management (`/admin/canvass/stats` redirects here) |
-| `/admin/canvass/settings` | owner | Pricing, thresholds, doors/hour, neighbor N, recency, season map, value tier, county field map, land-use codes |
+| `/admin/canvass/settings` | owner | Pricing, score weights, doors/hour, neighbor N, recency, season map, value tier, county field map, land-use codes |
 | `/crew/walk` | crew + owner | Walk Mode (mobile-first; "Walk" in the crew tab bar): numbered route from the phone's location, six one-tap outcomes, Google Maps link. `/crew/knock` redirects here |
 | `/h/[code]` | public | Hanger QR landing: logs the scan, sets the `hanger` cookie, redirects to the quote form |
 | `/api/cron/canvass-summary` | Vercel cron | Nightly summary (10:00 UTC: 06:00 EDT / 05:00 EST), `Authorization: Bearer CRON_SECRET` |
@@ -34,7 +39,7 @@ Everything the tab knows comes from exactly five places. Nothing else is allowed
 | --- | --- | --- | --- |
 | 1 | Cuyahoga County public parcel layer (ArcGIS REST, `Open_Data_Parcels/MapServer/1`, non-Cleveland) | `gis.cuyahogacounty.gov` | Parcel PIN, site + mailing address, land-use code, acreage, market value, year built, living sqft, stories / footprint when present, homestead (owner-occupancy) flag when present, the polygon |
 | 2 | Census ACS 5-year estimates at the **block-group** level, plus block-group polygons | `api.census.gov`, `tigerweb.geo.census.gov`, `geocoding.geo.census.gov` (fallback) | Aggregates only: departure-time and commute-time distributions, % not in labor force, % 65+, share of families with a non-working parent, median household income (display only) |
-| 3 | What the crew observed / the homeowner said | — | `callback_window` ("weekdays after 5"), `home_pattern` tag, `do_not_knock`, notes |
+| 3 | What the crew observed / the homeowner said | — | `callback_window` ("weekdays after 5", shown as text), `home_pattern` tag (shown as text), `do_not_knock`, notes |
 | 4 | Our own knock log and QR scans | — | Outcome, knocker, pitch, GPS, weather at the knock; hanger scans and bookings per street |
 | 5 | Open-Meteo (free, no key) | `api.open-meteo.com` | Temperature, precipitation, conditions stored with every knock |
 
@@ -62,8 +67,6 @@ The hard rules:
 - **`do_not_knock` is forever.** "No Soliciting sign" or "Asked not to return" at the door sets it (with a
   reason); so can the owner on the parcel page. A re-pull from the county keeps it, and such a parcel never appears
   in a route or plan (`planSession` excludes it, and the logger shows it as do-not-knock).
-- **Every timing output is a range**: a 2-hour bucket ("Weekdays 4–6pm likely") or "Anytime weekdays". There is no
-  minute-level prediction anywhere in the code.
 - **Throttle and cache.** County pages are fetched sequentially with a 15 s timeout; ACS is one call per table for
   the whole county; TIGERweb / the geocoder run two at a time. Everything lands in Supabase (`parcels`,
   `block_groups`) and is reused.
@@ -88,7 +91,7 @@ denominator = "With own children of the householder under 18 years"
 pct_hh_nonworking_parent = numerator / denominator
 ```
 
-That is exactly the "someone is likely home on a weekday" signal the window logic wants. Variable ids are never
+That is the "someone is likely home on a weekday" signal the (retired) window logic used; the pull still stores it. Variable ids are never
 guessed: `lib/canvass/census.ts` fetches each table's group metadata (`/groups/<table>.json`) and picks the
 estimate variables by their documented label, so a vintage bump does not silently read the wrong column.
 
@@ -97,34 +100,17 @@ and commute distributions (stored as `{ "<bucket label>": count }`), **B23025** 
 **B01001** gives `% 65+`, **B19013** median household income (display only). Census null sentinels (negative
 values such as `-666666666`) become `null`.
 
-## Window logic (ranges, not times)
+## Retired: knock-now windows
 
-`lib/canvass/windows.ts` → `resolveWindow()` picks one window per house in this order; the source and a hover
-reason are stored with it:
+Windows were retired in Canvass v3b. Nothing in `app/` or `components/` reads them, and neither the score, Walk Mode,
+the planner nor the nightly digest uses them. What stays, as data only:
 
-1. **Homeowner-stated `callback_window`** ("weekdays after 5" → weekdays 5–9pm; "any time Sat" → weekends
-   anytime; "mornings" → 8–12). Overrides everything. Text we cannot parse still wins, shown as
-   "Homeowner: <text>".
-2. **Crew `home_pattern` tag**: `home_weekdays` → weekdays 9–5 "Home weekdays (crew)", `evenings_only` → weekdays
-   5–8pm, `weekends_only` → weekends 10–4; `unknown` falls through.
-3. **Learned layer** (once the block group or street has `learned_min_knocks` knocks, default 8): a Beta-Binomial
-   P(answer) per weekday-vs-weekend × 2-hour bucket. The ACS prior's bucket starts at α=4, β=2, every other bucket
-   at α=1, β=3, so early data is shrunk toward the prior; posterior mean = (α + answers) / (α + β + knocks). An
-   "answer" is any outcome but `no_answer`. It picks the best bucket (ties go to the prior) and refines ranges; it
-   never outputs an exact time. The pool is the whole recent knock log (the newest 5000 knocks)
-   plus older knocks on the houses in view, so the table, the parcel page, Walk Mode and the digest
-   agree on a house's window.
-4. **ACS block-group prior** (`acsPrior`, works on day one):
-   - **Daytime-friendly** when `pct_not_in_lf ≥ daytime_not_in_lf_threshold` (default 0.40) **or**
-     `pct_hh_nonworking_parent ≥ daytime_nonworking_parent_threshold` (default 0.35) → weekdays 10am–4pm,
-     "Anytime weekdays (daytime OK)", reason "Area: ~40% of households have a non-working adult → daytime OK."
-   - Otherwise a **return-home window**: typical departure (weighted median of B08302) + commute (weighted median
-     of B08303) + `work_hours` (default 8.5) + commute back, snapped to an even 2-hour bucket between 3pm and 9pm,
-     reason "Area: typical departure ~7:30am + ~25 min commute + 8.5h → home ~4:30pm".
-5. **Default** when there is no area data: weekdays 5–7pm, reason "No area data yet".
-
-`windowOverlapsSlot(window, slot)` is what "Plan my session" uses to keep only houses whose window overlaps the
-chosen slot.
+- The Census pulls and `block_groups.prior_window` (written by `pull.ts`), plus the unused settings columns
+  `daytime_not_in_lf_threshold`, `daytime_nonworking_parent_threshold`, `work_hours` and `learned_min_knocks`
+  (no longer on the Settings form).
+- `lib/canvass/windows.ts` (`resolveWindow`, the learned Beta-Binomial helpers, `acsPrior`), kept for the data layer
+  and its tests. Do not import it from UI code.
+- `parcels.callback_window` and `parcels.home_pattern`, edited on the parcel page and shown as plain text.
 
 ## Quoting
 
@@ -154,36 +140,30 @@ Defaults: leaf cleanup $30 / $40 / $50 (small / medium / large), XL quote on sit
 
 ## Simple score
 
-`lib/canvass/simple-score.ts` (v3 replaced the v2 probability score; no probabilities are shown anywhere):
+`lib/canvass/simple-score.ts` (v3 replaced the v2 probability score; no probabilities are shown anywhere). Three
+factors, each 0-3 points:
 
 | Factor | 3 | 2 | 1 | 0 |
 | --- | --- | --- | --- | --- |
-| Time (knock-now light for "now" or the chosen slot) | green | yellow | | red |
 | Lawn (lot-size tier) | large / xl | medium | small / unknown | |
 | Customer nearby | within `neighbor_n` houses | within 150 m | same street | none |
 | Owner | owner-occupied | | unknown | rental (entity or not occupied) |
 
-Each factor is multiplied by its `score_weights` entry (Settings, default 1 each) and the total is clamped to 0–12.
-Labels: **hot** 🔥 ≥ 9, **good** 👍 5–8, **low** ➖ ≤ 4, with up to three reasons from the highest-scoring factors
-("Big lawn · next to a customer · good time now"). The map colours hot brand green, good amber, low gray. The
-owner can tap a label for the four-factor breakdown; crew payloads never carry the points. Do-not-knock houses get
-0 points and a red "Do not knock" light.
-
-## Knock-now light
-
-`lib/canvass/lights.ts`: green inside the window, yellow within an hour of it (or, for an area-guessed or learned
-window, a learned bucket that has knocks and a mean in 0.25–0.45), red otherwise; a do-not-knock house is red with an
-all-red strip; every house shows the light, the window in plain English (`plainWindow`) and, when red,
-the next good time within 7 days. The parcel page adds a Mon–Sun strip (2pm–8pm weekdays, 9am–8pm weekends).
+Each factor is multiplied by its `score_weights` entry (Settings: `lawn`, `customer`, `owner`, default 1 each; a
+`time` key left in an old row is ignored) and the total is clamped to 0-9. Labels: **hot** 🔥 ≥ 7, **good** 👍 4-6,
+**low** ➖ ≤ 3, with up to three reasons from the highest-scoring factors ("Big lawn · next to a customer ·
+owner-occupied"). The map colours hot brand green, good amber, low gray. The owner can tap a label for the
+three-factor breakdown; crew payloads never carry the points. Do-not-knock houses get 0 points.
 
 ## Plan my session
 
-Pick a date and a slot (default next weekday 3–5pm) and a start point. `planSession` drops `do_not_knock`
-houses, houses knocked in the last `recency_days` (default 14) and houses whose window does not overlap the slot,
-sorts by score, takes `doors_per_hour × hours` (default 25/hour), and orders them nearest-neighbour + 2-opt from the
-start point. The plan is for the owner to read or print ("Print list"); it is not handed to the crew. Walk Mode (`/crew/walk`, `/admin/canvass/walk`) builds its own route from the
-phone's location: up to `walk_doors` green / yellow houses within ~800 m, ranked by points, ordered nearest-neighbour
-+ 2-opt.
+Pick a date, how many hours you will knock and a start point. `planSession` drops `do_not_knock` houses and houses
+knocked in the last `recency_days` (default 14), sorts by score, takes `doors_per_hour ×
+hours` (default 25/hour), and orders them nearest-neighbour + 2-opt from the start point. The plan is for the owner to
+read or print ("Print list"); it is not handed to the crew. Walk Mode (`/crew/walk`, `/admin/canvass/walk`) builds its
+own route from the phone's location: up to `walk_doors` houses within ~800 m (not do-not-knock, not knocked within
+`recency_days`, residential), ranked by points, ordered nearest-neighbour + 2-opt. The next-house card shows
+"Homeowner said: ..." when the owner or crew recorded a callback window.
 
 ## The field map: first-run procedure
 
@@ -242,15 +222,14 @@ the same page; the crew picks one at session start.
 
 `/api/cron/canvass-summary` runs at 10:00 UTC (vercel.json `0 10 * * *`; Vercel cron is UTC, so 06:00 EDT in summer and 05:00 EST in winter), requires `Authorization: Bearer
 CRON_SECRET`, and summarises yesterday's knocks (by street, knocker and pitch), the best and worst streets and
-tomorrow's suggested streets + windows through `lib/ai/claude.ts` (Sonnet, structured output, low effort, within the
+tomorrow's suggested streets (street + reason, no times) through `lib/ai/claude.ts` (Sonnet, structured output, low effort, within the
 AI spend cap). Days with no knocks store a minimal summary without calling the model. The card sits at the top of
 the tab with a "Run now" button for testing.
 
 How it runs (`lib/canvass/summary.ts`):
 
 - `buildCanvassDigest(db, date)` collects the day's knocks in America/New_York (`dayBounds`), joins streets, knocker
-  and pitch names, counts QR scans that day and the planner's area window label per street (learned / ACS / default
-  only; a homeowner's or crew tag's per-house label is never counted), and `digestFromRows` turns
+  and pitch names, counts QR scans that day, and `digestFromRows` turns
   them into an **aggregate-only** digest: counts by outcome, street, knocker, pitch and 2-hour bucket, the weather at
   the knocks. No notes, no callback text, no owner names ever reach the model.
 - `runNightlySummary(db, date = yesterday)` stores `{ headline: "No knocks on <date>", ... }` when the day had no
@@ -292,8 +271,8 @@ See `docs/ENV.md` for where each one lives.
 
 - [ ] A polygon drawn over a Rocky River street pulls the right parcels; lot size and market value match MyPlace on
       three spot-checked addresses.
-- [ ] Every house shows a window **range** on day one, with a reason on hover.
-- [ ] A homeowner-stated callback window overrides everything else for that house.
+- [ ] Every house shows a score label (hot / good / low) with up to three reasons, and a price.
+- [ ] A homeowner-stated callback window and the crew's home pattern show as plain text on the parcel page.
 - [ ] Traced turf overrides the estimate; the quote range updates live when settings change.
 - [ ] The value tier is off by default and can never exceed ×1.10.
 - [ ] Opening the logger on-site pre-selects the right house (GPS point-in-polygon, nearest centroid fallback); a

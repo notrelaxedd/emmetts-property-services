@@ -455,7 +455,7 @@ describe("summarizeCanvassDay", () => {
       worst_streets: [],
       knocker_notes: ["Emmett: 12 knocks, 5 answers, 1 booked"],
       pitch_notes: [],
-      tomorrow: [{ street: "OAK AVE", window: "Weekdays 4-6pm", why: "2 call backs" }],
+      tomorrow: [{ street: "OAK AVE", why: "2 call backs" }],
     };
     create.mockResolvedValueOnce(toolResponse("submit_canvass_summary", { ...good, headline: "" })).mockResolvedValueOnce(toolResponse("submit_canvass_summary", good));
     const { db, usageRows } = fakeDb();

@@ -137,8 +137,8 @@ export type TierTable = Record<ServiceKey, Record<TierKey, number | null>>;
 /** `canvass_settings.tier_bounds`: small ≤ small_max < medium ≤ medium_max < large ≤ large_max < xl (turf sqft). */
 export type TierBounds = { small_max: number; medium_max: number; large_max: number };
 
-/** `canvass_settings.score_weights`: multipliers on the four simple-score factors. */
-export type ScoreWeights = { time: number; lawn: number; customer: number; owner: number };
+/** `canvass_settings.score_weights`: multipliers on the three simple-score factors (a stored `time` key is ignored). */
+export type ScoreWeights = { lawn: number; customer: number; owner: number };
 
 /** `canvass_settings.season_map`: month ("1".."12") → featured service. */
 export type SeasonMap = Record<string, ServiceKey>;
@@ -197,7 +197,7 @@ export const DEFAULT_TIER_MINUTES: TierTable = {
 export const DEFAULT_TIER_BOUNDS: TierBounds = { small_max: 4000, medium_max: 8000, large_max: 12000 };
 
 /** Mirrors the `canvass_settings.score_weights` column default. */
-export const DEFAULT_SCORE_WEIGHTS: ScoreWeights = { time: 1, lawn: 1, customer: 1, owner: 1 };
+export const DEFAULT_SCORE_WEIGHTS: ScoreWeights = { lawn: 1, customer: 1, owner: 1 };
 
 /** Mirrors the `canvass_settings.crew_size` / `pay_rate` / `walk_doors` column defaults. */
 export const DEFAULT_CREW_SIZE = 3;
@@ -230,5 +230,5 @@ export type CanvassSummaryContent = {
   worst_streets: { street: string; why: string }[];
   knocker_notes: string[];
   pitch_notes: string[];
-  tomorrow: { street: string; window: string; why: string }[];
+  tomorrow: { street: string; why: string }[];
 };

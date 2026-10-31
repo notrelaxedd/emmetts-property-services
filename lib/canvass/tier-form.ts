@@ -74,16 +74,16 @@ export function parseBounds(d: BoundsDraft): { ok: true; bounds: TierBounds } | 
 export type WeightsDraft = Record<keyof ScoreWeights, string>;
 
 export const weightsDraftFrom = (w: ScoreWeights): WeightsDraft => ({
-  time: String(w.time),
   lawn: String(w.lawn),
   customer: String(w.customer),
   owner: String(w.owner),
 });
 
-/** Four score multipliers, each 0 to 10 (0 turns a factor off). */
+/** Three score multipliers, each 0 to 10 (0 turns a factor off). */
 export function parseWeights(d: WeightsDraft): { ok: true; weights: ScoreWeights } | { ok: false; error: string } {
   const out = {} as ScoreWeights;
-  for (const k of Object.keys(d) as (keyof ScoreWeights)[]) {
+  // Only the three live factors; a stray `time` key (an old draft) is ignored.
+  for (const k of ["lawn", "customer", "owner"] as const) {
     const text = d[k].trim();
     const n = Number(text);
     if (text === "" || !Number.isFinite(n) || n < 0 || n > 10) return { ok: false, error: `Score weight for ${k} must be between 0 and 10` };

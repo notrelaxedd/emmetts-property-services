@@ -10,7 +10,6 @@ import {
   toMapParcel,
   toParcelRow,
   yesNo,
-  areaLight,
 } from "./admin-rows";
 import { assembleParcelViews } from "./assemble";
 import { canvassSettingsRow, knockRow, lotAt, parcelRow } from "./rows.fixture";
@@ -28,9 +27,6 @@ function views(parcels = [parcelRow()], knocks = [] as ReturnType<typeof knockRo
     customers: [],
     settings,
     season,
-    now: new Date("2026-10-29T21:15:00.000Z"),
-    learned: new Map(),
-    slot: null,
   });
 }
 
@@ -45,15 +41,16 @@ describe("toParcelRow / toMapParcel", () => {
     expect(row.lastOutcome).toBe("booked");
     expect(row.lastKnockAt).toBe("2026-10-20T20:00:00.000Z");
     expect(row.knockCount).toBe(1);
-    expect(row.windowLabel).toBe(v.window.label);
     expect(row.fullAddress).toBe("19000 Detroit Rd, Rocky River, OH 44116");
     expect(row.ownerFirstName).toBe("John");
     expect(row.quotePrice).toBe(v.quote.price);
     expect(row.quoteLabel).toBe(v.quote.label);
     expect(row.scorePoints).toBe(v.simple.points);
     expect(row.scoreLabel).toBe(v.simple.label);
-    expect(row.light).toBe(v.knock.light);
-    expect(row.plainText).toBe(v.plain.text);
+    expect(Object.keys(row.scoreBreakdown).sort()).toEqual(["customer", "lawn", "owner"]);
+    for (const gone of ["light", "lightLabel", "nextGoodTime", "plainText", "plainReason", "windowLabel", "windowReason", "windowSource"]) {
+      expect(gone in row).toBe(false);
+    }
     expect(row.scoreReason).toBe(v.simple.reasons.length ? row.scoreReason : "");
     expect("score" in row).toBe(false);
     expect("quintile" in row).toBe(false);
@@ -87,22 +84,6 @@ describe("labels and formatting", () => {
     expect(formatMoney(285400)).toBe("$285,400");
     expect(yesNo(true)).toBe("Yes");
     expect(yesNo(null)).toBe("?");
-  });
-});
-
-describe("areaLight", () => {
-  const r = (light: "green" | "yellow" | "red", do_not_knock = false) => ({ light, do_not_knock });
-  it("is the majority light of the houses that can be knocked", () => {
-    expect(areaLight([r("green"), r("green"), r("red")])).toBe("green");
-    expect(areaLight([r("red"), r("red"), r("yellow"), r("green")])).toBe("red");
-    expect(areaLight([r("yellow"), r("yellow"), r("green"), r("red")])).toBe("yellow");
-  });
-  it("ties go to the better light, do-not-knock houses do not vote, nobody gives null", () => {
-    expect(areaLight([r("green"), r("red")])).toBe("green");
-    expect(areaLight([r("yellow"), r("red")])).toBe("yellow");
-    expect(areaLight([r("red"), r("green", true), r("green", true)])).toBe("red");
-    expect(areaLight([])).toBeNull();
-    expect(areaLight([r("green", true)])).toBeNull();
   });
 });
 

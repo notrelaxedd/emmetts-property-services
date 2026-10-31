@@ -20,7 +20,6 @@ const stop = (id: string, order: number): WalkStopView => ({
   lng: -81.84,
   pitch: "p",
   quoteLabel: "$40",
-  light: "green",
   callback_window: null,
   walkMeters: 10,
 });

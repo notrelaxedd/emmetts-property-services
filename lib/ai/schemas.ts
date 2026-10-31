@@ -69,7 +69,7 @@ export const canvassSummarySchema = z.object({
   worst_streets: z.array(streetNote).max(5),
   knocker_notes: z.array(shortLine(300)).max(6),
   pitch_notes: z.array(shortLine(300)).max(6),
-  tomorrow: z.array(z.object({ street: shortLine(80), window: shortLine(60), why: shortLine(300) })).max(5),
+  tomorrow: z.array(streetNote).max(5),
 });
 export type CanvassSummaryOutput = z.infer<typeof canvassSummarySchema>;
 

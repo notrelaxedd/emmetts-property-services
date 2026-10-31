@@ -52,7 +52,7 @@ describe("bounds and weights", () => {
   it("reads weights between 0 and 10", () => {
     expect(parseWeights(weightsDraftFrom(DEFAULT_SCORE_WEIGHTS))).toEqual({ ok: true, weights: DEFAULT_SCORE_WEIGHTS });
     expect(parseWeights({ ...weightsDraftFrom(DEFAULT_SCORE_WEIGHTS), lawn: "11" }).ok).toBe(false);
-    expect(parseWeights({ ...weightsDraftFrom(DEFAULT_SCORE_WEIGHTS), time: "" }).ok).toBe(false);
+    expect(parseWeights({ ...weightsDraftFrom(DEFAULT_SCORE_WEIGHTS), customer: "" }).ok).toBe(false);
     expect(parseWeights({ ...weightsDraftFrom(DEFAULT_SCORE_WEIGHTS), owner: "0" }).ok).toBe(true);
   });
 });

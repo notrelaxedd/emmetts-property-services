@@ -3,19 +3,18 @@ import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import type { ParcelRow } from "@/lib/canvass/admin-rows"
 import type { ScoreWeights } from "@/lib/canvass/types"
-import { LightBadge } from "./light-badge"
 import { PointsPopover } from "./points-popover"
 
 /**
- * The Top 25: one card per house, best first. Label (tap for the four-factor breakdown), full address, the plain
- * reason, the light with the window in plain English, and the featured quote. The whole card opens the detail page;
+ * The Top 25: one card per house, best first. Label (tap for the three-factor breakdown), full address, the plain
+ * reason, and the featured quote. The whole card opens the detail page;
  * the label button sits above the link so a tap on it opens the breakdown instead. No probabilities anywhere.
  */
 export function TopList({ rows, weights, moreMatching = 0 }: { rows: ParcelRow[]; weights?: ScoreWeights; moreMatching?: number }) {
   if (rows.length === 0) {
     return (
       <Card className="p-6 text-center text-sm text-ink-muted">
-        No house passes the filters right now. Turn one off above, pick another time, or open &quot;Show all&quot; below.
+        No house passes the filters right now. Turn one off above or open &quot;Show all&quot; below.
       </Card>
     )
   }
@@ -48,9 +47,6 @@ export function TopList({ rows, weights, moreMatching = 0 }: { rows: ParcelRow[]
                   </Link>
                 </p>
                 {r.scoreReason ? <p className="text-sm text-ink-body">{r.scoreReason}</p> : null}
-                <p className="text-sm">
-                  <LightBadge light={r.light} label={r.lightLabel} plain={r.plainText} nextGoodTime={r.nextGoodTime} />
-                </p>
                 <p className="text-sm text-ink-muted">
                   Quote <span className="font-medium text-ink">{r.quoteLabel}</span>
                 </p>

@@ -457,7 +457,7 @@ export function WalkMode({ profileId, name, variant = "crew" }: WalkModeProps) {
           <p className="text-sm text-ink-muted">
             {outcomes.size
               ? `${outcomes.size} ${outcomes.size === 1 ? "door" : "doors"} logged${sessionBooked ? `, ${sessionBooked} booked` : ""}.`
-              : "Nothing nearby looks good to knock right now. Try again from another street, or later in the day."}
+              : "Nothing nearby looks good to knock right now. Try again from another street."}
           </p>
           {queuedChip}
           <Button type="button" onClick={replan} disabled={!positionRef.current && !start} className="h-12 w-full text-base">

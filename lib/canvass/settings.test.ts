@@ -39,7 +39,7 @@ describe("defaults", () => {
     });
     expect(DEFAULT_TIER_MINUTES).toEqual({ leaf_cleanup: NULLS, mow: NULLS, edge: NULLS, gutters: NULLS, snow: NULLS });
     expect(DEFAULT_TIER_BOUNDS).toEqual({ small_max: 4000, medium_max: 8000, large_max: 12000 });
-    expect(DEFAULT_SCORE_WEIGHTS).toEqual({ time: 1, lawn: 1, customer: 1, owner: 1 });
+    expect(DEFAULT_SCORE_WEIGHTS).toEqual({ lawn: 1, customer: 1, owner: 1 });
   });
   it("DEFAULT_SEASON_MAP mirrors the migration column default", () => {
     expect(Object.keys(DEFAULT_SEASON_MAP)).toHaveLength(12);
@@ -85,8 +85,8 @@ describe("merge helpers", () => {
   });
   it("mergeScoreWeights fills from the defaults and drops bad values", () => {
     expect(mergeScoreWeights(null)).toEqual(DEFAULT_SCORE_WEIGHTS);
-    expect(mergeScoreWeights({ time: 2, lawn: "x", customer: -1, owner: 0 })).toEqual({ time: 2, lawn: 1, customer: 1, owner: 0 });
-    expect(mergeScoreWeights({ time: 2 }, { time: 0.5, lawn: 3 })).toEqual({ time: 0.5, lawn: 3, customer: 1, owner: 1 });
+    expect(mergeScoreWeights({ time: 2, lawn: "x", customer: -1, owner: 0 })).toEqual({ lawn: 1, customer: 1, owner: 0 }); // a stored time key is ignored
+    expect(mergeScoreWeights({ customer: 2 }, { lawn: 3 })).toEqual({ lawn: 3, customer: 2, owner: 1 });
     expect(mergeScoreWeights({ time: 99 })).toEqual(DEFAULT_SCORE_WEIGHTS);
   });
   it("mergeSeasonMap keeps every month and drops unknown services", () => {
@@ -167,7 +167,7 @@ describe("updateCanvassSettings", () => {
       price_tiers: { mow: { large: 60 }, snow: { small: 80 } },
       tier_minutes: { leaf_cleanup: { medium: 30 } },
       tier_bounds: { small_max: 3500 },
-      score_weights: { time: 2 },
+      score_weights: { customer: 2 },
       season_map: { "3": "mow" },
       parcel_field_map: { owner: { field: "deeded_owner", source: "manual", candidates: ["deeded_owner", "owner"] } },
     });
@@ -176,7 +176,7 @@ describe("updateCanvassSettings", () => {
     expect(s.price_tiers.leaf_cleanup).toEqual(DEFAULT_PRICE_TIERS.leaf_cleanup);
     expect(s.tier_minutes.leaf_cleanup).toEqual({ small: null, medium: 30, large: null, xl: null });
     expect(s.tier_bounds).toEqual({ small_max: 3500, medium_max: 8000, large_max: 12000 });
-    expect(s.score_weights).toEqual({ ...DEFAULT_SCORE_WEIGHTS, time: 2 });
+    expect(s.score_weights).toEqual({ ...DEFAULT_SCORE_WEIGHTS, customer: 2 });
     expect(s.season_map).toEqual({ ...DEFAULT_SEASON_MAP, "3": "mow" });
     expect(s.parcel_field_map.parcel_id?.field).toBe("parcelpin");
     expect(s.parcel_field_map.owner?.field).toBe("deeded_owner");

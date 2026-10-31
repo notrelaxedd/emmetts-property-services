@@ -5,7 +5,6 @@ import { ParcelDetailForm } from "@/components/admin/canvass/parcel-detail-form"
 import { QuoteCard } from "@/components/admin/canvass/quote-card"
 import { PointsPopover } from "@/components/admin/canvass/points-popover"
 import { TraceMapClient } from "@/components/admin/canvass/trace-map-client"
-import { WindowCard } from "@/components/admin/canvass/light-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -75,6 +74,9 @@ export default async function ParcelDetailPage({ params }: { params: { id: strin
 
   const { parcel, knocks, settings, season } = data
   const turfSqft = parcel.turf_sqft_traced ?? parcel.turf_sqft_est
+  // What the homeowner or the crew told us, as plain text.
+  const homeownerSaid = parcel.callback_window?.trim() || null
+  const crewNoted = parcel.home_pattern ? HOME_PATTERN_LABELS[parcel.home_pattern] : null
   const center: [number, number] =
     parcel.centroid_lat !== null && parcel.centroid_lng !== null ? [parcel.centroid_lat, parcel.centroid_lng] : [opsConfig.defaultBase.lat, opsConfig.defaultBase.lng]
 
@@ -126,7 +128,6 @@ export default async function ParcelDetailPage({ params }: { params: { id: strin
             value={parcel.lastKnock ? `${localDate(new Date(parcel.lastKnock.knocked_at))}, ${outcomeLabel(parcel.lastKnock.outcome)}` : "Not knocked yet"}
             note={parcel.lastKnock ? `by ${parcel.lastKnock.knocker_name}` : undefined}
           />
-          <Fact label="Home pattern" value={parcel.home_pattern ? HOME_PATTERN_LABELS[parcel.home_pattern] : "Not set"} />
         </dl>
         <p className="mt-3 text-xs text-ink-muted">
           Parcel {parcel.parcel_id}
@@ -135,15 +136,22 @@ export default async function ParcelDetailPage({ params }: { params: { id: strin
         </p>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <WindowCard
-          light={parcel.knock.light}
-          lightLabel={parcel.knock.label}
-          nextGoodTime={parcel.knock.nextGoodTime}
-          plain={parcel.plain}
-          source={parcel.window.source}
-          strip={parcel.strip}
-        />
+      <div className={homeownerSaid || crewNoted ? "grid gap-4 lg:grid-cols-2" : undefined}>
+        {homeownerSaid || crewNoted ? (
+          <Card className="space-y-1 p-4 text-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Heard at the door</p>
+            {homeownerSaid ? (
+              <p className="text-ink">
+                Homeowner said: <span className="font-medium">{homeownerSaid}</span>
+              </p>
+            ) : null}
+            {crewNoted ? (
+              <p className="text-ink">
+                Crew noted: <span className="font-medium">{crewNoted}</span>
+              </p>
+            ) : null}
+          </Card>
+        ) : null}
         <QuoteCard
           season={season}
           quote={parcel.quote}
