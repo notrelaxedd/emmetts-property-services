@@ -90,7 +90,7 @@ export function Hero() {
             alt={hero.image.alt}
             priority
             draw
-            position="38% 8%"
+            position="50% 30%"
             sizes="(min-width: 1280px) 448px, (min-width: 768px) 38vw, 288px"
             className="w-full max-w-72 md:max-w-[28rem]"
             ornament={<SeasonTrio />}
