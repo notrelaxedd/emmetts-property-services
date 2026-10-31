@@ -2,7 +2,7 @@ import type { AssignmentStatus, CrewException, Job, JobAssignment, JobStatus, Qu
 import { HOLDING_ASSIGNMENT_STATUSES } from "../scheduler/capacity";
 import { addDays, zonedToUtc } from "../scheduler/time";
 import { decideApproval } from "./approvals";
-import { enqueueSchedule } from "./tasks";
+import { enqueueSchedule, enqueueTask } from "./tasks";
 import { check, one } from "./types";
 import type { Db } from "./types";
 
@@ -460,4 +460,58 @@ export async function applyApprovedCrewException(
   );
   await enqueueSchedule(db, "crew_change", ids);
   return ids;
+}
+
+// ---------- Finishing a job ----------
+
+/**
+ * Marks a booked / in-progress job done with the hours actually worked: records `actual_minutes`,
+ * moves it booked → in_progress → done, writes one payout per accepted crew member (hours × their own
+ * hourly_rate, skipping anyone already paid out for this job) and queues the review follow-up for 24 h
+ * later. Shared by the crew app's Complete button and the owner's "Mark done". Returns false when the
+ * job was already done. THROWS for a job that isn't on.
+ */
+export async function finishJob(db: Db, jobId: string, opts: { hours: number; actor: string; now?: Date }): Promise<boolean> {
+  const job = check(await db.from("jobs").select("id,status").eq("id", jobId).maybeSingle(), "finishJob(job)");
+  if (!job) throw new Error("Job not found.");
+  if (job.status === "done") return false;
+  if (job.status !== "in_progress" && job.status !== "booked") throw new Error("Only a job that's on can be completed.");
+
+  if (job.status === "booked") await transitionJob(db, jobId, "in_progress", { actor: opts.actor });
+
+  const actualMinutes = Math.round(opts.hours * 60);
+  check(await db.from("jobs").update({ actual_minutes: actualMinutes }).eq("id", jobId), "finishJob(minutes)");
+  await transitionJob(db, jobId, "done", { actor: opts.actor });
+
+  // Payouts: one per accepted crew member, skipping anyone already paid out for this job.
+  const [crewRows, existing] = await Promise.all([
+    db.from("job_assignments").select("crew_id").eq("job_id", jobId).eq("status", "accepted"),
+    db.from("payouts").select("crew_id").eq("job_id", jobId),
+  ]);
+  const paid = new Set((check(existing, "finishJob(payouts)") ?? []).map((p) => p.crew_id));
+  const crewIds = Array.from(new Set((check(crewRows, "finishJob(crew)") ?? []).map((a) => a.crew_id))).filter((c) => !paid.has(c));
+  if (crewIds.length) {
+    const profiles = check(await db.from("profiles").select("id, hourly_rate").in("id", crewIds), "finishJob(profiles)") ?? [];
+    const payoutHours = Math.round((actualMinutes / 60) * 100) / 100;
+    const rows = profiles.map((p) => {
+      const rate = Number(p.hourly_rate) || 0;
+      return {
+        crew_id: p.id,
+        job_id: jobId,
+        hours: payoutHours,
+        rate,
+        amount: Math.round(payoutHours * rate * 100) / 100,
+        paid_cash_at: null,
+      };
+    });
+    if (rows.length) check(await db.from("payouts").insert(rows), "finishJob(insert payouts)");
+  }
+
+  await enqueueTask(db, {
+    type: "followup_review",
+    payload: { job_id: jobId },
+    runAfter: new Date((opts.now ?? new Date()).getTime() + 24 * 60 * 60 * 1000).toISOString(),
+    dedupeKey: `review:${jobId}`,
+  });
+  return true;
 }

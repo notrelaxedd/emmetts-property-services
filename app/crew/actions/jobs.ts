@@ -7,7 +7,7 @@ import type { JobStatus } from "@/lib/db/types"
 import {
   applyApproval,
   dropAssignmentKeepSlot,
-  enqueueTask,
+  finishJob,
   getSettings,
   maybeConfirmJob,
   requestApproval,
@@ -290,50 +290,7 @@ export async function completeJob(input: { jobId: string; hours: number }): Prom
     if (job.status === "done") return { ok: true, message: "Already marked complete." }
     if (job.status !== "in_progress" && job.status !== "booked") return fail("Only a job that's on can be completed.")
 
-    const db = requireSupabaseAdmin()
-    if (job.status === "booked") await transitionJob(db, jobId, "in_progress", { actor: `crew:${ctx.me}` })
-
-    const actualMinutes = Math.round(hours * 60)
-    const { error: minErr } = await db.from("jobs").update({ actual_minutes: actualMinutes }).eq("id", jobId)
-    if (minErr) throw new Error(minErr.message)
-    await transitionJob(db, jobId, "done", { actor: `crew:${ctx.me}` })
-
-    // Payouts: one per accepted crew member, skipping anyone already paid out for this job.
-    const [{ data: crewRows, error: aErr }, { data: existing, error: pErr }] = await Promise.all([
-      db.from("job_assignments").select("crew_id").eq("job_id", jobId).eq("status", "accepted"),
-      db.from("payouts").select("crew_id").eq("job_id", jobId),
-    ])
-    if (aErr) throw new Error(aErr.message)
-    if (pErr) throw new Error(pErr.message)
-    const paid = new Set((existing ?? []).map((p) => p.crew_id))
-    const crewIds = Array.from(new Set((crewRows ?? []).map((a) => a.crew_id))).filter((c) => !paid.has(c))
-    if (crewIds.length) {
-      const { data: profiles, error: profErr } = await db.from("profiles").select("id, hourly_rate").in("id", crewIds)
-      if (profErr) throw new Error(profErr.message)
-      const payoutHours = Math.round((actualMinutes / 60) * 100) / 100
-      const rows = (profiles ?? []).map((p) => {
-        const rate = Number(p.hourly_rate) || 0
-        return {
-          crew_id: p.id,
-          job_id: jobId,
-          hours: payoutHours,
-          rate,
-          amount: Math.round(payoutHours * rate * 100) / 100,
-          paid_cash_at: null,
-        }
-      })
-      if (rows.length) {
-        const { error: insErr } = await db.from("payouts").insert(rows)
-        if (insErr) throw new Error(insErr.message)
-      }
-    }
-
-    await enqueueTask(db, {
-      type: "followup_review",
-      payload: { job_id: jobId },
-      runAfter: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      dedupeKey: `review:${jobId}`,
-    })
+    await finishJob(requireSupabaseAdmin(), jobId, { hours, actor: `crew:${ctx.me}` })
     revalidateCrew()
     return { ok: true, message: "Nice work — job complete." }
   } catch (e) {
