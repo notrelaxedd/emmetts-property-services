@@ -40,10 +40,18 @@ export const siteConfig = {
     // TODO: optional "From $X" labels on service cards, keyed by service slug. Hidden while null.
     from: {
       "fall-cleanup": null,
-      "lawn-mowing": null,
       "leaf-removal": null,
       "gutter-cleaning": null,
       "snow-removal": null,
+      "lawn-mowing": null,
+      edging: null,
+      weeding: null,
+      mulching: null,
+      "bush-trimming": null,
+      "shrub-removal": null,
+      "tree-trimming": null,
+      "pressure-washing": null,
+      "junk-removal": null,
     } as Record<string, string | null>,
   },
 

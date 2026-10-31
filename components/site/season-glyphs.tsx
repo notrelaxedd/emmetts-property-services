@@ -60,6 +60,8 @@ export const seasonMarks: Record<Season, { mark: SeasonMarkName; text: string }>
   "spring-summer": { mark: "grass", text: "text-pine" },
   fall: { mark: "maple", text: "text-maple-ink" },
   winter: { mark: "snow", text: "text-frost-ink" },
+  // Year-round work carries the grass mark in plain forest: no one season to point at.
+  all: { mark: "grass", text: "text-forest" },
 };
 
 export function SeasonMark({ mark, className }: { mark: SeasonMarkName; className?: string }) {

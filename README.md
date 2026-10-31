@@ -44,7 +44,7 @@ npm run test:e2e             # Playwright smoke tests (set PLAYWRIGHT_CHROMIUM_P
 | --- | --- |
 | Phone, email, hours, pricing, service area (TODOs live here) | `lib/site-config.ts` |
 | All the words on the site | `lib/content.ts` |
-| The list of services (in-season panel, service rows, quote form, SEO) | `lib/services.ts` |
+| The list of services and their groups (in-season panel, service rows, quote form, SEO) | `lib/services.ts`; the back end's copy (pricing rule, crew size, auto-quoted or owner-priced) is a row in `supabase/migrations/` with the same slug, e.g. `20261031001900_more_services.sql`. `npm test` checks the two match |
 | Photos and logo | `public/images/`, `public/logo.png` and `public/logo-light.png`; see `public/images/README.md` |
 | Flyer design (words, layout) + where the QR code goes | `assets/flyer/fall-cleanup.html`, then `npm run flyer:template` (re-renders `fall-cleanup.webp` at 300 dpi and prints the box to paste into `FLYER_TEMPLATE` in `lib/flyers/render.ts`) |
 | Colors, fonts, sizes | `tailwind.config.ts`, `app/globals.css` |

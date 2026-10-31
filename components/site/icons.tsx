@@ -1,4 +1,19 @@
-import { House, Leaf, Snowflake, Sprout, Wind, type LucideIcon } from "lucide-react";
+import {
+  Droplets,
+  Flower2,
+  House,
+  Layers,
+  Leaf,
+  Scissors,
+  Shovel,
+  Shrub,
+  Snowflake,
+  Sprout,
+  TreeDeciduous,
+  Truck,
+  Wind,
+  type LucideIcon,
+} from "lucide-react";
 import type { ServiceIcon } from "@/lib/services";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +23,14 @@ const iconMap: Record<ServiceIcon, LucideIcon> = {
   wind: Wind,
   house: House,
   snowflake: Snowflake,
+  edge: Scissors,
+  weed: Flower2,
+  mulch: Layers,
+  shrub: Shrub,
+  shovel: Shovel,
+  tree: TreeDeciduous,
+  water: Droplets,
+  truck: Truck,
 };
 
 /** A thin-line icon inside a thin forest ring: the badge's ring at icon scale. */

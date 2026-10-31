@@ -25,7 +25,7 @@ import {
   type QuoteFieldErrors,
   type QuoteFormValues,
 } from "@/lib/quote-schema";
-import type { ServiceIcon } from "@/lib/services";
+import { groupServices, type ServiceIcon } from "@/lib/services";
 import { cn } from "@/lib/utils";
 import type { QuoteServiceOption } from "./services-data";
 import { AddressAutocomplete } from "./address-autocomplete";
@@ -613,21 +613,34 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
       <div key={nonce} className="grid gap-8">
         <div {...stepProps(0)}>
           <Group id="q-services" legend={steps[0].title} hint={copy.services.hint} error={errors.services}>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {services.map((s) => (
-                <CheckRow
-                  key={s.slug}
-                  name="services"
-                  value={s.slug}
-                  defaultChecked={values.services.includes(s.slug)}
-                  title={s.name}
-                  description={s.blurb}
-                  descriptionFrom="sm"
-                  icon={s.icon}
-                  invalid={Boolean(errors.services)}
-                  describedBy={errors.services ? "q-services-error" : undefined}
-                />
-              ))}
+            {/* One block per group (lawn, beds, seasonal, exterior) so thirteen boxes don't read as one wall. */}
+            <div className="grid gap-7">
+              {groupServices(services).map(({ group, services: inGroup }) => {
+                const id = `q-services-${group?.slug ?? "other"}`;
+                return (
+                  <div key={id} role="group" aria-labelledby={id}>
+                    <p id={id} className="mb-3 font-heading text-xs font-semibold uppercase tracking-[0.2em] text-forest-muted">
+                      {group?.title ?? copy.services.otherGroup}
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {inGroup.map((s) => (
+                        <CheckRow
+                          key={s.slug}
+                          name="services"
+                          value={s.slug}
+                          defaultChecked={values.services.includes(s.slug)}
+                          title={s.name}
+                          description={s.blurb}
+                          descriptionFrom="sm"
+                          icon={s.icon}
+                          invalid={Boolean(errors.services)}
+                          describedBy={errors.services ? "q-services-error" : undefined}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="mt-5 grid gap-5">

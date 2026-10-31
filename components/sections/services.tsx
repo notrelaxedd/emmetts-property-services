@@ -7,7 +7,7 @@ import { Reveal } from "@/components/site/reveal";
 import { SeasonMark, seasonMarks } from "@/components/site/season-glyphs";
 import { SectionHeading } from "@/components/site/section-heading";
 import { content } from "@/lib/content";
-import { services, type Service } from "@/lib/services";
+import { groupServices, services, type Service } from "@/lib/services";
 import { siteConfig } from "@/lib/site-config";
 import { cn } from "@/lib/utils";
 
@@ -98,7 +98,7 @@ function ServiceRow({ service, index }: { service: Service; index: number }) {
 
 export function Services() {
   const featured = services.find((s) => s.slug === content.services.featuredSlug) ?? services[0];
-  const rest = services.filter((s) => s.slug !== featured.slug);
+  const groups = groupServices(services, featured.slug);
 
   return (
     <section id="services" aria-labelledby="services-title" className="bg-sage py-24 md:py-32">
@@ -116,11 +116,29 @@ export function Services() {
           <p className="font-heading text-xs font-semibold uppercase tracking-[0.26em] text-forest-muted">
             {content.services.moreLabel}
           </p>
-          <ul className="mt-4 border-t border-forest/40">
-            {rest.map((service, i) => (
-              <ServiceRow key={service.slug} service={service} index={i} />
-            ))}
-          </ul>
+
+          {/* One ruled list per group, each under its own heading. */}
+          <div className="mt-4 grid gap-12 md:gap-14">
+            {groups.map(({ group, services: inGroup }, g) => {
+              const id = `services-group-${group?.slug ?? "other"}`;
+              const title = group?.title ?? content.services.otherGroupLabel;
+              return (
+                <div key={id} className="grid gap-x-10 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
+                  <div className="border-t border-forest/40 pt-5">
+                    <h3 id={id} className="font-heading text-lg font-extrabold uppercase leading-tight tracking-[0.06em] text-forest">
+                      {title}
+                    </h3>
+                    {group && <p className="mt-2 max-w-xs text-forest-body">{group.blurb}</p>}
+                  </div>
+                  <ul aria-labelledby={id} className="border-t border-forest/40">
+                    {inGroup.map((service, i) => (
+                      <ServiceRow key={service.slug} service={service} index={g * 2 + i} />
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {siteConfig.pricing.note && <p className="mt-10 font-medium text-forest">{siteConfig.pricing.note}</p>}

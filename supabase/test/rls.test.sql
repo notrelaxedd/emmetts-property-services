@@ -188,9 +188,16 @@ select tests.check(
   'settings.autopilot defaults to everything off (matches DEFAULT_AUTOPILOT)');
 select tests.check(
   (select array_agg(slug order by sort_order) from public.services)
-    = array['fall-cleanup','leaf-removal','edging','gutter-cleaning','lawn-mowing','snow-removal'],
-  'services seeded with the six slugs');
-select tests.check((select bool_and(auto_quote) from public.services), 'all seeded services are auto_quote');
+    = array['fall-cleanup','leaf-removal','gutter-cleaning','lawn-mowing','snow-removal',
+            'edging','weeding',
+            'mulching','bush-trimming','shrub-removal','tree-trimming',
+            'pressure-washing','junk-removal'],
+  'services seeded with the thirteen slugs, grouped by sort_order');
+select tests.check(
+  (select array_agg(slug order by sort_order) from public.services where not auto_quote)
+    = array['shrub-removal','tree-trimming','pressure-washing','junk-removal'],
+  'only the jobs that cannot be sized from the lot wait for the owner''s price');
+select tests.check((select bool_and(active) from public.services), 'every seeded service is active');
 select tests.check(
   (select count(*) from public.owner_windows where start_time = '09:00' and end_time = '18:00') = 6
   and (select array_agg(weekday order by weekday) from public.owner_windows) = '{1,2,3,4,5,6}'::smallint[],
@@ -395,7 +402,7 @@ select tests.check((select count(*) from public.payouts) = 1 and (select amount 
 select tests.check(
   tests.run($$update public.payouts set amount = 1000$$) = 'ok:0',
   'crew cannot edit payouts');
-select tests.check((select count(*) from public.services) = 6, 'crew can read services');
+select tests.check((select count(*) from public.services) = 13, 'crew can read services');
 select tests.check(
   tests.run($$update public.services set name = 'x'$$) = 'ok:0',
   'crew cannot edit services');

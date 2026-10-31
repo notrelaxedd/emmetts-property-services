@@ -1,11 +1,12 @@
 import "server-only";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { services as siteServices, type ServiceIcon } from "@/lib/services";
+import { services as siteServices, type ServiceGroupSlug, type ServiceIcon } from "@/lib/services";
 
-export type QuoteServiceOption = { slug: string; name: string; blurb?: string; icon?: ServiceIcon };
+/** `group` is unset for a service that exists only in the database; the form lists those last. */
+export type QuoteServiceOption = { slug: string; name: string; blurb?: string; icon?: ServiceIcon; group?: ServiceGroupSlug };
 
 const fallback = (): QuoteServiceOption[] =>
-  siteServices.map((s) => ({ slug: s.slug, name: s.title, blurb: s.blurb, icon: s.icon }));
+  siteServices.map((s) => ({ slug: s.slug, name: s.title, blurb: s.blurb, icon: s.icon, group: s.group }));
 
 /**
  * Active services for the quote form's checkboxes. Reads `services` (active, in sort order) and
@@ -30,7 +31,7 @@ export async function loadQuoteServices(): Promise<QuoteServiceOption[]> {
     }
     return data.map((r) => {
       const site = siteServices.find((s) => s.slug === r.slug);
-      return { slug: r.slug, name: r.name, blurb: site?.blurb, icon: site?.icon };
+      return { slug: r.slug, name: r.name, blurb: site?.blurb, icon: site?.icon, group: site?.group };
     });
   } catch {
     return fallback();

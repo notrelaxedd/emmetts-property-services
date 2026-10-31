@@ -5,7 +5,7 @@ import { content } from "@/lib/content";
 export const metadata: Metadata = {
   title: "Contact Us",
   description:
-    "Call Emmett's Property Services for lawn mowing, fall cleanup, leaf removal, gutter cleaning, and snow removal for homes, businesses, and HOAs in Rocky River, Westlake, Bay Village, and Lakewood.",
+    "Call Emmett's Property Services for lawn mowing, edging, mulching, shrub trimming, fall cleanup, gutter cleaning, pressure washing, junk removal, and snow removal for homes, businesses, and HOAs in Rocky River, Westlake, Bay Village, and Lakewood.",
   alternates: { canonical: "/contact" },
   openGraph: { url: "/contact" },
 };

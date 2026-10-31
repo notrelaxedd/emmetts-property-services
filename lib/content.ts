@@ -66,8 +66,10 @@ export const content = {
     featuredSlug: "fall-cleanup",
     featuredLabel: "In season now",
     includesLabel: "Includes",
-    // Above the rest of the services, under the in-season one.
+    // Above the rest of the services, under the in-season one. The group headings live in lib/services.ts.
     moreLabel: "Also on the list",
+    // Heading for services that exist only in the owner console's catalogue (no group on the site).
+    otherGroupLabel: "More services",
     linkLabel: "Get a price",
   },
 
@@ -75,7 +77,7 @@ export const content = {
   benefits: {
     headline: ["One crew", "covers it"],
     body: "From the first mow in spring to the last snowfall, one crew handles the whole yard. Tell us what you need and we'll send you one price for all of it.",
-    pills: ["Leaf Cleanup", "Edging", "Gutter Cleaning", "Snow Removal", "And More"],
+    pills: ["Mowing & Edging", "Mulching & Weeding", "Shrub Trimming", "Leaf Cleanup", "Pressure Washing", "Junk Removal", "Snow Removal"],
   },
 
   // Bigger accounts. Keeps id="commercial" so the nav link lands here.
@@ -84,7 +86,8 @@ export const content = {
     headline: ["Commercial", "& HOA care"],
     intro: `We look after storefronts, offices, and HOA common areas in ${siteConfig.serviceArea.summary}. One crew, one point of contact, one invoice.`,
     points: [
-      { title: "Scheduled maintenance", body: "Mowing, trimming, and edging on a set schedule, so the grounds always look cared for." },
+      { title: "Scheduled maintenance", body: "Mowing, trimming, edging, and weeding on a set schedule, so the grounds always look cared for." },
+      { title: "Beds and shrubs", body: "Mulching, shrub trimming, and removals so entrances and common areas stay tidy." },
       { title: "Seasonal cleanups", body: "Leaves cleared from lawns, beds, and gutters before winter sets in." },
       { title: "Snow removal", body: "Walkways and entrances cleared after the snow." },
       { title: "Simple billing", body: "One quote for the property, invoiced to your business or association." },
@@ -222,6 +225,8 @@ export const content = {
       },
       services: {
         hint: "Pick as many as you like.",
+        // Heading for services that exist only in the owner console's catalogue (no group on the site).
+        otherGroup: "More services",
       },
       custom: {
         toggle: "Something not listed?",
@@ -331,8 +336,8 @@ export const content = {
   },
 
   seo: {
-    title: `${siteConfig.name} | Lawn Care, Fall Cleanup & Snow Removal in Northeast Ohio`,
+    title: `${siteConfig.name} | Lawn Care, Fall Cleanup, Pressure Washing & Snow Removal in Northeast Ohio`,
     description:
-      "Lawn care, fall cleanup, gutters, and snow removal for homes, businesses, and HOAs in Rocky River, Westlake, Bay Village, and Lakewood. Locally owned, with upfront pricing.",
+      "Lawn care, mulching, shrub trimming, fall cleanup, gutters, pressure washing, junk removal, and snow removal for homes, businesses, and HOAs in Rocky River, Westlake, Bay Village, and Lakewood. Locally owned, with upfront pricing.",
   },
 } as const;
