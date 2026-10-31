@@ -9,6 +9,7 @@
  * Supported chain (everything else throws "fakeDb: unsupported ..."):
  *   from(t).select(cols?)                      cols ignored: always returns whole rows
  *     .eq(col, v) .neq(col, v) .in(col, vs) .is(col, v)      filters (AND-ed, strict equality)
+ *     .gte(col, v) .lte(col, v) .ilike(col, pattern)         range filters (null never matches) and %-wildcard match
  *     .order(col, { ascending? }) .limit(n)
  *     .maybeSingle()  -> row | null (error if > 1)   .single() -> row (error PGRST116 if 0 or > 1)
  *     or await it directly -> { data: rows[], error }
@@ -116,6 +117,19 @@ export function fakeDb(
     }
     is(col: string, v: unknown) {
       this.filters.push((r) => (r[col] ?? null) === v);
+      return this;
+    }
+    gte(col: string, v: number | string) {
+      this.filters.push((r) => r[col] !== null && r[col] !== undefined && (r[col] as number | string) >= v);
+      return this;
+    }
+    lte(col: string, v: number | string) {
+      this.filters.push((r) => r[col] !== null && r[col] !== undefined && (r[col] as number | string) <= v);
+      return this;
+    }
+    ilike(col: string, pattern: string) {
+      const re = new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%/g, ".*").replace(/_/g, ".")}$`, "is");
+      this.filters.push((r) => typeof r[col] === "string" && re.test(r[col] as string));
       return this;
     }
     order(col: string, o?: { ascending?: boolean }) {

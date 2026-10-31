@@ -3,6 +3,8 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { content } from "@/lib/content";
+import { recordHangerBooking } from "@/lib/canvass/hanger-events";
+import { HANGER_COOKIE } from "@/lib/canvass/hangers";
 import { opsConfig } from "@/lib/config";
 import type { Lead, Weekday } from "@/lib/db/types";
 import { FLYER_COOKIE, attributedCode } from "@/lib/flyers/codes";
@@ -304,6 +306,13 @@ export async function submitQuote(_prev: QuoteFormState, formData: FormData): Pr
     };
     const { data: lead, error: leadError } = await db.from("leads").insert(leadRow).select("id").single();
     if (leadError || !lead) throw new Error(`lead insert: ${leadError?.message ?? "no row returned"}`);
+
+    // Door-hanger attribution (the QR redirect's tags or the `hanger` cookie): best effort, never fails the request.
+    try {
+      await recordHangerBooking(db, { utm: data.utm, cookie: cookies().get(HANGER_COOKIE)?.value ?? null, leadId: lead.id });
+    } catch (e) {
+      console.error(`[quote] hanger attribution failed for lead ${lead.id}:`, e instanceof Error ? e.message : e);
+    }
 
     // Photos live at leads/<leadId>/<n>.<ext> (n starts at 1) in the private `lead-photos` bucket.
     // Browser-direct uploads (photo_paths) are claimed first by moving them out of pending/; photos

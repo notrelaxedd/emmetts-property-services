@@ -1,0 +1,58 @@
+# Manual probe of the Cuyahoga County parcel layer (public ArcGIS REST): prints the layer's real field
+# names and a sample query so the Canvass field map can be confirmed from a network that can reach it.
+# Run from Actions → "County parcel layer probe" → Run workflow. Read-only; no secrets.
+name: County parcel layer probe
+on:
+  workflow_dispatch:
+    inputs:
+      layer_url:
+        description: Layer URL
+        default: https://gis.cuyahogacounty.gov/server/rest/services/Open_Data_Parcels/MapServer/1
+        required: true
+      address:
+        description: Address fragment to sample (used in a LIKE on every text field named like an address)
+        default: ""
+        required: false
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Layer metadata
+        env:
+          LAYER: ${{ inputs.layer_url }}
+        run: |
+          set -euo pipefail
+          curl -sS --max-time 60 -A "emmetts-property-services county probe" "$LAYER?f=pjson" -o layer.json
+          echo "::group::layer.json"; cat layer.json; echo; echo "::endgroup::"
+          python3 - <<'PY'
+          import json
+          d = json.load(open("layer.json"))
+          print("LAYER_NAME", d.get("name"))
+          print("GEOMETRY", d.get("geometryType"), "MAXRECORDS", d.get("maxRecordCount"))
+          print("SR", d.get("extent", {}).get("spatialReference"))
+          print("QUERYFORMATS", d.get("supportedQueryFormats"))
+          print("PAGINATION", (d.get("advancedQueryCapabilities") or {}).get("supportsPagination"))
+          for f in d.get("fields", []):
+              print("FIELD", f.get("name"), "|", f.get("type"), "|", f.get("alias"))
+          PY
+      - name: Sample rows (Rocky River)
+        env:
+          LAYER: ${{ inputs.layer_url }}
+        run: |
+          set -euo pipefail
+          # A small envelope in Rocky River, OH; returns a few parcels with every attribute, no geometry.
+          curl -sS --max-time 60 -A "emmetts-property-services county probe" "$LAYER/query" \
+            --data-urlencode "geometry=-81.846,41.470,-81.842,41.473" \
+            --data-urlencode "geometryType=esriGeometryEnvelope" \
+            --data-urlencode "inSR=4326" --data-urlencode "outSR=4326" \
+            --data-urlencode "spatialRel=esriSpatialRelIntersects" \
+            --data-urlencode "outFields=*" --data-urlencode "returnGeometry=false" \
+            --data-urlencode "resultRecordCount=5" --data-urlencode "f=json" -o sample.json
+          echo "::group::sample.json"; cat sample.json; echo; echo "::endgroup::"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: county-layer
+          path: |
+            layer.json
+            sample.json

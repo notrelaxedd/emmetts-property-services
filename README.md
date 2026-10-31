@@ -74,6 +74,25 @@ deploy with "Edge Function size is 1.48 MB". The site's own pages always use the
 The flyer template has the logo baked in, so run `npm run flyer:template` after a logo change too (its HTML
 uses those Montserrat subsets plus `assets/fonts/WorkSans-*-Subset.ttf`, and the code under each QR is set in the 600 cut).
 
+## Canvass (door-to-door)
+
+The **Canvass** tab plans door knocking on foot: county parcels, a knock window and a price *range* per house,
+a walking plan for a slot, a phone knock logger, QR door hangers per street and a nightly digest. Data comes only
+from the Cuyahoga County parcel layer, Census block-group aggregates, our own knock log and what the crew heard at
+the door; see `docs/CANVASS.md` for the privacy rules, the window logic and the first-run field-map procedure.
+
+| Route | Who | What |
+| --- | --- | --- |
+| `/admin/canvass` | owner | Map area picker, parcel table, nightly summary |
+| `/admin/canvass/parcels/[id]` | owner | Parcel detail: quote, lawn tracing, window, knock history |
+| `/admin/canvass/plan` | owner | Plan my session |
+| `/admin/canvass/hangers` | owner | Hanger codes per street + conversions; `…/hangers/[code]/print` is the 3-up sheet |
+| `/admin/canvass/stats` | owner | Knocker / pitch stats, hanger conversions, pitches |
+| `/admin/canvass/settings` | owner | Pricing, thresholds, season map, county field map |
+| `/crew/knock` | crew + owner | Knock logger (phone) |
+| `/h/[code]` | public | Hanger QR landing → `/quote?src=hanger&s=<code>` |
+| `/api/cron/canvass-summary` | Vercel cron | Nightly summary (Bearer `CRON_SECRET`) |
+
 ## What's in here
 
 - **Sections** (`components/sections/`): hero (quote button + service shortcuts that pre-tick the form),

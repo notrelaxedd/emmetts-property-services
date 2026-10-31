@@ -252,9 +252,12 @@ export async function removeEmployee(profileId: string): Promise<ActionResult> {
     await markForResolve(db, released, "crew_change")
     await enqueueSchedule(db, "crew_removed", released)
 
-    // (b) / (c) Delete outright only when no payout or completed work hangs off the profile.
+    // (b) / (c) Delete outright only when no payout, completed work or door knock hangs off the profile
+    // (knocks.knocker_id is ON DELETE RESTRICT, so the auth delete would fail on a canvasser's knock log).
     const payouts = await db.from("payouts").select("id", { count: "exact", head: true }).eq("crew_id", profile.id)
     if (payouts.error) throw new Error(payouts.error.message)
+    const knocks = await db.from("knocks").select("id", { count: "exact", head: true }).eq("knocker_id", profile.id)
+    if (knocks.error) throw new Error(knocks.error.message)
     const accepted =
       check(await db.from("job_assignments").select("job_id").eq("crew_id", profile.id).eq("status", "accepted"), "removeEmployee(history)") ?? []
     let worked = 0
@@ -270,7 +273,7 @@ export async function removeEmployee(profileId: string): Promise<ActionResult> {
 
     const who = profile.name || "They"
     const jobsNote = released.length ? ` Taken off ${released.length} upcoming job${released.length === 1 ? "" : "s"}; the scheduler is finding cover.` : ""
-    if ((payouts.count ?? 0) === 0 && worked === 0) {
+    if ((payouts.count ?? 0) === 0 && worked === 0 && (knocks.count ?? 0) === 0) {
       const { error } = await db.auth.admin.deleteUser(profile.user_id)
       if (error) return { ok: false, reason: error.message }
       revalidate(profile.id)
@@ -283,7 +286,7 @@ export async function removeEmployee(profileId: string): Promise<ActionResult> {
     check(await db.from("profiles").update({ removed_at: new Date().toISOString(), paused: true }).eq("id", profile.id), "removeEmployee(soft)")
     revalidate(profile.id)
     revalidatePath("/admin/schedule")
-    return { ok: true, message: `Removed ${who === "They" ? "the team member" : who}. Sign-in is blocked; payouts and job history stay on record.${jobsNote}` }
+    return { ok: true, message: `Removed ${who === "They" ? "the team member" : who}. Sign-in is blocked; payouts, job history and door knocks stay on record.${jobsNote}` }
   } catch (e) {
     return fail(e)
   }

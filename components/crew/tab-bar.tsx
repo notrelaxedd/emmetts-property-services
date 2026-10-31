@@ -1,12 +1,13 @@
 "use client"
 
-import { CalendarCheck, CalendarOff, Clock, HandHelping, Wallet, type LucideIcon } from "lucide-react"
+import { CalendarCheck, CalendarOff, Clock, DoorOpen, HandHelping, Wallet, type LucideIcon } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 
 const tabs: { href: string; label: string; icon: LucideIcon; exact?: boolean }[] = [
   { href: "/crew", label: "Today", icon: CalendarCheck, exact: true },
+  { href: "/crew/knock", label: "Knock", icon: DoorOpen },
   { href: "/crew/offers", label: "Offers", icon: HandHelping },
   { href: "/crew/hours", label: "Hours", icon: Clock },
   { href: "/crew/time-off", label: "Time off", icon: CalendarOff },
@@ -21,7 +22,7 @@ export function CrewTabBar() {
       aria-label="Crew"
       className="fixed bottom-0 left-1/2 z-sticky w-full max-w-[480px] -translate-x-1/2 border-t border-ink/10 bg-white pb-[env(safe-area-inset-bottom)]"
     >
-      <ul className="grid grid-cols-5">
+      <ul className="grid grid-cols-6">
         {tabs.map(({ href, label, icon: Icon, exact }) => {
           const active = exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`)
           return (

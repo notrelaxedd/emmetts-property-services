@@ -443,3 +443,44 @@ describe("retry with backoff", () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 });
+
+// ---------- canvass summary ----------
+
+describe("summarizeCanvassDay", () => {
+  it("sends the aggregate digest, asks for low effort and validates the summary shape", async () => {
+    const good = {
+      headline: "12 doors on 2 streets, 5 answered, 1 booked",
+      highlights: ["Answer rate 42%", "Weekdays 4-6pm worked best"],
+      best_streets: [{ street: "ELM ST", why: "4 of 6 answered, 1 booked" }],
+      worst_streets: [],
+      knocker_notes: ["Emmett: 12 knocks, 5 answers, 1 booked"],
+      pitch_notes: [],
+      tomorrow: [{ street: "OAK AVE", window: "Weekdays 4-6pm", why: "2 call backs" }],
+    };
+    create.mockResolvedValueOnce(toolResponse("submit_canvass_summary", { ...good, headline: "" })).mockResolvedValueOnce(toolResponse("submit_canvass_summary", good));
+    const { db, usageRows } = fakeDb();
+    const { summarizeCanvassDay } = await import("./claude");
+    const digest = {
+      for_date: "2026-10-29",
+      weekday: "Thursday",
+      season: "Leaf cleanup",
+      totals: { knocks: 12, answers: 5, quotes: 1, booked: 1, callbacks: 2, doNotKnock: 0, answerRate: 0.417, closeRate: 0.2 },
+      byOutcome: { no_answer: 7, not_interested: 2, quote_given: 1, booked: 1, call_back: 2, no_soliciting: 0, do_not_return: 0, has_service: 0 },
+      byStreet: [],
+      byKnocker: [],
+      byPitch: [],
+      byHour: [],
+      weather: ["52°F, Overcast"],
+      hangerScans: 0,
+    };
+    const out = await summarizeCanvassDay(db, digest, { worker: "cron" });
+    expect(out).toEqual(good);
+    expect(create).toHaveBeenCalledTimes(2);
+    const params = create.mock.calls[0][0];
+    expect(params.tools[0].name).toBe("submit_canvass_summary");
+    expect(params.output_config).toEqual({ effort: "low" });
+    expect(params.messages[0].content[0].text).toContain("<digest>");
+    expect(params.messages[0].content[0].text).toContain('"knocks": 12');
+    expect(usageRows().every((r) => r.task === "canvass_summary" && r.worker === "cron")).toBe(true);
+  });
+});
