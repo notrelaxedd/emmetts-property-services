@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Award, Tag, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,10 @@ import { content } from "@/lib/content";
 // In content order: quality work, fair prices, well reviewed.
 const pointIcons = [Award, Tag, Users];
 
-/** The story on the left, the three reasons as ruled rows on the right: reading copy stays left-aligned. */
+/**
+ * The story on the left, the three reasons as ruled rows on the right: reading copy stays left-aligned.
+ * Under both, a strip of real photos of the crew at work: proof for "Real work". Phones scroll it sideways.
+ */
 export function WhyUs() {
   const { whyUs } = content;
 
@@ -48,6 +52,35 @@ export function WhyUs() {
             </Reveal>
           ))}
         </ul>
+      </div>
+
+      <div className="container mt-16 md:mt-20">
+        <p className="font-heading text-xs font-semibold uppercase tracking-[0.24em] text-forest">{whyUs.gallery.label}</p>
+        <ul
+          aria-label={whyUs.gallery.label}
+          className="-mx-5 mt-5 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-2 sm:-mx-6 sm:px-6 md:mx-0 md:grid md:grid-cols-6 md:gap-5 md:overflow-visible md:px-0 md:pb-0"
+        >
+          {whyUs.gallery.items.map((photo, i) => (
+            <Reveal
+              as="li"
+              key={photo.src}
+              delay={i * 70}
+              className="w-40 shrink-0 snap-start border-[1.5px] border-forest p-1.5 md:w-auto"
+            >
+              {/* Same idea as the ring: a thin forest line with a band of breathing room, then the photo. */}
+              <div className="relative aspect-[3/4] overflow-hidden bg-cream">
+                <Image
+                  src={photo.src}
+                  alt={photo.alt}
+                  fill
+                  sizes="(min-width: 1280px) 190px, (min-width: 768px) 15vw, 160px"
+                  className="object-cover"
+                />
+              </div>
+            </Reveal>
+          ))}
+        </ul>
+        <p className="mt-4 text-[0.9375rem] text-forest-muted">{whyUs.gallery.note}</p>
       </div>
     </section>
   );

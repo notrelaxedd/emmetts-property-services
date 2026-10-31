@@ -54,7 +54,7 @@ The hero headline is the current seasonal offer (`content.hero.headline`). Swap 
 
 ### Before launch checklist
 
-- [ ] Replace the photos in `public/images/` (same filenames)
+- [ ] Replace the two remaining stock photos in `public/images/` (`mower-lawn.jpg`, `snow-driveway.jpg`; same filenames)
 - [ ] Fill in the `TODO`s in `lib/site-config.ts`: email, hours, and pricing.
       Email and hours show on the contact page as soon as they're set, and stay hidden until then.
       The towns served and the mailing address (customer email footer) are already set there

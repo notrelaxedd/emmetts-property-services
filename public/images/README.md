@@ -1,22 +1,40 @@
-# Photos to supply
+# Photos
 
-The images in this folder are **temporary stand-ins** (public-domain / CC0 stock) so the layout works.
-Replace each one with a real photo of your crew and your work, keeping the **same filename**.
-Nothing else needs to change.
+Real photos of the crew at work, taken on fall cleanups in October 2026, plus two **temporary stand-ins**
+(public-domain / CC0 stock) for the seasons we have no photos of yet. Replace a stand-in with a real photo,
+keeping the **same filename**, and nothing else needs to change.
 
-Every photo is cropped to a **circle** inside the logo's thin green ring, so keep the subject in the middle
-of the frame: the top, bottom and corners get cropped away. Vertical (portrait) or square both work.
-Aim for at least **1200 × 1600 px**, JPG.
+The photos in this folder's root are cropped to a **circle** inside the logo's thin green ring, so keep the
+subject in the middle of the frame: the top, bottom and corners get cropped away. Vertical (portrait) or
+square both work. Aim for at least **1200 × 1600 px**, JPG. Everything here has had its EXIF data (camera,
+GPS location) stripped; do the same for new photos of customers' homes
+(`convert in.jpg -auto-orient -strip -resize 1200x1600 -quality 82 out.jpg`).
 
-| File | Where it shows | What to shoot |
+| File | Where it shows | Status |
 | --- | --- | --- |
-| `hero-leaf-blowing.jpg` | Hero, top of the page (first thing people see) | One of you blowing leaves across a customer's lawn, leaves in the air. Daylight, fall colors. |
-| `mower-lawn.jpg` | "Three seasons. One crew." section, Spring & Summer circle | Your mower on freshly cut grass. Low angle, with clean stripes if you can get them. |
-| `fall-leaves-lawn.jpg` | "Three seasons. One crew." section, Fall circle | A lawn covered in fall leaves, or a big raked leaf pile. A before/after is even better. |
-| `snow-driveway.jpg` | "Three seasons. One crew." section, Winter circle | Your snowblower clearing a driveway. Also handy for a winter version of the hero. |
+| `hero-leaf-blowing.jpg` | Hero, top of the page (first thing people see) | **Real**: a crew member in an orange shirt sending red maple leaves flying with a backpack blower. The crop focus is set in `components/sections/hero.tsx` (`position`). |
+| `mower-lawn.jpg` | "Three seasons. One crew." section, Spring & Summer circle | Stand-in. Shoot: your mower on freshly cut grass, low angle, clean stripes if you can get them. |
+| `fall-leaves-lawn.jpg` | "Three seasons. One crew." section, Fall circle | **Real**: a customer's front lawn under maple leaves, before cleanup. |
+| `snow-driveway.jpg` | "Three seasons. One crew." section, Winter circle | Stand-in. Shoot: your snowblower clearing a driveway. Also handy for a winter version of the hero. |
 
-Nice to have (not wired in yet): a photo of **Emmett, Kevin, and Chase together** with the equipment.
-A real crew photo builds more trust than anything else on the page.
+## `work/`: the crew on the job
+
+The strip of photos at the foot of the "Why us" section (`components/sections/why-us.tsx`). These are shown
+whole at 3:4 with no circle crop, so any portrait phone photo works. The list of photos and their alt text is
+`content.whyUs.gallery` in `lib/content.ts`: add a photo here, then add a line there. Six fit in one row on a
+laptop; phones scroll the strip sideways.
+
+| File | What it shows |
+| --- | --- |
+| `red-maples.jpg` | A crew member pushing a pile of red maple leaves across a lawn, red maples behind |
+| `gold-maple-pile.jpg` | A crew member working a long pile of leaves under a gold maple at dusk |
+| `blower-close.jpg` | Leaves lifting off the grass in front of the blower nozzle |
+| `leaves-before.jpg` | A leaf-covered yard with a stone wall and the house behind, before cleanup |
+| `crew-pair.jpg` | Two crew members with backpack blowers on a sunny front lawn |
+| `crew-tree.jpg` | A crew member blowing leaves out from under a big oak by the sidewalk |
+
+When picking photos, skip ones that show a readable house number, license plate, or a neighbor's yard sign.
+Still nice to have: a photo of **Emmett, Kevin, and Chase together** with the equipment.
 
 ## Logo
 
@@ -35,7 +53,5 @@ If the logo ever changes, replace those files (or ask for them to be regenerated
 
 ## Where the stand-ins came from
 
-- `hero-leaf-blowing.jpg`: "Leaf blower, Homewood Cemetery", Wikimedia Commons (CC0)
 - `mower-lawn.jpg`: "Grass Lawnmower", StockSnap (CC0)
-- `fall-leaves-lawn.jpg`: WordPress Photo Directory (CC0)
 - `snow-driveway.jpg`: "Gotta Clear The Lane", Flickr (CC0)

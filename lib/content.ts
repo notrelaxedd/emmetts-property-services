@@ -44,7 +44,7 @@ export const content = {
     trustLabel: "Why customers hire us",
     image: {
       src: "/images/hero-leaf-blowing.jpg",
-      alt: "A crew member with a backpack blower sending a wave of red fall leaves across a lawn",
+      alt: "One of our crew in an orange shirt sending a wave of red maple leaves across a lawn with a backpack blower",
     },
   },
 
@@ -105,6 +105,19 @@ export const content = {
       { title: "Fair prices", body: "A clear, honest price before any work starts." },
       { title: "Well reviewed", body: "Lots of happy customers across the area." },
     ],
+    // Real photos of the crew on the job (public/images/work). Shown as a strip under the points.
+    gallery: {
+      label: "Our crew on the job",
+      note: "Real photos from this fall's cleanups around Northeast Ohio.",
+      items: [
+        { src: "/images/work/red-maples.jpg", alt: "A crew member with a backpack blower pushing a pile of red maple leaves across a lawn" },
+        { src: "/images/work/gold-maple-pile.jpg", alt: "A crew member working a long pile of leaves under a gold maple at dusk" },
+        { src: "/images/work/blower-close.jpg", alt: "Leaves lifting off the grass in front of a blower nozzle" },
+        { src: "/images/work/leaves-before.jpg", alt: "A leaf-covered yard with a stone wall and the house behind it, before cleanup" },
+        { src: "/images/work/crew-pair.jpg", alt: "Two crew members with backpack blowers clearing leaves from a sunny front lawn" },
+        { src: "/images/work/crew-tree.jpg", alt: "A crew member blowing leaves out from under a big oak by the sidewalk" },
+      ],
+    },
   },
 
   seasons: {
@@ -129,7 +142,7 @@ export const content = {
         serviceSlug: "fall-cleanup",
         image: {
           src: "/images/fall-leaves-lawn.jpg",
-          alt: "Oak leaves in rust and gold blanketing a green lawn",
+          alt: "A customer's front lawn under a blanket of maple leaves before our fall cleanup",
         },
       },
       {
