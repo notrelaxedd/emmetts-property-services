@@ -22,7 +22,7 @@ export function Hero() {
   return (
     <section aria-labelledby="hero-title" className="pb-16 pt-8 md:pb-20 md:pt-14 lg:pt-16">
       <div className="container grid items-center gap-y-16 md:grid-cols-12 md:gap-x-8">
-        <div className="md:col-span-7">
+        <div className="md:col-span-6">
           <div className="hero-fade" style={delay(0)}>
             <Eyebrow align="start">
               {/* The header already names the business, and the full line won't fit on phones or in the tablet column. */}
@@ -84,15 +84,16 @@ export function Hero() {
           </div>
         </div>
 
-        <div className="flex justify-center md:col-span-5 md:justify-end">
+        {/* The photo gets half the row and most of its column: it's the one real thing on the page, so it should be big. */}
+        <div className="flex justify-center md:col-span-6 md:justify-end">
           <RingPhoto
             src={hero.image.src}
             alt={hero.image.alt}
             priority
             draw
             position="50% 40%"
-            sizes="(min-width: 1280px) 448px, (min-width: 768px) 38vw, 288px"
-            className="w-full max-w-72 md:max-w-[28rem]"
+            sizes="(min-width: 1280px) 576px, (min-width: 768px) 46vw, (min-width: 640px) 384px, 90vw"
+            className="w-full max-w-[22rem] sm:max-w-96 md:max-w-none lg:max-w-[36rem]"
             ornament={<SeasonTrio />}
           />
         </div>
