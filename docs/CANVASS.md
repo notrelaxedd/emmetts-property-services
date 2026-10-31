@@ -191,6 +191,10 @@ First run:
 5. Confirm the land-use filter: the residential prefixes (default `510`–`519`) should keep single-family homes and
    drop the commercial / multi-family parcels on the edge of the area.
 
+If the Vercel deployment cannot reach the county server, run the manual GitHub Actions workflow
+"County parcel layer probe" (`.github/workflows/county-probe.yml`): it prints the layer's real field
+names and a few Rocky River sample rows from GitHub's network, which can be compared with the Settings page.
+
 Owner-occupied comes from the homestead / owner-occupancy field when the layer has one, else from "mailing address
 equals site address", else unknown.
 

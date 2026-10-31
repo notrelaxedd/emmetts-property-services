@@ -16,7 +16,7 @@ import {
   typicalDepart,
   type AcsTable,
 } from "./census";
-import { GEOID_A, GEOID_B, allGroups, dataFixtures, dataResponse } from "./census.fixture";
+import { GEOID_A, GEOID_B, allGroups, dataFixtures, dataResponse, groupB23007Live } from "./census.fixture";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 const asFetch = (f: unknown) => f as typeof fetch;
@@ -106,7 +106,22 @@ describe("resolveVariables", () => {
       "B01001_049E",
     ]);
   });
-  it("B23007: families with children + the five non-working-parent cells (never the 'no own children' subtree)", () => {
+  it("B23007 (live 2023 labels): wife-not-in-LF leaves, the husband-not-in-LF subtotal and both single-parent cells", () => {
+    const r = resolveVariables("B23007", groupB23007Live);
+    expect(r.total).toBe("B23007_001E");
+    expect(r.parts.find((p) => p.role === "families_with_children")?.id).toBe("B23007_002E");
+    // 019 (wife not in LF under husband not in LF) is inside 015 and must not be double counted;
+    // 048 / 059 are in the "No children" subtree.
+    expect(r.parts.filter((p) => p.role === "nonworking_parent").map((p) => p.id)).toEqual([
+      "B23007_009E",
+      "B23007_014E",
+      "B23007_015E",
+      "B23007_025E",
+      "B23007_030E",
+    ]);
+  });
+
+  it("B23007 (older wording): families with children + the five non-working-parent cells (never the 'no own children' subtree)", () => {
     const r = resolveVariables("B23007", allGroups.B23007);
     expect(r.parts.find((p) => p.role === "families_with_children")?.id).toBe("B23007_002E");
     expect(r.parts.filter((p) => p.role === "nonworking_parent").map((p) => p.id)).toEqual([

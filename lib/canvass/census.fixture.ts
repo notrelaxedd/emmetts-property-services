@@ -115,6 +115,50 @@ export const groupB23007: AcsGroupJson = {
   },
 };
 
+/**
+ * B23007 with the labels the live 2023 ACS 5-year API returns (checked against
+ * api.census.gov/data/2023/acs/acs5/groups/B23007.json on 2026-10-30). Married-couple cells are worded
+ * "Husband in labor force / … / Wife not in labor force" and "Husband not in labor force:", not the
+ * "Father only / Mother only / Neither parent" wording of older vintages (groupB23007 above).
+ */
+export const groupB23007Live: AcsGroupJson = {
+  variables: {
+    B23007_001E: est("Estimate!!Total:"),
+    B23007_002E: est("Estimate!!Total:!!With own children under 18 years:"),
+    B23007_003E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:"),
+    B23007_004E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:!!Husband in labor force:"),
+    B23007_005E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:!!Husband in labor force:!!Employed or in Armed Forces:"),
+    B23007_006E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:!!Husband in labor force:!!Employed or in Armed Forces:!!Wife in labor force:"),
+    B23007_007E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:!!Husband in labor force:!!Employed or in Armed Forces:!!Wife in labor force:!!Employed or in Armed Forces"),
+    B23007_008E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:!!Husband in labor force:!!Employed or in Armed Forces:!!Wife in labor force:!!Unemployed"),
+    B23007_009E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:!!Husband in labor force:!!Employed or in Armed Forces:!!Wife not in labor force"),
+    B23007_010E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:!!Husband in labor force:!!Unemployed:"),
+    B23007_011E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:!!Husband in labor force:!!Unemployed:!!Wife in labor force:"),
+    B23007_012E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:!!Husband in labor force:!!Unemployed:!!Wife in labor force:!!Employed or in Armed Forces"),
+    B23007_013E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:!!Husband in labor force:!!Unemployed:!!Wife in labor force:!!Unemployed"),
+    B23007_014E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:!!Husband in labor force:!!Unemployed:!!Wife not in labor force"),
+    B23007_015E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:!!Husband not in labor force:"),
+    B23007_016E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:!!Husband not in labor force:!!Wife in labor force:"),
+    B23007_017E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:!!Husband not in labor force:!!Wife in labor force:!!Employed or in Armed Forces"),
+    B23007_018E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:!!Husband not in labor force:!!Wife in labor force:!!Unemployed"),
+    B23007_019E: est("Estimate!!Total:!!With own children under 18 years:!!Opposite-sex married-couple family:!!Husband not in labor force:!!Wife not in labor force"),
+    B23007_020E: est("Estimate!!Total:!!With own children under 18 years:!!Other family:"),
+    B23007_021E: est("Estimate!!Total:!!With own children under 18 years:!!Other family:!!Male householder, no spouse present:"),
+    B23007_022E: est("Estimate!!Total:!!With own children under 18 years:!!Other family:!!Male householder, no spouse present:!!In labor force:"),
+    B23007_023E: est("Estimate!!Total:!!With own children under 18 years:!!Other family:!!Male householder, no spouse present:!!In labor force:!!Employed or in Armed Forces"),
+    B23007_024E: est("Estimate!!Total:!!With own children under 18 years:!!Other family:!!Male householder, no spouse present:!!In labor force:!!Unemployed"),
+    B23007_025E: est("Estimate!!Total:!!With own children under 18 years:!!Other family:!!Male householder, no spouse present:!!Not in labor force"),
+    B23007_026E: est("Estimate!!Total:!!With own children under 18 years:!!Other family:!!Female householder, no spouse present:"),
+    B23007_027E: est("Estimate!!Total:!!With own children under 18 years:!!Other family:!!Female householder, no spouse present:!!In labor force:"),
+    B23007_028E: est("Estimate!!Total:!!With own children under 18 years:!!Other family:!!Female householder, no spouse present:!!In labor force:!!Employed or in Armed Forces"),
+    B23007_029E: est("Estimate!!Total:!!With own children under 18 years:!!Other family:!!Female householder, no spouse present:!!In labor force:!!Unemployed"),
+    B23007_030E: est("Estimate!!Total:!!With own children under 18 years:!!Other family:!!Female householder, no spouse present:!!Not in labor force"),
+    B23007_031E: est("Estimate!!Total:!!No children under 18 years:"),
+    B23007_048E: est("Estimate!!Total:!!No children under 18 years:!!Opposite-sex married-couple family:!!Husband not in labor force:!!Wife not in labor force"),
+    B23007_059E: est("Estimate!!Total:!!No children under 18 years:!!Other family:!!Female householder, no spouse present:!!Not in labor force"),
+  },
+};
+
 /** B19013 — Median household income. */
 export const groupB19013: AcsGroupJson = {
   variables: {

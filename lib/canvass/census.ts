@@ -168,10 +168,20 @@ export function resolveVariables(table: AcsTable, group: AcsGroupJson): Resolved
           continue;
         }
         const leaf = last(v.path);
-        const marriedNonworking =
+        const above = v.path.slice(0, -1);
+        // Married-couple families (live 2023 labels): "Husband in labor force: / Employed… / Wife not in labor
+        // force" and "… / Unemployed: / Wife not in labor force" are leaves; "Husband not in labor force:" is a
+        // subtotal that already includes its wife-in / wife-not-in-LF children, so its children are skipped.
+        const husbandOut = leaf === "husband not in labor force";
+        const wifeOut = leaf === "wife not in labor force" && !above.includes("husband not in labor force");
+        // Older vintages word the same cells as "Father only / Mother only / Neither parent in labor force".
+        const legacyMarried =
           leaf === "father only in labor force" || leaf === "mother only in labor force" || leaf === "neither parent in labor force";
-        const singleNonworking = leaf === "not in labor force" && v.path.some((seg) => seg.includes("householder"));
-        if (marriedNonworking || singleNonworking) parts.push({ id: v.id, label: v.path.slice(2).join(" / "), role: "nonworking_parent" });
+        // Single-parent families: "Male/Female householder, no spouse present: / Not in labor force".
+        const singleNonworking = leaf === "not in labor force" && above.some((seg) => seg.includes("householder"));
+        if (husbandOut || wifeOut || legacyMarried || singleNonworking) {
+          parts.push({ id: v.id, label: v.path.slice(2).join(" / "), role: "nonworking_parent" });
+        }
       }
       break;
     case "B19013": {
