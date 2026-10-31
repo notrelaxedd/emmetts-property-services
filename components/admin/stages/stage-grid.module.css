@@ -1,0 +1,73 @@
+/*
+ * The front page's stage row. Wide: five main boxes in a row with arrows between them, Customers above
+ * Leads pointing down into it, Crew below Schedule pointing up into it, and the two standalone tools
+ * (Fleet below Leads, Autopilot above Schedule). Narrow (< 760px): one column, every arrow points down.
+ */
+.grid {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "fleet"
+    "ads"
+    "a1"
+    "customers"
+    "cdown"
+    "leads"
+    "a2"
+    "quotes"
+    "a3"
+    "crew"
+    "cup"
+    "schedule"
+    "a4"
+    "money"
+    "autopilot";
+}
+
+@media (min-width: 760px) {
+  .grid {
+    gap: 0.375rem;
+    grid-template-columns:
+      minmax(0, 1fr) 1.5rem minmax(0, 1fr) 1.5rem minmax(0, 1fr) 1.5rem minmax(0, 1fr) 1.5rem minmax(0, 1fr);
+    grid-template-areas:
+      ".   .  customers .  .      .  autopilot .  ."
+      ".   .  cdown     .  .      .  .         .  ."
+      "ads a1 leads     a2 quotes a3 schedule  a4 money"
+      ".   .  .         .  .      .  cup       .  ."
+      ".   .  fleet     .  .      .  crew      .  .";
+  }
+}
+
+.arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #327213; /* brand-green-dark */
+  min-height: 1.25rem;
+}
+
+.arrow svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  transform: rotate(90deg); /* narrow: everything flows down */
+}
+
+@media (min-width: 760px) {
+  .right svg {
+    transform: none;
+  }
+  .down svg {
+    transform: rotate(90deg);
+  }
+  .up svg {
+    transform: rotate(-90deg);
+  }
+}
+
+/* Phones: everything tappable inside the open panel is at least 44px tall (the full pages keep their sizes). */
+@media (max-width: 759px) {
+  .panelBody :is(button:not([role]), a[class*="inline-flex"], select, input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"])) {
+    min-height: 44px;
+  }
+}

@@ -21,17 +21,27 @@ export function CustomerContactCard({
   initial,
   since,
   counts,
+  afterDeleteHref = "/admin/customers",
+  inlineDeleteError = false,
+  fullDeleteWarning = false,
 }: {
   id: string
   initial: { name: string; email: string | null; phone: string | null; address: string | null; parcel_id: string | null }
   since: string
   /** What deleting also removes, for the confirm dialog. */
   counts: { jobs: number; quotes: number; leads: number }
+  /** Where to go once the customer is deleted. */
+  afterDeleteHref?: string
+  /** Also show a failed delete's reason inside the confirm dialog (not only as a toast). */
+  inlineDeleteError?: boolean
+  /** Always list everything a delete removes (leads, quotes, jobs, messages, price log), even at zero. */
+  fullDeleteWarning?: boolean
 }) {
   const { toast } = useToast()
   const router = useRouter()
   const [pending, startTransition] = React.useTransition()
   const [editing, setEditing] = React.useState(false)
+  const [deleteError, setDeleteError] = React.useState<string | null>(null)
   const blank = (c: typeof initial): CustomerContact => ({
     name: c.name,
     email: c.email ?? "",
@@ -60,13 +70,15 @@ export function CustomerContactCard({
   }
 
   const remove = async () => {
+    setDeleteError(null)
     const r = await deleteCustomer(id)
     if (!r.ok) {
       toast({ title: "Couldn't delete", description: r.reason, variant: "destructive" })
+      if (inlineDeleteError) setDeleteError(r.reason)
       return false
     }
     toast({ title: r.message ?? "Deleted", variant: "success" })
-    router.push("/admin/customers")
+    router.push(afterDeleteHref)
   }
 
   const field = (key: keyof CustomerContact, label: string, props: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
@@ -138,13 +150,21 @@ export function CustomerContactCard({
             triggerVariant="ghost"
             title={`Delete ${initial.name}?`}
             description={
-              linked.length
+              fullDeleteWarning
+                ? `This removes them and their leads, quotes, jobs, messages and price log${linked.length ? ` (${linked.join(", ")})` : ""}. It can't be undone.`
+                : linked.length
                 ? `This also deletes their ${linked.join(", ")}, messages and price log. It can't be undone.`
                 : "This also deletes their messages and price log. It can't be undone."
             }
             confirmLabel="Delete customer"
             onConfirm={remove}
-          />
+          >
+            {inlineDeleteError && deleteError ? (
+              <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                {deleteError}
+              </p>
+            ) : null}
+          </ConfirmDialog>
         </div>
       </CardContent>
     </Card>

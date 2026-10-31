@@ -14,7 +14,7 @@ export function NavLink({
   children,
 }: {
   href: string
-  /** Match only this exact path (used for the Inbox home). */
+  /** Match only this exact path (used for the console home). */
   exact?: boolean
   icon?: React.ReactNode
   /** Count pill; hidden when 0 or undefined. */

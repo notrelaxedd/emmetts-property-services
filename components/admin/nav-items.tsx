@@ -4,6 +4,7 @@ import {
   CalendarClock,
   CalendarDays,
   DoorOpen,
+  House,
   Inbox,
   Megaphone,
   Receipt,
@@ -18,7 +19,8 @@ export type AdminNavItem = { href: string; label: string; icon: LucideIcon; exac
 
 /** Owner console navigation, in display order. */
 export const adminNav: AdminNavItem[] = [
-  { href: "/admin", label: "Inbox", icon: Inbox, exact: true, badge: "pending" },
+  { href: "/admin", label: "Home", icon: House, exact: true },
+  { href: "/admin/inbox", label: "Inbox", icon: Inbox, badge: "pending" },
   { href: "/admin/ads", label: "Ads", icon: Megaphone },
   { href: "/admin/leads", label: "Leads", icon: UserSearch },
   { href: "/admin/canvass", label: "Canvass", icon: DoorOpen },

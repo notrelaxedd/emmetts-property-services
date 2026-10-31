@@ -17,6 +17,7 @@ import {
   clearWeatherHold,
   decideApproval,
   enqueueSchedule,
+  finishJob,
   holdForWeather,
   PAYMENT_METHODS,
   scheduleJobAt,
@@ -267,6 +268,27 @@ export async function runScheduler(): Promise<ActionResult> {
     await enqueueSchedule(requireSupabaseAdmin(), "owner_requested")
     revalidate()
     return { ok: true, message: "The scheduler will suggest slots shortly; each one asks the crew and raises a call card." }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+const DoneSchema = z.object({ jobId: idSchema, hours: z.number().min(0.25, "Enter the hours on site (at least 15 minutes).").max(24) })
+
+/**
+ * "Mark done" from the owner console: the same finish as the crew app's Complete (hours recorded,
+ * payouts for the crew on it, review follow-up queued). Payment is still collected after this.
+ */
+export async function markJobDone(jobId: string, hours: number): Promise<ActionResult> {
+  const session = await requireOwner()
+  const parsed = DoneSchema.safeParse({ jobId, hours })
+  if (!parsed.success) return { ok: false, reason: parsed.error.issues.map((i) => i.message).join("; ") }
+  try {
+    const changed = await finishJob(requireSupabaseAdmin(), parsed.data.jobId, { hours: parsed.data.hours, actor: actorOf(session) })
+    revalidate()
+    revalidatePath("/admin/money")
+    revalidatePath("/crew", "layout")
+    return { ok: true, message: changed ? "Job done. Collect payment from Money." : "Already marked done." }
   } catch (e) {
     return fail(e)
   }

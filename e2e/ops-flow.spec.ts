@@ -1,12 +1,12 @@
 /**
  * End-to-end flow in a real browser, against a real Supabase project + Stripe TEST keys:
  *
- *   /quote form → quote task (job on the schedule's rail) → owner prices the custom item in /admin →
+ *   /quote form → quote task (job on the schedule's rail) → owner prices the custom item in /admin/inbox →
  *   owner puts the job on the calendar from /admin/schedule (crew emailed, "Call … to confirm" card)
  *   → crew says "I'm available" in /crew/offers → owner books it from the call card (check, after the
  *   job) → crew starts + completes in /crew/jobs/<id> → owner records the check on the quote page →
  *   the after-the-job card link: a quote approval → signed `checkout.session.completed` POSTed to
- *   /api/stripe/webhook marks a second quote paid → review task → review card in /admin.
+ *   /api/stripe/webhook marks a second quote paid → review task → review card in /admin/inbox.
  *
  * Fleet tasks run IN PROCESS (the same `dispatch` the worker uses, with a service-role client), so
  * no fleet box is needed. With a worker running too (`FLEET_ROLE=quotes npm run fleet`, etc.) the
@@ -155,7 +155,7 @@ test.describe("ops flow (real Supabase + Stripe test mode)", () => {
   }
 
   async function card(page: Page, title: RegExp) {
-    await page.goto("/admin");
+    await page.goto("/admin/inbox");
     const c = page.getByRole("article", { name: title });
     await expect(c).toBeVisible({ timeout: 30_000 });
     return c;
@@ -286,7 +286,7 @@ test.describe("ops flow (real Supabase + Stripe test mode)", () => {
       expect(items!.find((i) => i.is_custom)?.status).toBe("needs_owner");
     });
 
-    const owner = await newSignedInPage(browser, OWNER_EMAIL!, "/admin");
+    const owner = await newSignedInPage(browser, OWNER_EMAIL!, "/admin/inbox");
 
     await test.step("owner prices the custom item on its card", async () => {
       const c = await card(owner, new RegExp(`Custom request: ${CUSTOMER_NAME}`));

@@ -6,7 +6,7 @@ import { requireOwner } from "@/lib/auth/session"
 import { opsConfig } from "@/lib/config"
 import type { Customer } from "@/lib/db/types"
 import { geocode } from "@/lib/geo"
-import { check, formatPhone, normalizePhone, one, upsertCustomer } from "@/lib/ops"
+import { check, enqueueTask, formatPhone, normalizePhone, one, upsertCustomer } from "@/lib/ops"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; reason: string }
@@ -182,6 +182,65 @@ export async function deleteCustomer(id: string): Promise<ActionResult> {
     revalidatePath("/admin/customers")
     revalidatePath("/admin/customers/log")
     return { ok: true, message: "Customer deleted." }
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/**
+ * "Rebook": put an existing customer back into Leads as a new lead. It asks for the same services as
+ * their most recent lead (and the same preferred days); when there are any, the quotes worker is asked
+ * for an estimate the same way the quote form does it.
+ */
+export async function rebookCustomer(id: string): Promise<{ ok: true; leadId: string; message: string } | { ok: false; reason: string }> {
+  await requireOwner()
+  if (!idSchema.safeParse(id).success) return { ok: false, reason: "Invalid customer." }
+  try {
+    const db = requireSupabaseAdmin()
+    const customer = check(await db.from("customers").select("id,name").eq("id", id).maybeSingle(), "rebook(customer)")
+    if (!customer) return { ok: false, reason: "Customer not found." }
+    const last = check(
+      await db
+        .from("leads")
+        .select("requested_service_ids,preferred_days")
+        .eq("customer_id", id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      "rebook(last lead)",
+    )
+    const serviceIds = last?.requested_service_ids ?? []
+    const lead = one(
+      await db
+        .from("leads")
+        .insert({
+          customer_id: id,
+          source: "rebook",
+          utm: {},
+          requested_service_ids: serviceIds,
+          custom_request: null,
+          photo_paths: [],
+          preferred_days: last?.preferred_days ?? [],
+          status: "new",
+          flyer_worker_id: null,
+        })
+        .select("id")
+        .single(),
+      "rebook(lead)",
+    )
+    if (serviceIds.length) {
+      await enqueueTask(db, { type: "quote", payload: { lead_id: lead.id }, dedupeKey: `quote:${lead.id}` })
+    }
+    revalidatePath("/admin/leads")
+    revalidatePath(`/admin/customers/${id}`)
+    revalidatePath("/admin", "layout")
+    return {
+      ok: true,
+      leadId: lead.id,
+      message: serviceIds.length
+        ? `${customer.name} is back in Leads. The quotes worker is estimating the same services as last time.`
+        : `${customer.name} is back in Leads.`,
+    }
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : String(e) }
   }

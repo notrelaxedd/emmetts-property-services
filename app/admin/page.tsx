@@ -1,161 +1,100 @@
 import Link from "next/link"
-import { CalendarDays, Inbox, Phone } from "lucide-react"
-import { DecidedList } from "@/components/admin/inbox/decided-list"
-import { InboxCard } from "@/components/admin/inbox/inbox-card"
-import { UrlFilterChips } from "@/components/admin/inbox/inbox-filters"
-import { loadEntries } from "@/components/admin/inbox/load-context"
-import {
-  FILTER_KINDS,
-  FILTER_LABELS,
-  INBOX_FILTERS,
-  isInboxFilter,
-  type InboxFilter,
-} from "@/components/admin/inbox/types"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { EmptyState } from "@/components/ui/empty-state"
-import { PageHeader } from "@/components/ui/page-header"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { CalendarClock, DoorOpen, Inbox } from "lucide-react"
+import { AdminBrand } from "@/components/admin/brand"
+import { AdsBody, parseAdStatus } from "@/components/admin/stages/ads-body"
+import { AutopilotBody } from "@/components/admin/stages/autopilot-body"
+import { CrewPanel } from "@/components/admin/stages/crew-panel"
+import { AddCustomerCard, CustomerDetailBody, CustomersBody } from "@/components/admin/stages/customers-body"
+import { FleetBody } from "@/components/admin/stages/fleet-body"
+import { LeadDetailBody, LeadsBody } from "@/components/admin/stages/leads-body"
+import { loadFrontPage } from "@/components/admin/stages/load-counts"
+import { MoneyPanel } from "@/components/admin/stages/money-panel"
+import { QuoteDetailBody, QuotesBody } from "@/components/admin/stages/quotes-body"
+import { SchedulePanel } from "@/components/admin/stages/schedule-panel"
+import { StagePanel } from "@/components/admin/stages/stage-panel"
+import { StageRow } from "@/components/admin/stages/stage-row"
+import { isStage, type StageKey } from "@/components/admin/stages/stages"
+import { Button } from "@/components/ui/button"
 import { requireOwner } from "@/lib/auth/session"
-import type { Approval, ApprovalKind } from "@/lib/db/types"
-import { pendingCounts } from "@/lib/ops/approvals"
-import { check } from "@/lib/ops/types"
-import { getSupabaseAdmin } from "@/lib/supabase/admin"
 
 export const dynamic = "force-dynamic"
-export const metadata = { title: "Inbox" }
+export const metadata = { title: "Home" }
 
-const DECIDED_LIMIT = 20
+type Params = { stage?: string; id?: string; add?: string; adStatus?: string; q?: string }
 
-function chipCount(filter: InboxFilter, counts: Record<ApprovalKind, number>): number {
-  if (filter === "all") return Object.values(counts).reduce((a, b) => a + b, 0)
-  return FILTER_KINDS[filter].reduce((sum, k) => sum + (counts[k] ?? 0), 0)
+function PanelBody({ stage, params }: { stage: StageKey; params: Params }) {
+  const id = typeof params.id === "string" && params.id ? params.id : null
+  switch (stage) {
+    case "ads":
+      return <AdsBody variant="panel" status={parseAdStatus(params.adStatus)} />
+    case "leads":
+      return id ? <LeadDetailBody variant="panel" id={id} /> : <LeadsBody variant="panel" status="all" />
+    case "customers":
+      if (id) return <CustomerDetailBody variant="panel" id={id} />
+      if (params.add === "1") return <AddCustomerCard variant="panel" />
+      return <CustomersBody variant="panel" q={typeof params.q === "string" ? params.q.slice(0, 100) : ""} />
+    case "quotes":
+      return id ? <QuoteDetailBody variant="panel" id={id} /> : <QuotesBody variant="panel" status="all" />
+    case "schedule":
+      return <SchedulePanel />
+    case "money":
+      return <MoneyPanel />
+    case "crew":
+      return <CrewPanel />
+    case "fleet":
+      return <FleetBody variant="panel" />
+    case "autopilot":
+      return <AutopilotBody variant="panel" />
+  }
 }
 
-export default async function InboxPage({ searchParams }: { searchParams: { filter?: string; view?: string } }) {
+/**
+ * The console's front page: one row of stages showing where every customer is, from first ad to money
+ * in the bank. Tapping a box opens that stage's menu under the row (`?stage=`, plus `&id=` for one record).
+ */
+export default async function AdminHomePage({ searchParams }: { searchParams: Params }) {
   await requireOwner()
-  const filter: InboxFilter = isInboxFilter(searchParams.filter) ? searchParams.filter : "all"
-  const db = getSupabaseAdmin()
-  if (!db) {
-    return (
-      <div className="space-y-4">
-        <PageHeader title="Inbox" />
-        <Alert variant="warning">
-          <AlertDescription>Supabase isn&apos;t configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).</AlertDescription>
-        </Alert>
-      </div>
-    )
-  }
-
-  let pending: Approval[] = []
-  let decided: Approval[] = []
-  let counts: Record<ApprovalKind, number> | null = null
-  let loadError: string | null = null
-  let needsDay = 0
-  let toCollect = 0
-  try {
-    let q = db.from("approvals").select("*").eq("status", "pending").order("created_at", { ascending: true })
-    if (filter !== "all") q = q.in("kind", FILTER_KINDS[filter])
-    const [pendingRes, decidedRes, c, railRes, collectRes] = await Promise.all([
-      q,
-      db
-        .from("approvals")
-        .select("*")
-        .neq("status", "pending")
-        .order("decided_at", { ascending: false, nullsFirst: false })
-        .limit(DECIDED_LIMIT),
-      pendingCounts(db),
-      // Estimated quotes waiting for a day on the schedule's rail.
-      db.from("jobs").select("id", { count: "exact", head: true }).eq("status", "unscheduled"),
-      // Finished jobs whose quote hasn't been paid yet.
-      db.from("quotes").select("id", { count: "exact", head: true }).eq("status", "accepted").is("paid_at", null),
-    ])
-    pending = check(pendingRes, "inbox(pending)") ?? []
-    decided = check(decidedRes, "inbox(decided)") ?? []
-    counts = c
-    needsDay = railRes.error ? 0 : (railRes.count ?? 0)
-    toCollect = collectRes.error ? 0 : (collectRes.count ?? 0)
-  } catch (e) {
-    loadError = e instanceof Error ? e.message : String(e)
-  }
-
-  const entries = await loadEntries(db, pending)
-  const chips = INBOX_FILTERS.map((f) => ({
-    value: f,
-    label: FILTER_LABELS[f],
-    count: counts ? chipCount(f, counts) : undefined,
-  }))
-  const total = counts ? chipCount("all", counts) : pending.length
+  const stage = isStage(searchParams.stage) ? searchParams.stage : null
+  const { counts, pendingApprovals } = await loadFrontPage()
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Approval inbox"
-        description={total ? `${total} waiting on you, oldest first.` : "Everything the fleet drafts lands here first."}
-      />
-      {loadError ? (
-        <Alert variant="destructive">
-          <AlertDescription>Couldn&apos;t load approvals: {loadError}</AlertDescription>
-        </Alert>
-      ) : null}
-      {needsDay || toCollect ? (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {needsDay ? (
-            <Link
-              href="/admin/schedule"
-              className="flex items-center gap-3 rounded-lg border border-brand-green-dark/40 bg-brand-green/15 px-4 py-3 text-sm text-ink hover:bg-brand-green/25"
-            >
-              <CalendarDays className="size-5 shrink-0" aria-hidden="true" />
-              <span>
-                <span className="font-semibold">
-                  {needsDay} quote{needsDay === 1 ? "" : "s"} waiting for a day.
-                </span>{" "}
-                Drag {needsDay === 1 ? "it" : "them"} onto the calendar; the crew get emailed, then you call the customer.
-              </span>
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <AdminBrand />
+        <div className="ml-auto flex flex-wrap items-center gap-1">
+          <Button asChild variant="ghost" className="h-11 px-3 text-ink-muted hover:text-ink">
+            <Link href="/admin/canvass">
+              <DoorOpen aria-hidden="true" /> Canvass
             </Link>
-          ) : null}
-          {toCollect ? (
-            <Link
-              href="/admin/quotes?status=accepted"
-              className="flex items-center gap-3 rounded-lg border border-amber-400 bg-amber-100 px-4 py-3 text-sm text-amber-950 hover:bg-amber-200/70"
-            >
-              <Phone className="size-5 shrink-0" aria-hidden="true" />
-              <span>
-                <span className="font-semibold">
-                  {toCollect} confirmed quote{toCollect === 1 ? "" : "s"} not paid yet.
-                </span>{" "}
-                Collected after the job: record cash / check or email the card link from the quote.
-              </span>
+          </Button>
+          <Button asChild variant="ghost" className="h-11 px-3 text-ink-muted hover:text-ink">
+            <Link href="/admin/availability">
+              <CalendarClock aria-hidden="true" /> Availability
             </Link>
-          ) : null}
+          </Button>
+          <Button asChild className="h-11 px-4">
+            <Link href="/admin/inbox">
+              <Inbox aria-hidden="true" /> Inbox
+              {pendingApprovals ? (
+                <span
+                  className="min-w-5 rounded-full bg-brand-green px-1.5 text-center text-xs font-bold leading-5 tabular-nums text-ink"
+                  aria-label={`${pendingApprovals} pending`}
+                >
+                  {pendingApprovals > 99 ? "99+" : pendingApprovals}
+                </span>
+              ) : null}
+            </Link>
+          </Button>
         </div>
+      </header>
+
+      <StageRow counts={counts} open={stage} />
+
+      {stage ? (
+        <StagePanel stage={stage} view={[stage, searchParams.id, searchParams.add].filter(Boolean).join(":")}>
+          <PanelBody stage={stage} params={searchParams} />
+        </StagePanel>
       ) : null}
-      <Tabs defaultValue={searchParams.view === "decided" ? "decided" : "pending"}>
-        <TabsList>
-          <TabsTrigger value="pending">Pending{total ? ` (${total})` : ""}</TabsTrigger>
-          <TabsTrigger value="decided">Decided</TabsTrigger>
-        </TabsList>
-        <TabsContent value="pending" className="space-y-4">
-          <UrlFilterChips chips={chips} value={filter} ariaLabel="Filter approvals" />
-          {entries.length ? (
-            <ul className="grid gap-4">
-              {entries.map((entry) => (
-                <li key={entry.approval.id}>
-                  <InboxCard entry={entry} />
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <EmptyState
-              icon={Inbox}
-              title={filter === "all" ? "Inbox zero" : `No pending ${FILTER_LABELS[filter].toLowerCase()}`}
-              description="New drafts from the fleet show up here for you to approve, edit or reject."
-            />
-          )}
-        </TabsContent>
-        <TabsContent value="decided">
-          <DecidedList approvals={decided} />
-        </TabsContent>
-      </Tabs>
     </div>
   )
 }

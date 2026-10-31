@@ -16,6 +16,7 @@ import {
 export function ConfirmDialog({
   trigger,
   triggerVariant = "outline",
+  triggerClassName,
   title,
   description,
   confirmLabel,
@@ -27,6 +28,8 @@ export function ConfirmDialog({
 }: {
   trigger: React.ReactNode
   triggerVariant?: ButtonProps["variant"]
+  /** Extra classes for the trigger button (e.g. a taller touch target). */
+  triggerClassName?: string
   title: string
   description?: React.ReactNode
   confirmLabel: string
@@ -42,7 +45,7 @@ export function ConfirmDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button type="button" size="sm" variant={triggerVariant} disabled={disabled}>
+        <Button type="button" size="sm" variant={triggerVariant} disabled={disabled} className={triggerClassName}>
           {trigger}
         </Button>
       </DialogTrigger>
