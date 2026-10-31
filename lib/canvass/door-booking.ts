@@ -4,18 +4,21 @@
  *
  *   customer: parcels.customer_id → customers.parcel_id (county PIN) → normalised address → new row
  *   lead:     source "canvass", utm { source: canvass, medium: door, campaign: <street> }, quoted | won
- *   quote:    sent (+sent_at) for a quote, accepted (+accepted_at) for a booking; price = mid of low/high
+ *   quote:    sent (+sent_at) for a quote, accepted (+accepted_at) for a booking; price = the house's tier price
+ *             (`default_price`, v3) unless the crew typed amounts (then the mid of low/high); 0 when neither exists
  *   item:     is_custom "Door quote: <service>", priced, 1 h
  *   job:      booked only; `ensureJobForQuote` (unscheduled, unpaid) so it lands on the "Needs a day" rail
  *   reprice:  amounts typed in the details sheet after the knock landed (`repriceDoorQuote`)
  */
-import type { Customer, KnockOutcome, Parcel } from "../db/types";
+import type { CanvassSettings, Customer, KnockOutcome, Parcel } from "../db/types";
 import { moneyRound } from "../pricing";
 import { ensureJobForQuote } from "../ops/jobs";
 import { getSettings } from "../ops/settings";
 import { check, one } from "../ops/types";
 import type { Db } from "../ops/types";
 import { normalizeAddress } from "./county";
+import { estimateTurf, quoteFor } from "./quote";
+import type { QuoteSettings } from "./quote";
 import { SERVICE_LABELS, type ServiceKey } from "./types";
 
 export const DOOR_SOURCE = "canvass";
@@ -30,8 +33,11 @@ export type DoorBookingInput = {
   parcel: DoorParcel;
   knocker_name: string;
   outcome: Extract<KnockOutcome, "quote_given" | "booked">;
-  amount_low: number;
-  amount_high: number;
+  /** Typed amounts (the details sheet); null / omitted = none typed, so `default_price` is used. */
+  amount_low?: number | null;
+  amount_high?: number | null;
+  /** The house's quote price for this service (null when the tier is not priced); the default amount. */
+  default_price?: number | null;
   service: ServiceKey;
 };
 
@@ -42,6 +48,39 @@ export function doorPrice(amountLow: number, amountHigh: number): { low: number;
   const low = Math.max(0, Number(amountLow) || 0);
   const high = Math.max(low, Number(amountHigh) || 0);
   return { low, high, price: moneyRound((low + high) / 2) };
+}
+
+/**
+ * The amounts for a door quote: typed low / high when there are any, else the house's tier price for both, else 0
+ * (`priced: false`: the owner sets the price). A single typed amount stands for both ends.
+ */
+export function doorAmounts(input: Pick<DoorBookingInput, "amount_low" | "amount_high" | "default_price">): {
+  low: number;
+  high: number;
+  price: number;
+  priced: boolean;
+} {
+  const typedLow = input.amount_low ?? input.amount_high ?? null;
+  const typedHigh = input.amount_high ?? input.amount_low ?? null;
+  const fallback = typeof input.default_price === "number" && Number.isFinite(input.default_price) ? input.default_price : null;
+  const low = typedLow ?? fallback;
+  const high = typedHigh ?? fallback;
+  if (low === null || high === null) return { low: 0, high: 0, price: 0, priced: false };
+  return { ...doorPrice(low, high), priced: true };
+}
+
+/** "$40" for one price, "$45–$60" for a typed range. */
+export const doorAmountText = (low: number, high: number): string => (low === high ? `$${low}` : `$${low}–$${high}`);
+
+/** The default amount for a door quote: the house's price for the service when it is priced, else null. */
+export function defaultDoorPrice(
+  parcel: Parameters<typeof estimateTurf>[0] & Pick<Parcel, "turf_sqft_traced" | "market_value">,
+  settings: QuoteSettings & Pick<CanvassSettings, "hardscape_pct">,
+  service: ServiceKey,
+): number | null {
+  // Same recompute as the views: the estimate follows the current hardscape_pct; a traced lawn wins.
+  const quote = quoteFor(service, { ...parcel, turf_sqft_est: estimateTurf(parcel, settings.hardscape_pct) }, settings);
+  return quote.status === "priced" ? quote.price : null;
 }
 
 /** Customer name when the county record has no usable owner name. */
@@ -80,7 +119,7 @@ export async function findDoorCustomer(db: Db, parcel: DoorParcel): Promise<Cust
 /** Creates (or links) the customer, then lead + quote (+ job when booked). Sets parcels.customer_id. */
 export async function createDoorLeadAndQuote(db: Db, input: DoorBookingInput): Promise<DoorBookingResult> {
   const { parcel, outcome, service } = input;
-  const { low, high, price } = doorPrice(input.amount_low, input.amount_high);
+  const { low, high, price, priced } = doorAmounts(input);
   const now = new Date().toISOString();
   const label = SERVICE_LABELS[service];
 
@@ -151,7 +190,9 @@ export async function createDoorLeadAndQuote(db: Db, input: DoorBookingInput): P
         accepted_at: booked ? now : null,
         paid_at: null,
         expires_at: booked ? null : expires,
-        rationale: `Door quote by ${input.knocker_name}: $${low}–$${high} for ${label}.`,
+        rationale: priced
+          ? `Door quote by ${input.knocker_name}: ${doorAmountText(low, high)} for ${label}.`
+          : `Door quote by ${input.knocker_name} for ${label}: price to be set.`,
       })
       .select("*")
       .single(),
@@ -225,7 +266,7 @@ export async function repriceDoorQuote(db: Db, quoteId: string, amountLow: numbe
     "repriceDoorQuote(quote)",
   );
   if (!quote || quote.paid_at || !(REPRICEABLE as readonly string[]).includes(quote.status)) return false;
-  const rationale = (quote.rationale ?? "").replace(/\$[\d.,]+–\$[\d.,]+/, () => `$${low}–$${high}`);
+  const rationale = (quote.rationale ?? "").replace(/\$[\d.,]+(?:–\$[\d.,]+)?|price to be set/, () => doorAmountText(low, high));
   check(
     await db
       .from("quotes")

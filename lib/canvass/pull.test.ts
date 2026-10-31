@@ -32,18 +32,33 @@ const AREA = square(-81.841, 41.475, 0.003);
  * One fake fetch for the whole pull: county layer meta + query page, TIGERweb service listing + block-group polygons
  * (or a 503 when `tigerDown`, which sends the pull to the Census geocoder), and the six ACS tables.
  */
-function pullFetch(opts: { tigerDown?: boolean; censusDown?: boolean } = {}) {
+function pullFetch(opts: { tigerDown?: boolean; censusDown?: boolean; noCityZip?: boolean } = {}) {
   const calls: string[] = [];
   const f = vi.fn(async (url: string, init?: RequestInit) => {
     calls.push(url);
     if (url === `${COUNTY_PARCELS_SERVICE}/1?f=pjson`) return json(layerMetaFixtureA);
     if (url === `${COUNTY_PARCELS_SERVICE}/1/query`) {
       expect(init?.method).toBe("POST");
-      return json({ type: "FeatureCollection", features: parcelFeaturesFixtureA });
+      const features = opts.noCityZip
+        ? parcelFeaturesFixtureA.map((ft) => ({ ...ft, properties: { ...ft.properties, PARCEL_CITY: null, PARCEL_ZIP: null } }))
+        : parcelFeaturesFixtureA;
+      return json({ type: "FeatureCollection", features });
     }
     if (url === `${TIGERWEB_SERVICE}?f=pjson`) {
       if (opts.tigerDown) return new Response("down", { status: 503 });
-      return json({ layers: [{ id: 10, name: "Census Block Groups" }] });
+      return json({
+        layers: [
+          { id: 10, name: "Census Block Groups" },
+          { id: 24, name: "Incorporated Places" },
+          { id: 31, name: "ZIP Code Tabulation Areas" },
+        ],
+      });
+    }
+    if (url.startsWith(`${TIGERWEB_SERVICE}/24/query`)) {
+      return json({ type: "FeatureCollection", features: [{ type: "Feature", geometry: square(-81.85, 41.47, 0.02), properties: { NAME: "Rocky River" } }] });
+    }
+    if (url.startsWith(`${TIGERWEB_SERVICE}/31/query`)) {
+      return json({ type: "FeatureCollection", features: [{ type: "Feature", geometry: square(-81.85, 41.47, 0.02), properties: { ZCTA5: "44116" } }] });
     }
     if (url.startsWith(`${TIGERWEB_SERVICE}/10/query`)) {
       return json({
@@ -92,6 +107,7 @@ describe("mergeParcelRow", () => {
       address: "19000 DETROIT RD",
       street: "DETROIT RD",
       city: "ROCKY RIVER",
+      state: "OH",
       zip: "44116",
       owner_display: "NEW OWNER LLC",
       mailing_address: null,
@@ -230,6 +246,23 @@ describe("pullParcels (fake db + fixture fetch)", () => {
     // Only allow-listed hosts were called.
     for (const url of calls) expect(url).toMatch(/^https:\/\/(gis\.cuyahogacounty\.gov|tigerweb\.geo\.census\.gov|api\.census\.gov)\//);
     expect(log.some((m) => /1 inserted/.test(m))).toBe(true);
+  });
+
+  it("fills a blank city and zip from TIGERweb places and ZCTAs, and a re-pull does not ask again", async () => {
+    const db = fakeDb({ canvass_settings: [canvassSettingsRow()] });
+    const { f, calls } = pullFetch({ noCityZip: true });
+    const r = await pullParcels(db, AREA, { fetchImpl: f });
+    expect(r.cityZipFilled).toBe(1);
+    expect(db.tables.parcels[0]).toMatchObject({ city: "Rocky River", zip: "44116", state: "OH" });
+    expect(calls.some((u) => u.startsWith(`${TIGERWEB_SERVICE}/24/query`))).toBe(true);
+    expect(calls.some((u) => u.startsWith(`${TIGERWEB_SERVICE}/31/query`))).toBe(true);
+
+    const before = calls.length;
+    const again = await pullParcels(db, AREA, { fetchImpl: f });
+    expect(again.cityZipFilled).toBe(0);
+    // The county still reports no city / zip, but the filled values are kept (and the parcel is not looked up again).
+    expect(db.tables.parcels[0]).toMatchObject({ city: "Rocky River", zip: "44116" });
+    expect(calls.slice(before)).toEqual([`${COUNTY_PARCELS_SERVICE}/1/query`]);
   });
 
   it("a re-pull refreshes county columns, keeps the crew's data and reuses cached meta, block groups and ACS", async () => {

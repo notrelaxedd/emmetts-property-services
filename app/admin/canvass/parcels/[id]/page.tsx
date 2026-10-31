@@ -3,20 +3,21 @@ import { notFound } from "next/navigation"
 import { ArrowLeft, DoorOpen, Home } from "lucide-react"
 import { ParcelDetailForm } from "@/components/admin/canvass/parcel-detail-form"
 import { QuoteCard } from "@/components/admin/canvass/quote-card"
-import { ScorePopover } from "@/components/admin/canvass/score-popover"
+import { PointsPopover } from "@/components/admin/canvass/points-popover"
 import { TraceMapClient } from "@/components/admin/canvass/trace-map-client"
-import { WindowBadge } from "@/components/admin/canvass/window-badge"
+import { WindowCard } from "@/components/admin/canvass/light-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageHeader } from "@/components/ui/page-header"
 import { requireOwner } from "@/lib/auth/session"
-import { formatMoney, formatSqft, HOME_PATTERN_LABELS, outcomeLabel, yesNo } from "@/lib/canvass/admin-rows"
+import { formatMoney, formatSqft, HOME_PATTERN_LABELS, outcomeLabel } from "@/lib/canvass/admin-rows"
 import { loadParcelDetail } from "@/lib/canvass/load"
+import { incomeLabel, occupancyLabel } from "@/lib/canvass/owner-view"
 import type { ParcelDetailResult } from "@/lib/canvass/views"
 import { opsConfig } from "@/lib/config"
-import { formatDayLabel, localTime } from "@/lib/scheduler/time"
+import { formatDayLabel, localDate, localTime } from "@/lib/scheduler/time"
 import { getSupabaseAdmin, requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 export const dynamic = "force-dynamic"
@@ -24,13 +25,21 @@ export const metadata = { title: "Parcel" }
 
 const UUID = /^[0-9a-f-]{36}$/i
 
-function Fact({ label, value }: { label: string; value: string }) {
+function Fact({ label, value, note, wide }: { label: string; value: string; note?: string; wide?: boolean }) {
   return (
-    <div>
+    <div className={wide ? "col-span-2" : undefined}>
       <dt className="text-xs text-ink-muted">{label}</dt>
       <dd className="font-medium tabular-nums text-ink">{value}</dd>
+      {note ? <dd className="text-xs text-ink-muted">{note}</dd> : null}
     </div>
   )
+}
+
+/** "$45" for a quote with one price, "$45 to $60" for an older knock that stored a range. */
+function quotedText(low: number, high: number): string {
+  const l = Math.round(low)
+  const h = Math.round(high)
+  return l === h ? `$${l}` : `$${l} to $${h}`
 }
 
 export default async function ParcelDetailPage({ params }: { params: { id: string } }) {
@@ -72,11 +81,17 @@ export default async function ParcelDetailPage({ params }: { params: { id: strin
   return (
     <div className="space-y-4">
       <PageHeader
-        title={parcel.address}
+        title={parcel.fullAddress}
         description={parcel.owner_display ?? "Owner unknown"}
         actions={
           <>
-            <ScorePopover score={parcel.score} breakdown={parcel.breakdown} quintile={parcel.quintile} />
+            <PointsPopover
+              label={parcel.simple.label}
+              points={parcel.simple.points}
+              breakdown={parcel.simple.breakdown}
+              reason={parcel.simple.reasons.join(" · ")}
+              weights={settings.score_weights}
+            />
             <Button asChild variant="outline">
               <Link href="/admin/canvass">
                 <ArrowLeft /> Back to map
@@ -96,32 +111,46 @@ export default async function ParcelDetailPage({ params }: { params: { id: strin
 
       <Card className="p-4">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-4">
-          <Fact label="Parcel id" value={parcel.parcel_id} />
-          <Fact label="Land use" value={parcel.land_use ?? "?"} />
-          <Fact label="Year built" value={parcel.year_built ? String(parcel.year_built) : "?"} />
           <Fact label="Market value" value={formatMoney(parcel.market_value) || "?"} />
-          <Fact label="Lot" value={parcel.lot_sqft !== null ? `${formatSqft(parcel.lot_sqft)} sqft` : "?"} />
-          <Fact label="Living area" value={parcel.living_sqft !== null ? `${formatSqft(parcel.living_sqft)} sqft` : "?"} />
-          <Fact label="Owner occupied" value={yesNo(parcel.owner_occupied)} />
+          <Fact
+            label="Lot"
+            value={parcel.lot_sqft !== null ? `${formatSqft(parcel.lot_sqft)} sqft` : "?"}
+            note={turfSqft !== null ? `Turf about ${formatSqft(turfSqft)} sqft (${parcel.turfSource === "traced" ? "traced" : "estimated"})` : "Turf unknown"}
+          />
+          <Fact label="Year built" value={parcel.year_built ? String(parcel.year_built) : "?"} />
+          <Fact label="Living sqft" value={parcel.living_sqft !== null ? formatSqft(parcel.living_sqft) : "?"} />
+          <Fact label="Occupancy" value={occupancyLabel(parcel.owner_occupied, parcel.owner_is_entity)} />
+          <Fact label="Neighborhood median income (Census area, not this household)" value={incomeLabel(parcel.medianIncome)} wide />
+          <Fact
+            label="Last knock"
+            value={parcel.lastKnock ? `${localDate(new Date(parcel.lastKnock.knocked_at))}, ${outcomeLabel(parcel.lastKnock.outcome)}` : "Not knocked yet"}
+            note={parcel.lastKnock ? `by ${parcel.lastKnock.knocker_name}` : undefined}
+          />
           <Fact label="Home pattern" value={parcel.home_pattern ? HOME_PATTERN_LABELS[parcel.home_pattern] : "Not set"} />
         </dl>
-        {parcel.city || parcel.zip || parcel.street ? (
-          <p className="mt-3 text-xs text-ink-muted">
-            {[parcel.street, parcel.city, parcel.zip].filter(Boolean).join(", ")}
-            {parcel.block_group_geoid ? ` · Block group ${parcel.block_group_geoid}` : ""}
-          </p>
-        ) : null}
+        <p className="mt-3 text-xs text-ink-muted">
+          Parcel {parcel.parcel_id}
+          {parcel.land_use ? ` · Land use ${parcel.land_use}` : ""}
+          {parcel.block_group_geoid ? ` · Block group ${parcel.block_group_geoid}` : ""}
+        </p>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <WindowBadge window={parcel.window} />
+        <WindowCard
+          light={parcel.knock.light}
+          lightLabel={parcel.knock.label}
+          nextGoodTime={parcel.knock.nextGoodTime}
+          plain={parcel.plain}
+          source={parcel.window.source}
+          strip={parcel.strip}
+        />
         <QuoteCard
           season={season}
           quote={parcel.quote}
           quotes={parcel.quotes}
           turfSqft={turfSqft}
           turfSource={parcel.turfSource}
-          settings={{ rate_per_1000_sqft: settings.rate_per_1000_sqft, min_charge: settings.min_charge, hardscape_pct: settings.hardscape_pct }}
+          settings={{ hardscape_pct: settings.hardscape_pct, crew_size: settings.crew_size, pay_rate: settings.pay_rate }}
         />
       </div>
 
@@ -155,7 +184,7 @@ export default async function ParcelDetailPage({ params }: { params: { id: strin
           Knocks{knocks.length > 0 ? ` (${knocks.length})` : ""}
         </h2>
         {knocks.length === 0 ? (
-          <EmptyState icon={DoorOpen} title="Not knocked yet" description="Knocks the crew logs from the Knock tab show up here with the outcome, pitch and weather." />
+          <EmptyState icon={DoorOpen} title="Not knocked yet" description="Knocks the crew logs from Walk show up here with the outcome, pitch and weather." />
         ) : (
           <Card className="divide-y divide-ink/10">
             {knocks.map((k) => {
@@ -173,7 +202,7 @@ export default async function ParcelDetailPage({ params }: { params: { id: strin
                     <p className="flex flex-wrap gap-x-3 text-xs text-ink-muted">
                       {k.pitch_name ? <span>Pitch: {k.pitch_name}</span> : null}
                       {k.weather?.label ? <span>{k.weather.label}{typeof k.weather.temp_f === "number" ? `, ${Math.round(k.weather.temp_f)}F` : ""}</span> : null}
-                      {k.quote_low !== null && k.quote_high !== null ? <span>Quoted ${Math.round(k.quote_low)}–${Math.round(k.quote_high)}</span> : null}
+                      {k.quote_low !== null && k.quote_high !== null ? <span>Quoted {quotedText(k.quote_low, k.quote_high)}</span> : null}
                       {k.callback_window ? <span>Said: {k.callback_window}</span> : null}
                       {k.home_pattern ? <span>{HOME_PATTERN_LABELS[k.home_pattern]}</span> : null}
                     </p>

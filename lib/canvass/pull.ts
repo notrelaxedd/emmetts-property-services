@@ -28,6 +28,7 @@ import type { LayerMeta, ParcelInput } from "./county";
 import { bboxOf } from "./geometry";
 import type { Bbox } from "./geometry";
 import { estimateTurf } from "./quote";
+import { fillMissingCityZip } from "./reverse";
 import { getCanvassSettings, updateCanvassSettings } from "./settings";
 import { resolveBlockGroups } from "./tiger";
 import type { BlockGroupPolygon } from "./tiger";
@@ -50,6 +51,8 @@ export type PullResult = {
   updated: number;
   blockGroupsAssigned: number;
   acsFetched: number;
+  /** Parcels whose blank city or ZIP was filled from TIGERweb places / ZCTAs. */
+  cityZipFilled: number;
   warnings: string[];
   fieldMap: ParcelFieldMap;
   missing: ParcelFieldKey[];
@@ -103,6 +106,7 @@ export type CountyColumns = Pick<
   | "address"
   | "street"
   | "city"
+  | "state"
   | "zip"
   | "owner_display"
   | "mailing_address"
@@ -142,6 +146,7 @@ export function countyColumns(input: ParcelInput, settings: Pick<CanvassSettings
     address: input.address,
     street: input.street,
     city: input.city,
+    state: input.state,
     zip: input.zip,
     owner_display: input.owner_display,
     mailing_address: input.mailing_address,
@@ -327,8 +332,8 @@ export async function linkCustomers(db: Db, rows: readonly TouchedRow[]): Promis
 
 /**
  * Pull every residential parcel inside the polygon: layer meta (cached) → field map (persisted when it changed) →
- * query → rows → insert / merge-update → block groups (TIGERweb, geocoder fallback) → ACS stats + priors → customer
- * links. Throws only when nothing can be pulled (no parcel-id field, county unreachable); everything else is a warning.
+ * query → rows → insert / merge-update → block groups (TIGERweb, geocoder fallback) → ACS stats + priors → missing
+ * city / ZIP (TIGERweb places + ZCTAs) → customer links. Throws only when nothing can be pulled (no parcel-id field, county unreachable); everything else is a warning.
  */
 export async function pullParcels(db: Db, polygon: GeoPolygon, opts: PullOpts = {}): Promise<PullResult> {
   const log = opts.log ?? (() => undefined);
@@ -427,6 +432,24 @@ export async function pullParcels(db: Db, polygon: GeoPolygon, opts: PullOpts = 
   const geoids = Array.from(new Set(touched.map((r) => r.block_group_geoid).filter((g): g is string => !!g)));
   const acsFetched = await ensureBlockGroups(db, geoids, settings, { fetchImpl: opts.fetchImpl, polygons, warnings, log, now });
 
+  // Blank site city / zip (the county layer often has none) from where the house sits; before customer linking, which reads them.
+  let cityZipFilled = 0;
+  try {
+    const fill = await fillMissingCityZip(
+      db,
+      touched.map((r) => r.id),
+      { fetchImpl: opts.fetchImpl, warnings, log },
+    );
+    cityZipFilled = fill.filled.size;
+    for (const r of touched) {
+      const patch = fill.filled.get(r.id);
+      if (patch?.city) r.city = patch.city;
+      if (patch?.zip) r.zip = patch.zip;
+    }
+  } catch (e) {
+    warnings.push(`City / ZIP fill failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
   try {
     const linked = await linkCustomers(db, touched);
     if (linked > 0) log(`[canvass] linked ${linked} parcel(s) to existing customers`);
@@ -434,7 +457,7 @@ export async function pullParcels(db: Db, polygon: GeoPolygon, opts: PullOpts = 
     warnings.push(`Customer linking failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  return { pulled, residential, inserted, updated, blockGroupsAssigned, acsFetched, warnings, fieldMap, missing };
+  return { pulled, residential, inserted, updated, blockGroupsAssigned, acsFetched, cityZipFilled, warnings, fieldMap, missing };
 }
 
 /**

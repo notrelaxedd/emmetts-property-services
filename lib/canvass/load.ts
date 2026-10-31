@@ -4,26 +4,28 @@
  * assembly (window, quote, score) lives in lib/canvass/assemble.ts. No `server-only` import so the loaders can run
  * against the in-memory fake db in tests; they are only ever called from server code.
  */
-import type { BlockGroup, CanvassPlan, CanvassSettings, HangerCode, Parcel, Pitch } from "../db/types";
+import type { CanvassPlan, CanvassSettings, HangerCode, Parcel, Pitch } from "../db/types";
 import { check } from "../ops/types";
 import type { Db } from "../ops/types";
-import { assembleParcelViews, fitModelFrom, learnedWindowsFor } from "./assemble";
-import type { CustomerRef, KnockRef, ScoreSlot } from "./assemble";
+import { assembleParcelViews, learnedWindowsFor } from "./assemble";
+import type { BlockGroupRef, CustomerRef, KnockRef, ScoreSlot } from "./assemble";
+import { isResidential } from "./county";
 import { distanceMeters } from "./geometry";
 import { hangerConversions } from "./hangers";
 import type { HangerEventRow } from "./hangers";
-import { parseHour, weekdayOfDate } from "./plan";
-import { formatRange } from "./quote";
+import { zonedToUtc } from "../scheduler/time";
 import { currentSeasonFocus } from "./season";
 import type { SeasonFocus } from "./season";
+import { houseNumber } from "./score";
 import { getCanvassSettings } from "./settings";
 import { knockStats } from "./stats";
 import { mostCommonGeoid } from "./streets";
+import { buildWalk } from "./walk";
+import type { WalkParcel } from "./walk";
 import type { Position } from "./types";
 import type {
   CanvassStatsResult,
   KnockView,
-  NearbyParcel,
   ParcelDetailResult,
   ParcelView,
   ParcelViewsResult,
@@ -31,6 +33,7 @@ import type {
   StreetRow,
   SummaryView,
   TodayPlanResult,
+  WalkResultView,
 } from "./views";
 
 /** Ids per `.in()` filter. */
@@ -42,6 +45,7 @@ const MODEL_KNOCK_LIMIT = 5000;
 /** Customers considered for the neighbor boost / customer flag. */
 const CUSTOMER_LIMIT = 5000;
 
+const BLOCK_GROUP_COLS = "geoid,prior_window,median_hh_income,pct_not_in_lf,pct_hh_nonworking_parent,commute_dist,depart_dist";
 const KNOCK_COLS = "id,parcel_id,knocked_at,outcome,knocker_id,pitch_id";
 const CUSTOMER_COLS = "id,address,lat,lng,parcel_id";
 
@@ -60,15 +64,15 @@ const uniqueStrings = (values: readonly (string | null | undefined)[]): string[]
 type Context = {
   settings: CanvassSettings;
   season: SeasonFocus;
-  blockGroups: Map<string, Pick<BlockGroup, "geoid" | "prior_window">>;
+  blockGroups: Map<string, BlockGroupRef>;
   knocks: KnockRef[];
   knockerNames: Map<string, string>;
   customers: CustomerRef[];
 };
 
-async function loadBlockGroups(db: Db, geoids: readonly string[]): Promise<Map<string, Pick<BlockGroup, "geoid" | "prior_window">>> {
+async function loadBlockGroups(db: Db, geoids: readonly string[]): Promise<Map<string, BlockGroupRef>> {
   const rows = await inChunks(geoids, async (chunk) =>
-    check(await db.from("block_groups").select("geoid,prior_window").in("geoid", chunk), "canvass block groups") ?? [],
+    check(await db.from("block_groups").select(BLOCK_GROUP_COLS).in("geoid", chunk), "canvass block groups") ?? [],
   );
   return new Map(rows.map((r) => [r.geoid, r]));
 }
@@ -104,38 +108,34 @@ async function loadContext(db: Db, parcels: readonly Parcel[], settings?: Canvas
 }
 
 /**
- * The conversion model, fitted on the whole knock log (most recent `MODEL_KNOCK_LIMIT`), joined to the parcels those
- * knocks were on (loaded in chunks when they are not among the parcels being viewed). The same history feeds the
- * learned window layer, so a block group (or street) pools all of its recent knocks whichever of its houses are on
- * screen: the detail page, the knock logger, the digest and the table agree.
+ * The learned window layer, pooled over the whole knock log (most recent `MODEL_KNOCK_LIMIT`), joined to the parcels
+ * those knocks were on (loaded in chunks when they are not among the parcels being viewed). A block group (or street)
+ * pools all of its recent knocks whichever of its houses are on screen, so the detail page, the walk, the digest and
+ * the list agree on the lights.
  */
-async function loadModel(db: Db, ctx: Context, viewed: readonly Parcel[]) {
+async function loadLearned(db: Db, ctx: Context, viewed: readonly Parcel[]) {
   const history =
     check(await db.from("knocks").select(KNOCK_COLS).order("knocked_at", { ascending: false }).limit(MODEL_KNOCK_LIMIT), "canvass knock history") ??
     [];
   const known = new Map(viewed.map((p) => [p.id, p]));
   const missing = uniqueStrings(history.map((k) => k.parcel_id)).filter((id) => !known.has(id));
   const extra = await inChunks(missing, async (chunk) =>
-    check(
-      await db
-        .from("parcels")
-        .select("id,parcel_id,lot_sqft,owner_occupied,street,address,centroid_lat,centroid_lng,customer_id,block_group_geoid")
-        .in("id", chunk),
-      "canvass model parcels",
-    ) ?? [],
+    check(await db.from("parcels").select("id,street,block_group_geoid").in("id", chunk), "canvass learned parcels") ?? [],
   );
   const parcels = [...viewed, ...extra];
-  const model = fitModelFrom(history, parcels, ctx.customers, ctx.settings);
-  // Pool for the learned layer: the knock history plus any older knocks on the viewed houses.
+  // The viewed houses' older knocks join the pool too.
   const seen = new Set(history.map((k) => k.id));
   const learnedKnocks = [...history, ...ctx.knocks.filter((k) => !seen.has(k.id))];
-  const learned = learnedWindowsFor(parcels, learnedKnocks, ctx.blockGroups, ctx.settings);
-  return { model, learned };
+  return learnedWindowsFor(parcels, learnedKnocks, ctx.blockGroups, ctx.settings);
 }
 
-async function viewsFor(db: Db, parcels: readonly Parcel[], opts: { settings?: CanvassSettings; slot?: ScoreSlot | null } = {}): Promise<{ views: ParcelView[]; ctx: Context }> {
+async function viewsFor(
+  db: Db,
+  parcels: readonly Parcel[],
+  opts: { settings?: CanvassSettings; slot?: ScoreSlot | null; now?: Date } = {},
+): Promise<{ views: ParcelView[]; ctx: Context }> {
   const ctx = await loadContext(db, parcels, opts.settings);
-  const { model, learned } = await loadModel(db, ctx, parcels);
+  const learned = await loadLearned(db, ctx, parcels);
   const views = assembleParcelViews({
     parcels,
     blockGroups: ctx.blockGroups,
@@ -144,9 +144,9 @@ async function viewsFor(db: Db, parcels: readonly Parcel[], opts: { settings?: C
     customers: ctx.customers,
     settings: ctx.settings,
     season: ctx.season,
-    model,
     learned,
     slot: opts.slot ?? null,
+    now: opts.now,
   });
   return { views, ctx };
 }
@@ -164,13 +164,26 @@ async function loadParcelRows(db: Db, opts: { ids?: string[]; limit?: number }):
 
 // ---------- Public loaders ----------
 
+/** The instant of a local "YYYY-MM-DD" + "HH:MM" (Ohio time) as a slot, or null when either is malformed. */
+export function slotAt(date: string, hhmm: string): ScoreSlot | null {
+  try {
+    const at = zonedToUtc(date, hhmm.slice(0, 5));
+    return Number.isFinite(at.getTime()) ? { at } : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Parcels (newest fetched first, default 2000, or exactly `ids`) with window, quotes, score and last knock. `slot`
- * (optional) judges P(answer) in that local weekday + hour instead of each house's own window.
+ * Parcels (newest fetched first, default 2000, or exactly `ids`) with window, light, simple score, quotes and last
+ * knock. `slot` (optional) judges the light (and so the score) at that moment instead of now.
  */
-export async function loadParcelViews(db: Db, opts: { ids?: string[]; limit?: number; slot?: ScoreSlot | null } = {}): Promise<ParcelViewsResult> {
+export async function loadParcelViews(
+  db: Db,
+  opts: { ids?: string[]; limit?: number; slot?: ScoreSlot | null; now?: Date } = {},
+): Promise<ParcelViewsResult> {
   const parcels = await loadParcelRows(db, opts);
-  const { views, ctx } = await viewsFor(db, parcels, { slot: opts.slot });
+  const { views, ctx } = await viewsFor(db, parcels, { slot: opts.slot, now: opts.now });
   const customersCount = views.filter((v) => v.isCustomer).length;
   return { parcels: views, settings: ctx.settings, season: ctx.season, customersCount };
 }
@@ -202,33 +215,8 @@ export function bboxAround(lat: number, lng: number, meters: number): { minLat: 
   return { minLat: lat - dLat, maxLat: lat + dLat, minLng: lng - dLng, maxLng: lng + dLng };
 }
 
-/** A parcel view as the logger wants it. */
-export function toNearbyParcel(v: ParcelView, meters: number): NearbyParcel {
-  return {
-    id: v.id,
-    parcel_id: v.parcel_id,
-    address: v.address,
-    street: v.street,
-    owner_display: v.owner_display,
-    owner_is_entity: v.owner_is_entity,
-    geom: v.geom,
-    centroid_lat: v.centroid_lat,
-    centroid_lng: v.centroid_lng,
-    do_not_knock: v.do_not_knock,
-    callback_window: v.callback_window,
-    home_pattern: v.home_pattern,
-    window: v.window,
-    quote: v.quote,
-    quoteLabel: formatRange(v.quote),
-    lastKnock: v.lastKnock,
-    isCustomer: v.isCustomer,
-    meters: Math.round(meters),
-  };
-}
-
-/** Parcels within `radiusMeters` of a point (bounding box on the centroid columns, then sorted by distance). */
-export async function loadNearbyParcels(db: Db, lat: number, lng: number, radiusMeters = 250, limit = 40): Promise<NearbyParcel[]> {
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return [];
+/** Parcels within `radiusMeters` of a point (bounding box on the centroid columns), nearest first. */
+async function parcelsWithin(db: Db, lat: number, lng: number, radiusMeters: number, rowLimit: number): Promise<{ p: Parcel; meters: number }[]> {
   const box = bboxAround(lat, lng, radiusMeters);
   const rows =
     check(
@@ -239,39 +227,92 @@ export async function loadNearbyParcels(db: Db, lat: number, lng: number, radius
         .lte("centroid_lat", box.maxLat)
         .gte("centroid_lng", box.minLng)
         .lte("centroid_lng", box.maxLng)
-        .limit(400),
+        .limit(rowLimit),
       "nearby parcels",
     ) ?? [];
   const here: Position = [lng, lat];
-  const withDistance = rows
+  return rows
     .map((p) => ({ p, meters: p.centroid_lat !== null && p.centroid_lng !== null ? distanceMeters(here, [p.centroid_lng, p.centroid_lat]) : Infinity }))
     .filter((x) => x.meters <= radiusMeters)
-    .sort((a, b) => a.meters - b.meters)
-    .slice(0, Math.max(1, limit));
-  if (withDistance.length === 0) return [];
-  const { views } = await viewsFor(
-    db,
-    withDistance.map((x) => x.p),
-  );
-  const byId = new Map(views.map((v) => [v.id, v]));
-  return withDistance.flatMap((x) => {
-    const v = byId.get(x.p.id);
-    return v ? [toNearbyParcel(v, x.meters)] : [];
-  });
+    .sort((a, b) => a.meters - b.meters);
 }
 
-/** Address search (case-insensitive contains) for when GPS is off or wrong. `meters` is 0. */
-export async function searchParcels(db: Db, q: string, limit = 20): Promise<NearbyParcel[]> {
-  const needle = q.trim().replace(/[%_]/g, " ").replace(/\s+/g, " ");
-  if (!needle) return [];
-  const rows =
-    check(
-      await db.from("parcels").select("*").ilike("address", `%${needle}%`).order("address", { ascending: true }).limit(Math.max(1, limit)),
-      "search parcels",
-    ) ?? [];
-  if (rows.length === 0) return [];
-  const { views } = await viewsFor(db, rows);
-  return views.map((v) => toNearbyParcel(v, 0));
+/** Houses considered around the walk's start (a bounding box this size holds well over a thousand lots). */
+const WALK_PARCEL_LIMIT = 2000;
+
+/**
+ * Walk Mode: the next `walk_doors` good doors within `radiusMeters` (default 800 m) of a point, in walking order.
+ * Eligible = not do-not-knock, not knocked within `recency_days`, residential land use, light green or yellow at
+ * `now`; ranked by simple-score points. Crew-safe: stops carry no score, profit or labor cost.
+ */
+export async function loadWalk(
+  db: Db,
+  opts: { lat: number; lng: number; radiusMeters?: number; now?: Date },
+): Promise<WalkResultView> {
+  const { lat, lng } = opts;
+  const now = opts.now ?? new Date();
+  const settings = await getCanvassSettings(db);
+  const season = currentSeasonFocus(settings.season_map, now);
+  const pitchRows = check(
+    await db.from("pitches").select("id,name,script").eq("active", true).order("sort_order", { ascending: true }).order("name"),
+    "walk pitches",
+  );
+  const pitches = (pitchRows ?? []) as WalkResultView["pitches"];
+  const empty: WalkResultView = {
+    stops: [],
+    totalMeters: 0,
+    counts: { candidates: 0, dnk: 0, recent: 0, notResidential: 0, badLight: 0, noLocation: 0, taken: 0 },
+    season: { service: season.service, label: season.label, pitch: season.pitch },
+    pitches,
+  };
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return empty;
+
+  const near = await parcelsWithin(db, lat, lng, opts.radiusMeters ?? 800, WALK_PARCEL_LIMIT);
+  if (near.length === 0) return empty;
+  const { views } = await viewsFor(
+    db,
+    near.map((x) => x.p),
+    { settings, now },
+  );
+  const byId = new Map(views.map((v) => [v.id, v]));
+  const candidates: (WalkParcel & { view: ParcelView })[] = views.map((v) => ({
+    id: v.id,
+    centroid: v.centroid_lat !== null && v.centroid_lng !== null ? [v.centroid_lng, v.centroid_lat] : null,
+    light: v.knock.light,
+    points: v.simple.points,
+    lastKnockAt: v.lastKnock?.knocked_at ?? null,
+    do_not_knock: v.do_not_knock,
+    isResidential: isResidential(v.land_use, settings.residential_land_use_prefixes),
+    street: v.street,
+    houseNumber: houseNumber(v.address),
+    view: v,
+  }));
+  const walk = buildWalk({ parcels: candidates, start: { lat, lng }, n: settings.walk_doors, recencyDays: settings.recency_days, now });
+  return {
+    stops: walk.stops.flatMap((stop) => {
+      const v = byId.get(stop.id);
+      if (!v) return [];
+      return [
+        {
+          id: v.id,
+          order: stop.order,
+          fullAddress: v.fullAddress,
+          ownerFirstName: v.ownerFirstName,
+          lat: stop.lat,
+          lng: stop.lng,
+          pitch: season.pitch,
+          quoteLabel: v.quote.label,
+          light: v.knock.light,
+          callback_window: v.callback_window,
+          walkMeters: stop.walkMeters,
+        },
+      ];
+    }),
+    totalMeters: walk.totalMeters,
+    counts: walk.counts,
+    season: { service: season.service, label: season.label, pitch: season.pitch },
+    pitches,
+  };
 }
 
 /** The most recent nightly summary, or null before the first run. */
@@ -359,16 +400,27 @@ export function stopsFromViews(views: readonly ParcelView[], start: Position | n
       id: v.id,
       order: i + 1,
       address: v.address,
+      fullAddress: v.fullAddress,
       owner_display: v.owner_display,
       street: v.street,
       centroid_lat: v.centroid_lat,
       centroid_lng: v.centroid_lng,
       window: v.window,
+      knock: v.knock,
+      plain: v.plain,
       quote: v.quote,
-      score: v.score,
+      score: v.simple.points,
       walkMeters,
     };
   });
+}
+
+/**
+ * Plan stops for crew surfaces: the owner-only numbers (score points, labor cost, profit, under-cost flag) blanked.
+ * Crew only ever sees the price label.
+ */
+export function crewSafeStops(stops: readonly PlanStopView[]): PlanStopView[] {
+  return stops.map((s) => ({ ...s, score: 0, quote: { ...s.quote, laborCost: null, profit: null, underCost: false } }));
 }
 
 /** The newest saved plan for a date ("YYYY-MM-DD") with its stops in walking order; null when none was saved. */
@@ -377,12 +429,7 @@ export async function loadTodayPlan(db: Db, date: string): Promise<TodayPlanResu
   const plan: CanvassPlan | undefined = rows[0];
   if (!plan) return null;
   if (plan.parcel_ids.length === 0) return { plan, stops: [] };
-  let slot: ScoreSlot | null = null;
-  try {
-    slot = { weekday: weekdayOfDate(plan.for_date), hour: parseHour(plan.slot_start) };
-  } catch {
-    slot = null;
-  }
+  const slot = slotAt(plan.for_date, plan.slot_start);
   const { parcels } = await loadParcelViews(db, { ids: plan.parcel_ids, slot });
   // Do-not-knock is forever: a house flagged after the plan was saved drops out of the stops.
   return { plan, stops: stopsFromViews(parcels.filter((p) => !p.do_not_knock)) };

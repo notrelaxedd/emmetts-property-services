@@ -178,7 +178,7 @@ export function PlanForm({ defaultDate, base, baseLabel }: PlanFormProps) {
             <Button type="button" variant="outline" disabled={plan.stops.length === 0} onClick={() => window.print()}>
               <Printer /> Print list
             </Button>
-            {saved ? <span className="text-sm text-ink-muted">The Knock tab shows these stops on {plan.slot.date}.</span> : null}
+            {saved ? <span className="text-sm text-ink-muted">Plan saved for {plan.slot.date}.</span> : null}
           </div>
         </>
       ) : null}

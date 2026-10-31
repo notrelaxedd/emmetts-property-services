@@ -225,6 +225,7 @@ describe("parcelFromFeature", () => {
       address: "19000 DETROIT RD",
       street: "DETROIT RD",
       city: "ROCKY RIVER",
+      state: "OH",
       zip: "44116",
       owner_display: "SMITH JOHN & JANE",
       mailing_address: "19000 DETROIT RD",
@@ -243,6 +244,13 @@ describe("parcelFromFeature", () => {
     expect(p!.centroid_lng).toBeCloseTo(-81.8395, 4);
     expect(p!.centroid_lat).toBeCloseTo(41.47575, 4);
     expect(p!.raw).toEqual(parcelFeaturesFixtureA[0].properties);
+  });
+
+  it("reads city and a five-digit zip from the mapped fields, and the state is Ohio", () => {
+    const feature = { ...parcelFeaturesFixtureA[0], properties: { ...parcelFeaturesFixtureA[0].properties, PARCEL_ZIP: "44116-2210" } };
+    expect(parcelFromFeature(feature, mapA)).toMatchObject({ city: "ROCKY RIVER", zip: "44116", state: "OH" });
+    const noZip = { ...parcelFeaturesFixtureA[0], properties: { ...parcelFeaturesFixtureA[0].properties, PARCEL_ZIP: "  ", PARCEL_CITY: null } };
+    expect(parcelFromFeature(noZip, mapA)).toMatchObject({ city: null, zip: null, state: "OH" });
   });
 
   it("falls back to polygon area, mailing comparison and flags entity owners", () => {

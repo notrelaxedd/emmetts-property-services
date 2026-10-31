@@ -8,6 +8,7 @@
  * in `canvass_settings.parcel_field_map` (owner-editable in Settings) and `parcelFromFeature` reads attributes
  * only through that map. A key whose mapping is null simply yields null.
  */
+import { zip5 } from "./address";
 import { centroidOf, polygonAreaSqft } from "./geometry";
 import {
   DERIVED_FIELD_KEYS,
@@ -302,6 +303,8 @@ export type ParcelInput = {
   address: string;
   street: string;
   city: string | null;
+  /** County pulls are Ohio. */
+  state: string;
   zip: string | null;
   owner_display: string | null;
   mailing_address: string | null;
@@ -457,7 +460,9 @@ export function parcelFromFeature(
     address,
     street: mappedStreet || streetOf(address),
     city: text(readMapped(props, map, "site_city")),
-    zip: text(readMapped(props, map, "site_zip")),
+    state: "OH",
+    // "44116-1234" / 44116.0 → "44116"; anything without five digits is no zip.
+    zip: zip5(text(readMapped(props, map, "site_zip"))) || null,
     owner_display: owner,
     mailing_address: mailing,
     land_use: text(readMapped(props, map, "land_use")),

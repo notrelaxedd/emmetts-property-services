@@ -76,20 +76,21 @@ uses those Montserrat subsets plus `assets/fonts/WorkSans-*-Subset.ttf`, and the
 
 ## Canvass (door-to-door)
 
-The **Canvass** tab plans door knocking on foot: county parcels, a knock window and a price *range* per house,
-a walking plan for a slot, a phone knock logger, QR door hangers per street and a nightly digest. Data comes only
+The **Canvass** tab plans door knocking on foot: county parcels, a knock-now light and one lot-size price per house,
+a Top 25 list, a walking plan for a slot, phone Walk Mode, QR door hangers per street and a nightly digest. Data comes only
 from the Cuyahoga County parcel layer, Census block-group aggregates, our own knock log and what the crew heard at
 the door; see `docs/CANVASS.md` for the privacy rules, the window logic and the first-run field-map procedure.
 
 | Route | Who | What |
 | --- | --- | --- |
-| `/admin/canvass` | owner | Map area picker, parcel table, nightly summary |
+| `/admin/canvass` | owner | Knock-now banner, slot picker, map, Top 25 list, all parcels |
+| `/admin/canvass/walk` | owner | Walk Mode (same screen as the crew's) |
 | `/admin/canvass/parcels/[id]` | owner | Parcel detail: quote, lawn tracing, window, knock history |
 | `/admin/canvass/plan` | owner | Plan my session |
 | `/admin/canvass/hangers` | owner | Hanger codes per street + conversions; `…/hangers/[code]/print` is the 3-up sheet |
-| `/admin/canvass/stats` | owner | Knocker / pitch stats, hanger conversions, pitches |
+| `/admin/canvass/insights` | owner | Nightly summary, knocker / pitch stats, hanger conversions, pitches (`/stats` redirects here) |
 | `/admin/canvass/settings` | owner | Pricing, thresholds, season map, county field map |
-| `/crew/knock` | crew + owner | Knock logger (phone) |
+| `/crew/walk` | crew + owner | Walk Mode: numbered route from your location, one-tap outcomes (`/crew/knock` redirects here) |
 | `/h/[code]` | public | Hanger QR landing → `/quote?src=hanger&s=<code>` |
 | `/api/cron/canvass-summary` | Vercel cron | Nightly summary (Bearer `CRON_SECRET`) |
 

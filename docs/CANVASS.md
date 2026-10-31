@@ -14,14 +14,15 @@ draw an area ──▶ pull county parcels ──▶ block-group ACS prior ─�
 
 | Route | Who | What |
 | --- | --- | --- |
-| `/admin/canvass` | owner | Nightly summary card, area picker map, parcel table, stat cards |
+| `/admin/canvass` | owner | Knock-now banner, slot picker, area map (hot / good / low), Top 25 list, "Show all" parcel table, stat cards |
+| `/admin/canvass/walk` | owner | Walk Mode inside the admin shell |
 | `/admin/canvass/parcels/[id]` | owner | Parcel detail: quote (estimate + traced), lawn tracing, window + reason, knock history, homeowner / crew edits |
 | `/admin/canvass/plan` | owner | Plan my session |
 | `/admin/canvass/hangers` | owner | Hanger code per street, conversions, link to the print sheet |
 | `/admin/canvass/hangers/[code]/print` | owner | Letter 3-up hanger sheet with QR |
-| `/admin/canvass/stats` | owner | Knocker + pitch stats, hanger conversions, pitch management |
+| `/admin/canvass/insights` | owner | Nightly summary card, knocker + pitch stats, hanger conversions, pitch management (`/admin/canvass/stats` redirects here) |
 | `/admin/canvass/settings` | owner | Pricing, thresholds, doors/hour, neighbor N, recency, season map, value tier, county field map, land-use codes |
-| `/crew/knock` | crew + owner | The knock logger (mobile-first; "Knock" in the crew tab bar) |
+| `/crew/walk` | crew + owner | Walk Mode (mobile-first; "Walk" in the crew tab bar): numbered route from the phone's location, six one-tap outcomes, Google Maps link. `/crew/knock` redirects here |
 | `/h/[code]` | public | Hanger QR landing: logs the scan, sets the `hanger` cookie, redirects to the quote form |
 | `/api/cron/canvass-summary` | Vercel cron | Nightly summary (10:00 UTC: 06:00 EDT / 05:00 EST), `Authorization: Bearer CRON_SECRET` |
 
@@ -48,7 +49,8 @@ The hard rules:
   `localhost` / `example.*` for tests, and `ALLOWED_LINK_HOSTS` for href-only attribution links) and a denylist
   (`linkedin`, `spokeo`, `whitepages`, `beenverified`, `truepeoplesearch`, `facebook.com`, `zillow`,
   `peoplefinder`, `intelius`). `lib/canvass/privacy.test.ts` walks `lib/canvass`, `app/admin/canvass`,
-  `app/crew/knock`, `app/h`, `app/api/cron`, `components/admin/canvass` and `components/crew/knock`, extracts every
+  `app/crew/knock`, `app/crew/walk`, `app/h`, `app/api/cron`, `components/admin/canvass`, `components/crew/knock` and
+  `components/canvass`, extracts every
   `https?://host` and fails, naming the file and the host or term, for anything outside the allowlist. That test is
   the "no people-search code path" acceptance check; it runs with `npx vitest run`.
 - **Never infer an individual's employer, work hours, income or retirement** from outside sources. The Census
@@ -109,8 +111,8 @@ reason are stored with it:
    P(answer) per weekday-vs-weekend × 2-hour bucket. The ACS prior's bucket starts at α=4, β=2, every other bucket
    at α=1, β=3, so early data is shrunk toward the prior; posterior mean = (α + answers) / (α + β + knocks). An
    "answer" is any outcome but `no_answer`. It picks the best bucket (ties go to the prior) and refines ranges; it
-   never outputs an exact time. The pool is the whole recent knock log (the same 5000 knocks the conversion model
-   fits on) plus older knocks on the houses in view, so the table, the parcel page, the knock logger and the digest
+   never outputs an exact time. The pool is the whole recent knock log (the newest 5000 knocks)
+   plus older knocks on the houses in view, so the table, the parcel page, Walk Mode and the digest
    agree on a house's window.
 4. **ACS block-group prior** (`acsPrior`, works on day one):
    - **Daytime-friendly** when `pct_not_in_lf ≥ daytime_not_in_lf_threshold` (default 0.40) **or**
@@ -141,7 +143,7 @@ chosen slot.
   Acceptance: turf 6,000 → medium → leaf cleanup **$40**; editing the table changes it.
 - **Profit check (owner pages only)**: when `tier_minutes[service][tier]` is filled in, `laborCost = crew_size ×
   pay_rate × minutes ÷ 60` and `profit = price − laborCost`; a negative profit is flagged "under labor cost". Crew
-  surfaces (knock logger, Walk Mode) show only the price label, never labor, profit or score points.
+  surfaces (Walk Mode) show only the price label, never labor, profit or score points.
 - **Value tier** (default **off**): when enabled, ×`value_tier_max` for houses valued ≥ $400k, half of that bump
   at ≥ $250k, nothing below. It applies to priced tiers only, and the code caps the multiplier at **1.10** whatever
   the settings row says.
@@ -150,31 +152,37 @@ Defaults: leaf cleanup $30 / $40 / $50 (small / medium / large), XL quote on sit
 ("Owner to fill in") until the owner enters prices; crew of 3 at $15/hour; no minutes filled in. The old
 `base_prices` / `rate_per_1000_sqft` / `min_charge` columns were dropped in migration 1900.
 
-## Priority score
+## Simple score
 
-`lib/canvass/score.ts`:
+`lib/canvass/simple-score.ts` (v3 replaced the v2 probability score; no probabilities are shown anywhere):
 
-```
-score = P(answer in the chosen slot) × P(convert) × expected job value × neighbor_boost
-```
+| Factor | 3 | 2 | 1 | 0 |
+| --- | --- | --- | --- | --- |
+| Time (knock-now light for "now" or the chosen slot) | green | yellow | | red |
+| Lawn (lot-size tier) | large / xl | medium | small / unknown | |
+| Customer nearby | within `neighbor_n` houses | within 150 m | same street | none |
+| Owner | owner-occupied | | unknown | rental (entity or not occupied) |
 
-- **P(answer)**: the learned bucket for the slot when there is one, else the prior.
-- **P(convert)**: starts flat at 0.08 and learns from our own knock log (a "convert" is `booked` or
-  `quote_given`) over lot-size band (< 6k / 6–12k / > 12k sqft), owner-occupied, near-customer, street, knocker and
-  pitch. Each feature value gets Laplace smoothing (k = 5 knocks at the base rate), the factors combine naive-Bayes
-  style (prior odds × Π feature rate / base rate) and the result is clamped to 0.01–0.6.
-- **Expected job value**: the quote mid for the season's service.
-- **neighbor_boost**: 1.5 when an existing customer is within `neighbor_n` houses (default 3) on the same street or
-  within 60 m; 1.2 within 150 m; else 1.0. Customers come from the existing `customers` table.
+Each factor is multiplied by its `score_weights` entry (Settings, default 1 each) and the total is clamped to 0–12.
+Labels: **hot** 🔥 ≥ 9, **good** 👍 5–8, **low** ➖ ≤ 4, with up to three reasons from the highest-scoring factors
+("Big lawn · next to a customer · good time now"). The map colours hot brand green, good amber, low gray. The
+owner can tap a label for the four-factor breakdown; crew payloads never carry the points. Do-not-knock houses get
+0 points and a red "Do not knock" light.
 
-The breakdown is shown on hover; parcels on the map are coloured by score quintile.
+## Knock-now light
+
+`lib/canvass/lights.ts`: green inside the window, yellow within an hour of it (or a learned bucket mean in
+0.25–0.45), red otherwise; every house shows the light, the window in plain English (`plainWindow`) and, when red,
+the next good time within 7 days. The parcel page adds a Mon–Sun strip (2pm–8pm weekdays, 9am–8pm weekends).
 
 ## Plan my session
 
 Pick a date and a slot (default next weekday 3–5pm) and a start point. `planSession` drops `do_not_knock`
 houses, houses knocked in the last `recency_days` (default 14) and houses whose window does not overlap the slot,
 sorts by score, takes `doors_per_hour × hours` (default 25/hour), and orders them nearest-neighbour + 2-opt from the
-start point. "Save plan" writes `canvass_plans`; the logger shows the next stops.
+start point. "Save plan" writes `canvass_plans`. Walk Mode (`/crew/walk`, `/admin/canvass/walk`) builds its own route from the
+phone's location: up to `walk_doors` green / yellow houses within ~800 m, ranked by points, ordered nearest-neighbour
++ 2-opt.
 
 ## The field map: first-run procedure
 

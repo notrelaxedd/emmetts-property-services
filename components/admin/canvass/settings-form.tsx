@@ -12,17 +12,29 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/toast"
 import type { CanvassSettingsPatch } from "@/lib/canvass/settings"
-import { SERVICE_KEYS, SERVICE_LABELS } from "@/lib/canvass/types"
-import type { ServiceKey } from "@/lib/canvass/types"
+import {
+  boundsDraftFrom,
+  boundsSummary,
+  parseBounds,
+  parseTierDraft,
+  parseWeights,
+  pricePlaceholder,
+  tierDraftFrom,
+  weightsDraftFrom,
+} from "@/lib/canvass/tier-form"
+import type { BoundsDraft, TierDraft, WeightsDraft } from "@/lib/canvass/tier-form"
+import { SERVICE_KEYS, SERVICE_LABELS, TIER_KEYS, TIER_LABELS } from "@/lib/canvass/types"
+import type { ScoreWeights, ServiceKey, TierKey } from "@/lib/canvass/types"
 import type { CanvassSettings } from "@/lib/db/types"
 
 /** Only the columns the form edits; the field map has its own form (field-map-form.tsx). */
 export type CanvassSettingsFormInput = Omit<CanvassSettings, "id" | "created_at" | "updated_at" | "parcel_field_map">
 
 type NumberKey =
-  | "rate_per_1000_sqft"
-  | "min_charge"
   | "hardscape_pct"
+  | "crew_size"
+  | "pay_rate"
+  | "walk_doors"
   | "value_tier_max"
   | "daytime_not_in_lf_threshold"
   | "daytime_nonworking_parent_threshold"
@@ -47,9 +59,12 @@ type NumberField = {
 }
 
 const PRICING_FIELDS: NumberField[] = [
-  { key: "rate_per_1000_sqft", label: "Rate per 1,000 sqft of turf", prefix: "$", step: 0.5, min: 0, hint: "Added to the base price for each 1,000 sqft of lawn" },
-  { key: "min_charge", label: "Minimum charge", prefix: "$", step: 5, min: 0 },
   { key: "hardscape_pct", label: "Hardscape share of a lot", percent: true, suffix: "%", step: 1, min: 0, max: 100, hint: "Lot minus house footprint, minus this share, is the turf estimate" },
+]
+
+const PROFIT_FIELDS: NumberField[] = [
+  { key: "crew_size", label: "Crew size", suffix: "people", step: 1, integer: true, min: 1, max: 50, hint: "People on one job. Labor cost is crew size times pay rate times minutes" },
+  { key: "pay_rate", label: "Pay rate", prefix: "$", suffix: "per person per hour", step: 0.25, min: 0, max: 1000, hint: "Used only for the owner's profit check" },
 ]
 
 const TIMING_FIELDS: NumberField[] = [
@@ -63,11 +78,21 @@ const SESSION_FIELDS: NumberField[] = [
   { key: "doors_per_hour", label: "Doors per hour", step: 1, integer: true, min: 1, max: 200, hint: "How many houses one person can knock in an hour" },
   { key: "neighbor_n", label: "Neighbor boost within", suffix: "houses", step: 1, integer: true, min: 0, max: 50, hint: "A house this close to a customer on the same street scores higher" },
   { key: "recency_days", label: "Skip houses knocked within", suffix: "days", step: 1, integer: true, min: 0, max: 365 },
+  { key: "walk_doors", label: "Doors in one Walk", suffix: "doors", step: 1, integer: true, min: 1, max: 200, hint: "How many houses Walk lines up when someone presses Start walking" },
+]
+
+const SCORE_WEIGHT_FIELDS: { key: keyof ScoreWeights; label: string; hint: string }[] = [
+  { key: "time", label: "Time", hint: "Is it a good time to knock" },
+  { key: "lawn", label: "Lawn", hint: "Bigger lawn, bigger job" },
+  { key: "customer", label: "Customer nearby", hint: "A neighbor already uses you" },
+  { key: "owner", label: "Owner", hint: "Owner-occupied beats a rental" },
 ]
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 
 const isService = (v: string): v is ServiceKey => (SERVICE_KEYS as string[]).includes(v)
+
+const ALL_FIELDS = [...PRICING_FIELDS, ...PROFIT_FIELDS, ...TIMING_FIELDS, ...SESSION_FIELDS]
 
 function toText(f: Pick<NumberField, "percent">, v: unknown): string {
   if (v === null || v === undefined) return ""
@@ -77,7 +102,10 @@ function toText(f: Pick<NumberField, "percent">, v: unknown): string {
 
 type Draft = {
   numbers: Record<NumberKey, string>
-  prices: Record<ServiceKey, string>
+  prices: TierDraft
+  minutes: TierDraft
+  bounds: BoundsDraft
+  weights: WeightsDraft
   value_tier_enabled: boolean
   season: Record<string, ServiceKey>
   prefixes: string
@@ -87,11 +115,9 @@ type Draft = {
 
 function draftFrom(initial: CanvassSettingsFormInput): Draft {
   const numbers = {} as Record<NumberKey, string>
-  for (const f of [...PRICING_FIELDS, ...TIMING_FIELDS, ...SESSION_FIELDS]) numbers[f.key] = toText(f, initial[f.key])
+  for (const f of ALL_FIELDS) numbers[f.key] = toText(f, initial[f.key])
   // Stored as a multiplier (1.05); shown as the uplift in percent (5).
   numbers.value_tier_max = String(Math.round((initial.value_tier_max - 1) * 1000) / 10)
-  const prices = {} as Record<ServiceKey, string>
-  for (const k of SERVICE_KEYS) prices[k] = toText({}, initial.base_prices[k])
   const season: Record<string, ServiceKey> = {}
   for (let m = 1; m <= 12; m++) {
     const v = initial.season_map[String(m)]
@@ -99,7 +125,10 @@ function draftFrom(initial: CanvassSettingsFormInput): Draft {
   }
   return {
     numbers,
-    prices,
+    prices: tierDraftFrom(initial.price_tiers),
+    minutes: tierDraftFrom(initial.tier_minutes),
+    bounds: boundsDraftFrom(initial.tier_bounds),
+    weights: weightsDraftFrom(initial.score_weights),
     value_tier_enabled: initial.value_tier_enabled,
     season,
     prefixes: initial.residential_land_use_prefixes.join(", "),
@@ -141,6 +170,74 @@ function NumberInput({
   )
 }
 
+/** A services-by-tiers grid of number inputs. Blank is a real value (null), so the placeholder says what blank means. */
+function TierGrid({
+  idPrefix,
+  caption,
+  draft,
+  onChange,
+  placeholderFor,
+  prefix,
+  suffix,
+}: {
+  idPrefix: string
+  caption: string
+  draft: TierDraft
+  onChange: (service: ServiceKey, tier: TierKey, value: string) => void
+  placeholderFor: (tier: TierKey) => string
+  prefix?: string
+  suffix?: string
+}) {
+  return (
+    <div className="-mx-1 overflow-x-auto px-1">
+      <table className="w-full min-w-[34rem] border-separate border-spacing-x-2 border-spacing-y-1.5 text-sm">
+        <caption className="sr-only">{caption}</caption>
+        <thead>
+          <tr className="text-left text-xs font-medium text-ink-muted">
+            <th scope="col" className="w-32 pb-0.5 font-medium">
+              Service
+            </th>
+            {TIER_KEYS.map((t) => (
+              <th key={t} scope="col" className="pb-0.5 font-medium">
+                {TIER_LABELS[t]}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {SERVICE_KEYS.map((k) => (
+            <tr key={k}>
+              <th scope="row" className="pr-2 text-left font-medium text-ink">
+                {SERVICE_LABELS[k]}
+              </th>
+              {TIER_KEYS.map((t) => (
+                <td key={t}>
+                  <div className="flex items-center gap-1">
+                    {prefix ? <span className="text-ink-muted">{prefix}</span> : null}
+                    <Input
+                      id={`${idPrefix}-${k}-${t}`}
+                      aria-label={`${SERVICE_LABELS[k]}, ${TIER_LABELS[t]} lawn`}
+                      type="number"
+                      inputMode="decimal"
+                      step="any"
+                      min={0}
+                      value={draft[k][t]}
+                      placeholder={placeholderFor(t)}
+                      onChange={(e) => onChange(k, t, e.target.value)}
+                      className="h-9 min-w-[5.5rem] px-2 text-sm placeholder:text-xs"
+                    />
+                    {suffix ? <span className="text-xs text-ink-muted">{suffix}</span> : null}
+                  </div>
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 /**
  * Every canvass_settings column except the county field map, grouped in cards. One "Save" sends the whole form as
  * a patch; the server recomputes each area's window with the new thresholds.
@@ -175,7 +272,7 @@ export function CanvassSettingsForm({ initial, defaultOffer }: { initial: Canvas
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     const patch: CanvassSettingsPatch = {}
-    for (const f of [...PRICING_FIELDS, ...TIMING_FIELDS, ...SESSION_FIELDS]) {
+    for (const f of ALL_FIELDS) {
       const v = readNumber(f, draft.numbers[f.key])
       if (v === null) return
       ;(patch as Record<string, unknown>)[f.key] = v
@@ -185,13 +282,31 @@ export function CanvassSettingsForm({ initial, defaultOffer }: { initial: Canvas
     // The input shows the uplift (0..10 %); the column stores the multiplier (1.00..1.10).
     patch.value_tier_max = Math.round((1 + tierMax) * 1000) / 1000
     patch.value_tier_enabled = draft.value_tier_enabled
-    const prices: Partial<Record<ServiceKey, number>> = {}
-    for (const k of SERVICE_KEYS) {
-      const v = readNumber({ key: "min_charge", label: `${SERVICE_LABELS[k]} base price` }, draft.prices[k])
-      if (v === null) return
-      prices[k] = v
+    // Every cell goes up, a blank one as null, so clearing a price really clears it on the server.
+    const prices = parseTierDraft(draft.prices, "price")
+    if (!prices.ok) {
+      toast({ title: prices.error, variant: "destructive" })
+      return
     }
-    patch.base_prices = prices
+    patch.price_tiers = prices.table
+    const minutes = parseTierDraft(draft.minutes, "minutes")
+    if (!minutes.ok) {
+      toast({ title: minutes.error, variant: "destructive" })
+      return
+    }
+    patch.tier_minutes = minutes.table
+    const bounds = parseBounds(draft.bounds)
+    if (!bounds.ok) {
+      toast({ title: bounds.error, variant: "destructive" })
+      return
+    }
+    patch.tier_bounds = bounds.bounds
+    const weights = parseWeights(draft.weights)
+    if (!weights.ok) {
+      toast({ title: weights.error, variant: "destructive" })
+      return
+    }
+    patch.score_weights = weights.weights
     patch.season_map = { ...draft.season }
     const prefixes = draft.prefixes
       .split(/[,\s]+/)
@@ -218,36 +333,58 @@ export function CanvassSettingsForm({ initial, defaultOffer }: { initial: Canvas
   }
 
   const tierPct = draft.numbers.value_tier_max.trim()
+  const parsedBounds = parseBounds(draft.bounds)
+  const boundsPreview = parsedBounds.ok ? boundsSummary(parsedBounds.bounds) : parsedBounds.error
 
   return (
     <form onSubmit={submit} className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>Pricing</CardTitle>
-          <CardDescription>Door quotes are a range built from the base price for the season service plus the turf rate.</CardDescription>
+          <CardDescription>
+            One price per service for each lawn size. The door quote is the price for the lawn tier the house falls in. Leave a price blank
+            until you decide it; a blank XL price means &quot;Quote on site&quot;.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {SERVICE_KEYS.map((k) => {
-              const id = `cs-price-${k}`
-              return (
-                <div key={k} className="space-y-1.5">
-                  <Label htmlFor={id}>{SERVICE_LABELS[k]} base price</Label>
+          <TierGrid
+            idPrefix="cs-price"
+            caption="Price per service and lawn tier, in dollars"
+            draft={draft.prices}
+            onChange={(service, tier, v) => setDraft((d) => ({ ...d, prices: { ...d.prices, [service]: { ...d.prices[service], [tier]: v } } }))}
+            placeholderFor={pricePlaceholder}
+            prefix="$"
+          />
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-ink">Lawn size tiers (turf sqft)</p>
+            <div className="grid gap-4 sm:grid-cols-3">
+              {(
+                [
+                  ["small_max", "Small up to"],
+                  ["medium_max", "Medium up to"],
+                  ["large_max", "Large up to"],
+                ] as const
+              ).map(([key, label]) => (
+                <div key={key} className="space-y-1.5">
+                  <Label htmlFor={`cs-bounds-${key}`}>{label}</Label>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-sm text-ink-muted">$</span>
                     <Input
-                      id={id}
+                      id={`cs-bounds-${key}`}
                       type="number"
-                      inputMode="decimal"
-                      step={1}
-                      min={0}
-                      value={draft.prices[k]}
-                      onChange={(e) => setDraft((d) => ({ ...d, prices: { ...d.prices, [k]: e.target.value } }))}
+                      inputMode="numeric"
+                      step={100}
+                      min={1}
+                      value={draft.bounds[key]}
+                      onChange={(e) => setDraft((d) => ({ ...d, bounds: { ...d.bounds, [key]: e.target.value } }))}
                     />
+                    <span className="whitespace-nowrap text-sm text-ink-muted">sqft</span>
                   </div>
                 </div>
-              )
-            })}
+              ))}
+            </div>
+            <p className="text-xs text-ink-muted">
+              {boundsPreview ?? "Each bound must be higher than the one before."} Turf is the lawn, not the whole lot.
+            </p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {PRICING_FIELDS.map((f) => (
@@ -265,7 +402,7 @@ export function CanvassSettingsForm({ initial, defaultOffer }: { initial: Canvas
                 />
                 {draft.value_tier_enabled ? "On" : "Off"}
               </label>
-              <p className="text-xs text-ink-muted">Nudges the quote up a little on higher-value homes (county market value).</p>
+              <p className="text-xs text-ink-muted">Nudges a priced quote up a little on higher-value homes (county market value).</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="cs-value_tier_max">Value tier max uplift</Label>
@@ -285,6 +422,61 @@ export function CanvassSettingsForm({ initial, defaultOffer }: { initial: Canvas
               </div>
               <p className="text-xs text-ink-muted">Up to 10%. Homes at or above $400k get the full uplift, $250k to $400k half.</p>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Profit check</CardTitle>
+          <CardDescription>
+            How long a job takes your crew, by service and lawn tier. With minutes, crew size and pay rate filled in, the house page shows labor cost
+            and profit and flags any price that falls under labor cost. Only you see this; the crew sees the price.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <TierGrid
+            idPrefix="cs-minutes"
+            caption="Crew minutes per service and lawn tier"
+            draft={draft.minutes}
+            onChange={(service, tier, v) => setDraft((d) => ({ ...d, minutes: { ...d.minutes, [service]: { ...d.minutes[service], [tier]: v } } }))}
+            placeholderFor={() => "unknown"}
+            suffix="min"
+          />
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {PROFIT_FIELDS.map((f) => (
+              <NumberInput key={f.key} f={f} id={`cs-${f.key}`} value={draft.numbers[f.key]} onChange={(v) => setNumber(f.key, v)} />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Score weights</CardTitle>
+          <CardDescription>
+            Each house earns 0 to 3 points for four things: time, lawn, a customer nearby, and the owner. A weight multiplies one of them (1 is normal,
+            2 counts it double, 0 ignores it). Hot is 9 points or more out of 12.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {SCORE_WEIGHT_FIELDS.map((f) => (
+              <div key={f.key} className="space-y-1.5">
+                <Label htmlFor={`cs-weight-${f.key}`}>{f.label}</Label>
+                <Input
+                  id={`cs-weight-${f.key}`}
+                  type="number"
+                  inputMode="decimal"
+                  step={0.1}
+                  min={0}
+                  max={10}
+                  value={draft.weights[f.key]}
+                  onChange={(e) => setDraft((d) => ({ ...d, weights: { ...d.weights, [f.key]: e.target.value } }))}
+                />
+                <p className="text-xs text-ink-muted">{f.hint}</p>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>

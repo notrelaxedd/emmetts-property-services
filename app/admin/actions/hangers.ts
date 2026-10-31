@@ -27,7 +27,7 @@ const offerSchema = z.string().trim().max(240, "Keep the offer under 240 charact
 
 function revalidate() {
   revalidatePath("/admin/canvass/hangers")
-  revalidatePath("/admin/canvass/stats")
+  revalidatePath("/admin/canvass/insights")
 }
 
 /** How many random codes to try before giving up on a unique one (4 chars from a 31-letter alphabet: ~920k). */
@@ -101,7 +101,7 @@ export async function savePitchAction(input: PitchInput): Promise<ActionResult> 
       check(await db.from("pitches").insert({ ...v, sort_order }), "add pitch")
     }
     revalidate()
-    revalidatePath("/crew/knock")
+    revalidatePath("/crew/walk")
     return { ok: true, message: id ? "Pitch saved." : "Pitch added." }
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : String(e) }

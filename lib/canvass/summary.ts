@@ -192,17 +192,19 @@ export function dayBounds(forDate: string): { start: string; end: string } {
 }
 
 /**
- * Most common window label per street among the given parcel views. Only area-level labels count (learned, ACS prior,
- * default): a homeowner's window label can carry their verbatim words and a crew tag is about one house, and neither
- * may reach the model.
+ * Most common plain-English window per street among the given parcel views ("Weekdays after 4pm, Saturdays all day").
+ * Only area-level windows count (learned, ACS prior, default): a homeowner's words are verbatim and a crew tag is about
+ * one house, and neither may reach the model.
  */
-export function windowsByStreet(parcels: readonly { street: string; window: { label: string; source?: WindowSource }; do_not_knock: boolean }[]): Map<string, string> {
+export function windowsByStreet(
+  parcels: readonly { street: string; plain: { text: string }; window: { source?: WindowSource }; do_not_knock: boolean }[],
+): Map<string, string> {
   const counts = new Map<string, Map<string, number>>();
   for (const p of parcels) {
     if (p.do_not_knock || p.window.source === "homeowner" || p.window.source === "crew") continue;
     const street = p.street.trim().toUpperCase();
     const inner = counts.get(street) ?? new Map<string, number>();
-    inner.set(p.window.label, (inner.get(p.window.label) ?? 0) + 1);
+    inner.set(p.plain.text, (inner.get(p.plain.text) ?? 0) + 1);
     counts.set(street, inner);
   }
   const out = new Map<string, string>();

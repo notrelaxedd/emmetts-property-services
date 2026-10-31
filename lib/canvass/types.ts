@@ -152,15 +152,6 @@ export type ParcelGeom = GeoPolygon | GeoMultiPolygon;
 export type GeoFeature<G = ParcelGeom> = { type: "Feature"; geometry: G; properties: Record<string, unknown> | null };
 export type GeoFeatureCollection<G = ParcelGeom> = { type: "FeatureCollection"; features: GeoFeature<G>[] };
 
-// ---------- Scoring ----------
-
-export type ScoreBreakdown = {
-  pAnswer: number;
-  pConvert: number;
-  value: number;
-  neighborBoost: number;
-};
-
 /** One service's quote for one house (lib/canvass/quote.ts `quoteFor`). */
 export type Quote = {
   service: ServiceKey;

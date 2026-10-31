@@ -38,7 +38,7 @@ export default async function CanvassSettingsPage() {
     <div className="space-y-4">
       <PageHeader
         title="Canvass settings"
-        description="Pricing, timing thresholds, session pace, the season map and the county field map. Saving recomputes every area's knock window."
+        description="Pricing by lawn size, the profit check, score weights, timing thresholds, Walk pace, the season map and the county field map. Saving recomputes every area's knock window."
         actions={
           <Button asChild variant="outline" size="sm">
             <Link href="/admin/canvass">Back to the map</Link>

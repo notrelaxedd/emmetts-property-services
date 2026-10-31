@@ -1,13 +1,13 @@
 "use client"
 
-import { CalendarCheck, CalendarOff, Clock, DoorOpen, HandHelping, Wallet, type LucideIcon } from "lucide-react"
+import { CalendarCheck, CalendarOff, Clock, Footprints, HandHelping, Wallet, type LucideIcon } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 
 const tabs: { href: string; label: string; icon: LucideIcon; exact?: boolean }[] = [
   { href: "/crew", label: "Today", icon: CalendarCheck, exact: true },
-  { href: "/crew/knock", label: "Knock", icon: DoorOpen },
+  { href: "/crew/walk", label: "Walk", icon: Footprints },
   { href: "/crew/offers", label: "Offers", icon: HandHelping },
   { href: "/crew/hours", label: "Hours", icon: Clock },
   { href: "/crew/time-off", label: "Time off", icon: CalendarOff },

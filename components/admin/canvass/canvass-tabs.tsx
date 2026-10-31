@@ -3,15 +3,16 @@ import { cn } from "@/lib/utils"
 
 const TABS = [
   { key: "map", href: "/admin/canvass", label: "Map" },
+  { key: "walk", href: "/admin/canvass/walk", label: "Walk" },
   { key: "plan", href: "/admin/canvass/plan", label: "Plan" },
   { key: "hangers", href: "/admin/canvass/hangers", label: "Hangers" },
-  { key: "stats", href: "/admin/canvass/stats", label: "Stats" },
+  { key: "insights", href: "/admin/canvass/insights", label: "Insights" },
   { key: "settings", href: "/admin/canvass/settings", label: "Settings" },
 ] as const
 
 export type CanvassTabKey = (typeof TABS)[number]["key"]
 
-/** Map / Plan / Hangers / Stats / Settings switch at the top of the Canvass pages. */
+/** Map / Walk / Plan / Hangers / Insights / Settings switch at the top of the Canvass pages. */
 export function CanvassTabs({ active }: { active: CanvassTabKey }) {
   return (
     <nav aria-label="Canvass views" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
