@@ -19,6 +19,7 @@ one that has already been applied to the real project).
 | `20261029001700_call_to_confirm.sql` | Pay after the job: `quotes.paid_at`, crew availability email tokens (`job_assignments.respond_token` / `notified_at`), `settings.auto_schedule`; the assignment guard protects the new columns |
 | `20261030001800_canvass.sql` | Canvass tab: enums `knock_outcome`, `hanger_event`, `home_pattern`; tables `parcels`, `block_groups`, `knocks`, `pitches`, `hanger_codes`, `hanger_events`, `canvass_plans`, `canvass_summaries`, `canvass_settings` (single row); crew policies; seeds the settings row and three pitches |
 | `20261031001900_canvass_v3.sql` | Canvass v3: lot-size price tiers, tier minutes, crew size / pay rate, score weights, walk doors on `canvass_settings` (old per-sqft pricing columns dropped); `parcels.state`; crew no longer reads `canvass_settings` |
+| `20261101002000_door_bookings.sql` | `door_bookings`: jobs booked on the porch through `/door` (name, phone digits, street address, day, services). Owner-only; written through the service role |
 
 ## Who can see what
 
@@ -35,7 +36,7 @@ one that has already been applied to the real project).
 | `canvass_settings` | all | **nothing** (v3: holds pay rate and tier minutes; Walk Mode reads it through the service role) | — | all |
 | `knocks` | all | insert with their own `knocker_id`; read own rows | — | all |
 | `hanger_codes`, `hanger_events`, `canvass_summaries` | all | **nothing** | — | all |
-| quotes, quote_items, customers, leads, jobs, settings, approvals, ads, messages, expenses, ai_usage, fleet_*, stripe_events, owner_* | all | **nothing** | — | all |
+| quotes, quote_items, customers, leads, jobs, settings, approvals, ads, messages, expenses, ai_usage, fleet_*, stripe_events, owner_*, `door_bookings` | all | **nothing** | — | all |
 
 The public quote form writes through a server action that uses the service-role
 key; fleet workers use the service-role key too. The queue functions

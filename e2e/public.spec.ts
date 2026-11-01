@@ -80,6 +80,30 @@ test.describe("public site", () => {
     }
   });
 
+  test("/door is the reps' booking form: plain, noindex, validates without a backend", async ({ page }) => {
+    await page.goto("/door");
+    await expect(page).toHaveTitle("Book a job");
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex, nofollow/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Book a job");
+    await expect(page.locator("header, footer, nav, h2")).toHaveCount(0);
+    await expect(page.locator('input[name="phone"]')).toHaveAttribute("type", "tel");
+    await expect(page.locator('input[name="date"]')).toHaveAttribute("type", "date");
+    await expect(page.locator('input[name="date"]')).not.toHaveValue("");
+    await expect(page.locator('input[name="services"]')).toHaveCount(4);
+    // Honeypot: present, off-screen, hidden from assistive tech and out of the tab order.
+    await expect(page.locator('[aria-hidden="true"] input[name="company"][tabindex="-1"]')).toHaveCount(1);
+
+    await page.getByRole("button", { name: /book it/i }).click();
+    await expect(page.getByText("Add their name")).toBeVisible();
+    await expect(page.getByText("Add their phone number")).toBeVisible();
+    await expect(page.getByText("Add the street address")).toBeVisible();
+    await expect(page.getByText("Pick at least one")).toBeVisible();
+    await expect(page).toHaveURL(/\/door$/);
+
+    await page.locator('input[name="phone"]').pressSequentially("44055512345");
+    await expect(page.locator('input[name="phone"]')).toHaveValue("(440) 555-1234");
+  });
+
   test("/admin and /crew are gated; /login renders both sign-in methods", async ({ page }) => {
     await page.goto("/admin");
     await expect(page).toHaveURL(/\/login\?next=%2Fadmin/);
@@ -93,6 +117,7 @@ test.describe("public site", () => {
     expect((await request.get("/robots.txt")).status()).toBe(200);
     const sitemap = await (await request.get("/sitemap.xml")).text();
     expect(sitemap).toContain("/quote");
+    expect(sitemap).not.toContain("/door");
     const manifest = await (await request.get("/manifest.webmanifest")).json();
     expect(manifest.start_url).toBe("/crew");
   });

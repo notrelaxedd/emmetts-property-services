@@ -165,6 +165,8 @@ with w as (
 ) insert into tests.fx select 'flyer_worker', id from w;
 insert into public.flyer_batches (flyer_worker_id, flyer_count, rate) values (tests.id('flyer_worker'), 250, 0.125);
 insert into public.flyer_scans (flyer_worker_id, visitor) values (tests.id('flyer_worker'), 'v1');
+insert into public.door_bookings (name, phone, address, job_date, services)
+  values ('Door Test', '4405551234', '123 Lake Rd', current_date + 1, array['leaves_front', 'mowing']);
 update public.leads set flyer_worker_id = tests.id('flyer_worker') where id = tests.id('lead');
 
 -- 1500: one price-log entry for Pat.
@@ -223,7 +225,7 @@ begin
     'jobs', 'job_assignments', 'owner_windows', 'owner_exceptions', 'crew_availability',
     'crew_exceptions', 'approvals', 'ads', 'messages', 'payouts', 'expenses', 'ai_usage',
     'fleet_workers', 'fleet_tasks', 'stripe_events', 'flyer_workers', 'flyer_batches', 'flyer_scans',
-    'customer_interactions', 'crew_jobs'
+    'customer_interactions', 'door_bookings', 'crew_jobs'
   ] loop
     n := tests.count_rows(format('select * from public.%I', t));
     perform tests.check(n <= 0, format('anon reads nothing from %s', t),
@@ -288,7 +290,8 @@ begin
   foreach t in array array[
     'quotes', 'quote_items', 'customers', 'leads', 'settings', 'jobs', 'approvals', 'ads',
     'messages', 'expenses', 'ai_usage', 'fleet_workers', 'fleet_tasks', 'stripe_events',
-    'owner_windows', 'owner_exceptions', 'flyer_workers', 'flyer_batches', 'flyer_scans', 'customer_interactions'
+    'owner_windows', 'owner_exceptions', 'flyer_workers', 'flyer_batches', 'flyer_scans', 'customer_interactions',
+    'door_bookings'
   ] loop
     n := tests.count_rows(format('select * from public.%I', t));
     perform tests.check(n <= 0, format('crew reads nothing from %s', t),
@@ -442,7 +445,7 @@ begin
     'jobs', 'job_assignments', 'owner_windows', 'owner_exceptions', 'crew_availability',
     'crew_exceptions', 'approvals', 'ads', 'messages', 'payouts', 'expenses', 'ai_usage',
     'fleet_workers', 'stripe_events', 'flyer_workers', 'flyer_batches', 'flyer_scans',
-    'customer_interactions', 'crew_jobs'
+    'customer_interactions', 'door_bookings', 'crew_jobs'
   ] loop
     n := tests.count_rows(format('select * from public.%I', t));
     perform tests.check(n > 0, format('owner reads %s', t), n || ' rows');
@@ -564,8 +567,8 @@ select tests.check(
   'set_updated_at bumps updated_at on update');
 select tests.check(
   (select count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = 'public' and t.tgname = 'set_updated_at') = 35,
-  'set_updated_at is attached to all 35 tables');
+    where n.nspname = 'public' and t.tgname = 'set_updated_at') = 36,
+  'set_updated_at is attached to all 36 tables');
 select tests.check(
   (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity) = 0,
@@ -595,6 +598,20 @@ select tests.check(
 select tests.check(
   tests.run(format($$insert into public.leads (customer_id, preferred_days) values (%L, '{1,9}')$$, tests.id('customer'))) like 'err:23514:%',
   'leads.preferred_days must be weekdays 0..6');
+-- 2000: door_bookings keeps the rep's form honest even if the action is bypassed.
+select tests.check(
+  tests.run($$insert into public.door_bookings (name, phone, address, job_date, services) values ('A', '(440) 555-1234', '1 Main St', current_date, '{mowing}')$$) like 'err:23514:%'
+  and tests.run($$insert into public.door_bookings (name, phone, address, job_date, services) values ('A', '440555123', '1 Main St', current_date, '{mowing}')$$) like 'err:23514:%',
+  'door_bookings.phone must be exactly 10 digits');
+select tests.check(
+  tests.run($$insert into public.door_bookings (name, phone, address, job_date, services) values ('A', '4405551234', '1 Main St', current_date, '{}')$$) like 'err:23514:%'
+  and tests.run($$insert into public.door_bookings (name, phone, address, job_date, services) values ('A', '4405551234', '1 Main St', current_date, '{gutters}')$$) like 'err:23514:%'
+  and tests.run($$insert into public.door_bookings (name, phone, address, job_date, services) values ('A', '4405551234', '1 Main St', current_date, '{edging,leaves_back}')$$) = 'ok:1',
+  'door_bookings.services is at least one of the four form keys');
+select tests.check(
+  tests.run($$insert into public.door_bookings (name, phone, address, job_date, services) values (' ', '4405551234', '1 Main St', current_date, '{mowing}')$$) like 'err:23514:%'
+  and tests.run($$insert into public.door_bookings (name, phone, address, job_date, services) values ('A', '4405551234', '', current_date, '{mowing}')$$) like 'err:23514:%',
+  'door_bookings name and address cannot be blank');
 select tests.check(
   tests.run(format($$insert into public.quotes (lead_id, customer_id, margin) values (%L, %L, 0.99)$$, tests.id('lead'), tests.id('customer'))) like 'err:23514:%',
   'quotes.margin limited to 0..0.95');

@@ -441,6 +441,19 @@ export type FlyerScan = Base & {
   visitor: string;
 };
 
+/** A job booked at the door by a rep (/door). Flat: not linked to customers, leads or quotes. */
+export type DoorBooking = Base & {
+  name: string;
+  /** 10 digits, no formatting. */
+  phone: string;
+  /** Street address only. */
+  address: string;
+  /** The day we're going (YYYY-MM-DD). */
+  job_date: string;
+  /** lib/door-schema.ts keys: leaves_front, leaves_back, mowing, edging. At least one. */
+  services: string[];
+};
+
 export type Expense = Base & {
   date: string;
   category: string;
@@ -749,6 +762,7 @@ export type Database = {
       canvass_plans: Table<CanvassPlan>;
       canvass_summaries: Table<CanvassSummary>;
       canvass_settings: Table<CanvassSettings>;
+      door_bookings: Table<DoorBooking>;
     };
     Views: {
       /** Crew-safe view of jobs: no prices, no customer phone/email. */

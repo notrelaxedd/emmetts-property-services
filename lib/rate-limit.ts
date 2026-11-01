@@ -48,6 +48,9 @@ export function createRateLimiter(opts: { limit: number; windowMs: number }): Ra
 /** Quote form: 5 submissions per 10 minutes per client IP. */
 export const quoteRateLimiter = createRateLimiter({ limit: 5, windowMs: 10 * 60 * 1000 });
 
+/** /door: 60 bookings per 10 minutes per client IP. Reps on one carrier can share an IP, so it's loose. */
+export const doorRateLimiter = createRateLimiter({ limit: 60, windowMs: 10 * 60 * 1000 });
+
 /** Client IP from `x-forwarded-for` (first hop), falling back to `x-real-ip`, else "unknown". */
 export function clientIpFrom(headers: { get(name: string): string | null }): string {
   const xff = headers.get("x-forwarded-for");
