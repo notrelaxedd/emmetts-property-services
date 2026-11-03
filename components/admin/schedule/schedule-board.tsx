@@ -225,15 +225,19 @@ export function ScheduleBoard({
                   >
                     <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{d.weekday}</p>
                     <p className="text-sm font-semibold text-ink">{d.label}</p>
-                    {d.snow ? (
+                    {d.routes.map((r) => (
                       <Link
-                        href={d.snow.href}
-                        className="mt-1 block truncate rounded bg-sky-100 px-1 py-0.5 text-[11px] font-semibold text-sky-900 hover:bg-sky-200"
-                        title={`Snow route ${d.snow.label}`}
+                        key={r.href}
+                        href={r.href}
+                        className={cn(
+                          "mt-1 block truncate rounded px-1 py-0.5 text-[11px] font-semibold",
+                          r.kind === "snow" ? "bg-sky-100 text-sky-900 hover:bg-sky-200" : "bg-brand-green/25 text-ink hover:bg-brand-green/40",
+                        )}
+                        title={`${r.kind === "snow" ? "Snow" : "Mowing"} route ${r.label}`}
                       >
-                        ❄ {d.snow.label}
+                        {r.kind === "snow" ? "❄" : "🌱"} {r.label}
                       </Link>
-                    ) : null}
+                    ))}
                     {d.closed ? (
                       <p className="text-[11px] font-medium text-destructive">Closed</p>
                     ) : d.note ? (

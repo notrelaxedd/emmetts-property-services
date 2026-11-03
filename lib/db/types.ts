@@ -731,6 +731,9 @@ export type SnowSettings = Base & {
 };
 export const SNOW_SETTINGS_ID = "00000000-0000-0000-0000-000000000001";
 
+export type SnowPayMethod = "cash" | "card" | "check";
+export const SNOW_PAY_METHODS: SnowPayMethod[] = ["cash", "card", "check"];
+
 export type SnowCustomer = Base & {
   customer_id: string;
   plan: SnowPlan;
@@ -738,6 +741,18 @@ export type SnowCustomer = Base & {
   est_minutes: number | null;
   notes: string | null;
   active: boolean;
+  /** How they usually pay; each month's bill starts with it. */
+  pay_method: SnowPayMethod | null;
+};
+
+/** One customer's bill for one month (`month` = "YYYY-MM-01"). */
+export type SnowBill = Base & {
+  snow_customer_id: string;
+  month: string;
+  amount: number;
+  pushes: number;
+  pay_method: SnowPayMethod | null;
+  paid_at: string | null;
 };
 
 export type SnowPush = Base & {
@@ -758,6 +773,58 @@ export type SnowRouteStop = {
   arrive_at: string;
   done_at: string;
   minutes: number;
+};
+
+// ---------- mowing ----------
+
+export type MowFrequency = "weekly" | "biweekly";
+
+export type MowSettings = Base & {
+  default_price: number;
+  default_minutes: number;
+  drive_mph: number;
+  /** "HH:MM:SS" route start. */
+  start_time: string;
+};
+export const MOW_SETTINGS_ID = "00000000-0000-0000-0000-000000000001";
+
+export type MowCustomer = Base & {
+  customer_id: string;
+  frequency: MowFrequency;
+  price: number;
+  est_minutes: number | null;
+  /** "YYYY-MM-DD": the schedule counts weeks from here (biweekly alternates from its week). */
+  anchor_date: string;
+  /** 0 = Sunday … 6 = Saturday; null = any day. */
+  preferred_day: number | null;
+  notes: string | null;
+  active: boolean;
+  pay_method: SnowPayMethod | null;
+};
+
+export type MowCut = Base & {
+  mow_customer_id: string;
+  cut_at: string;
+  price: number;
+  logged_by: string | null;
+  note: string | null;
+};
+
+export type MowRoute = Base & {
+  run_date: string;
+  start_at: string;
+  finish_at: string;
+  trucks: number;
+  stops: SnowRouteStop[];
+};
+
+export type MowBill = Base & {
+  mow_customer_id: string;
+  month: string;
+  amount: number;
+  cuts: number;
+  pay_method: SnowPayMethod | null;
+  paid_at: string | null;
 };
 
 export type SnowRoute = Base & {
@@ -816,6 +883,12 @@ export type Database = {
       snow_customers: Table<SnowCustomer>;
       snow_pushes: Table<SnowPush>;
       snow_routes: Table<SnowRoute>;
+      snow_bills: Table<SnowBill>;
+      mow_settings: Table<MowSettings>;
+      mow_customers: Table<MowCustomer>;
+      mow_cuts: Table<MowCut>;
+      mow_routes: Table<MowRoute>;
+      mow_bills: Table<MowBill>;
     };
     Views: {
       /** Crew-safe view of jobs: no prices, no customer phone/email. */
@@ -877,6 +950,7 @@ export type Database = {
       hanger_event: HangerEventKind;
       home_pattern: HomePattern;
       snow_plan: SnowPlan;
+      mow_frequency: MowFrequency;
     };
     CompositeTypes: Record<string, never>;
   };

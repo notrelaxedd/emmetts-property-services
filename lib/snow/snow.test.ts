@@ -58,3 +58,13 @@ describe("billing", () => {
     expect(seasonStart("2026-09-02")).toBe("2026-09-01");
   });
 });
+
+describe("planSnowRoute forward (mowing)", () => {
+  it("starts every truck at the start time and reports the latest finish", () => {
+    const START = new Date("2026-06-10T12:00:00.000Z");
+    const plan = planSnowRoute({ base, stops: [stop("a", 41.476, -81.84, 30), stop("b", 41.49, -81.82, 45)], trucks: 1, mph: 25, startAt: START });
+    const t = plan.trucks[0];
+    expect(t.startAt).toEqual(START);
+    expect(plan.finishBy.getTime()).toBe(START.getTime() + (t.driveMinutes + t.workMinutes) * 60_000);
+  });
+});

@@ -1,12 +1,12 @@
 import "server-only"
 
-import type { Customer, SnowCustomer, SnowPush, SnowSettings } from "@/lib/db/types"
+import type { Customer, SnowBill, SnowCustomer, SnowPayMethod, SnowPush, SnowSettings } from "@/lib/db/types"
 import { SNOW_SETTINGS_ID } from "@/lib/db/types"
 import { opsConfig } from "@/lib/config"
 import { getSettings } from "@/lib/ops/settings"
 import { check } from "@/lib/ops/types"
 import type { Db } from "@/lib/ops/types"
-import { localDate, zonedToUtc } from "@/lib/scheduler/time"
+import { addDays, localDate, zonedToUtc } from "@/lib/scheduler/time"
 import { monthCharge, monthStart, seasonStart } from "@/lib/snow/billing"
 import { planSnowRoute, type RoutePlan } from "@/lib/snow/route"
 
@@ -99,4 +99,70 @@ export async function loadRoutePlan(db: Db, date: string, trucks: number): Promi
       })),
   })
   return { plan, settings, rows }
+}
+
+export type BillRow = {
+  sc: SnowCustomer
+  name: string
+  phone: string | null
+  email: string | null
+  pushes: number
+  amount: number
+  over: number
+  payMethod: SnowPayMethod | null
+  paidAt: string | null
+}
+
+/** "YYYY-MM-01" of the month after. */
+export function nextMonth(month: string): string {
+  const y = Number(month.slice(0, 4))
+  const m = Number(month.slice(5, 7))
+  return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`
+}
+
+export function prevMonth(month: string): string {
+  return `${addDays(month, -1).slice(0, 7)}-01`
+}
+
+/**
+ * Every customer's bill for one month ("YYYY-MM-01"): customers who were active, had a push, or have a
+ * saved bill. A paid bill keeps the amount it was paid at; an unpaid one is worked out from the pushes.
+ */
+export async function loadSnowBills(db: Db, month: string): Promise<{ settings: SnowSettings; rows: BillRow[] }> {
+  const from = zonedToUtc(month, "00:00").toISOString()
+  const to = zonedToUtc(nextMonth(month), "00:00").toISOString()
+  const [settings, scsRes, pushesRes, billsRes] = await Promise.all([
+    loadSnowSettings(db),
+    db.from("snow_customers").select("*"),
+    db.from("snow_pushes").select("snow_customer_id,price").gte("pushed_at", from).lt("pushed_at", to),
+    db.from("snow_bills").select("*").eq("month", month),
+  ])
+  const scs = check(scsRes, "bills(customers)") ?? []
+  const pushes = (check(pushesRes, "bills(pushes)") ?? []) as Pick<SnowPush, "snow_customer_id" | "price">[]
+  const bills = new Map(((check(billsRes, "bills(bills)") ?? []) as SnowBill[]).map((b) => [b.snow_customer_id, b]))
+  const pushed = new Set(pushes.map((p) => p.snow_customer_id))
+  const included = scs.filter((sc) => sc.active || pushed.has(sc.id) || bills.has(sc.id))
+  type Who = { id: string; name: string; phone: string | null; email: string | null }
+  const people = included.length
+    ? new Map(((check(await db.from("customers").select("id,name,phone,email").in("id", included.map((s) => s.customer_id)), "bills(names)") ?? []) as Who[]).map((c) => [c.id, c]))
+    : new Map<string, Who>()
+  const rows = included.map((sc): BillRow => {
+    const mine = pushes.filter((p) => p.snow_customer_id === sc.id)
+    const live = monthCharge(sc, settings, mine)
+    const bill = bills.get(sc.id)
+    const paid = !!bill?.paid_at
+    return {
+      sc,
+      name: people.get(sc.customer_id)?.name ?? "Customer",
+      phone: people.get(sc.customer_id)?.phone ?? null,
+      email: people.get(sc.customer_id)?.email ?? null,
+      pushes: paid ? bill!.pushes : mine.length,
+      amount: paid ? Number(bill!.amount) : live.amount,
+      over: paid ? 0 : live.over,
+      payMethod: bill?.pay_method ?? sc.pay_method ?? null,
+      paidAt: bill?.paid_at ?? null,
+    }
+  })
+  rows.sort((a, b) => Number(!!a.paidAt) - Number(!!b.paidAt) || a.name.localeCompare(b.name))
+  return { settings, rows }
 }

@@ -30,7 +30,7 @@ async function loadWeek(monday: string, focusJobId: string | null) {
   const from = zonedToUtc(monday, "00:00").toISOString()
   const to = zonedToUtc(addDays(monday, 7), "00:00").toISOString()
 
-  const [weekJobs, railJobs, windows, exceptions, focus, incoming, snowRoutes] = await Promise.all([
+  const [weekJobs, railJobs, windows, exceptions, focus, incoming, snowRoutes, mowRoutes] = await Promise.all([
     db.from("jobs").select("*").gte("start_at", from).lt("start_at", to).order("start_at"),
     db.from("jobs").select("*").is("start_at", null).not("status", "in", "(cancelled,done)").order("created_at", { ascending: true }).limit(100),
     db.from("owner_windows").select("*"),
@@ -38,6 +38,7 @@ async function loadWeek(monday: string, focusJobId: string | null) {
     focusJobId ? db.from("jobs").select("*").eq("id", focusJobId).maybeSingle() : Promise.resolve({ data: null, error: null }),
     loadIncoming(db),
     db.from("snow_routes").select("run_date,start_at,finish_at,stops,trucks").gte("run_date", dates[0]).lte("run_date", dates[6]),
+    db.from("mow_routes").select("run_date,start_at,finish_at,stops,trucks").gte("run_date", dates[0]).lte("run_date", dates[6]),
   ])
   for (const r of [weekJobs, railJobs, windows, exceptions, focus]) if (r.error) throw new Error(r.error.message)
 
@@ -50,16 +51,18 @@ async function loadWeek(monday: string, focusJobId: string | null) {
 
   const today = localDate(new Date())
   const t = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" })
-  // A missing snow table (migration not applied yet) just means no snow chips.
-  const snowByDate = new Map(
-    (snowRoutes.error ? [] : (snowRoutes.data ?? [])).map((r) => [
-      r.run_date,
-      {
-        label: `${t.format(new Date(r.start_at))}–${t.format(new Date(r.finish_at))} · ${r.stops.length} drives`,
-        href: `/admin/snow/route?date=${r.run_date}&trucks=${r.trucks}`,
-      },
-    ]),
-  )
+  // A missing table (migration not applied yet) just means no route chips.
+  type RouteRow = { run_date: string; start_at: string; finish_at: string; stops: unknown[]; trucks: number }
+  const chip = (kind: "snow" | "mow", r: RouteRow) => ({
+    kind,
+    label: `${t.format(new Date(r.start_at))}–${t.format(new Date(r.finish_at))} · ${r.stops.length} ${kind === "snow" ? "drives" : "lawns"}`,
+    href: `/admin/${kind === "snow" ? "snow" : "mowing"}/route?date=${r.run_date}&trucks=${r.trucks}`,
+    date: r.run_date,
+  })
+  const routeChips = [
+    ...(snowRoutes.error ? [] : ((snowRoutes.data ?? []) as RouteRow[])).map((r) => chip("snow", r)),
+    ...(mowRoutes.error ? [] : ((mowRoutes.data ?? []) as RouteRow[])).map((r) => chip("mow", r)),
+  ]
   const days: ScheduleDay[] = dates.map((date) => {
     const exs = (exceptions.data ?? []).filter((e) => e.date.slice(0, 10) === date)
     return {
@@ -73,7 +76,7 @@ async function loadWeek(monday: string, focusJobId: string | null) {
       })),
       note: exs.map((e) => e.note).filter(Boolean).join("; ") || null,
       closed: exs.some((e) => e.closed),
-      snow: snowByDate.get(date) ?? null,
+      routes: routeChips.filter((c) => c.date === date).map(({ kind, label, href }) => ({ kind, label, href })),
     }
   })
 

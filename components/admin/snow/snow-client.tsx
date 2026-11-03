@@ -11,17 +11,20 @@ import {
   removeSnowCustomer,
   saveSnowRoute,
   saveSnowSettings,
+  setSnowBill,
   updateSnowCustomer,
 } from "@/app/admin/actions/snow"
+import { setMowBill } from "@/app/admin/actions/mowing"
 import { useActionRunner } from "@/components/admin/inbox/use-action"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import type { SnowPlan, SnowSettings } from "@/lib/db/types"
+import type { SnowPayMethod, SnowPlan, SnowSettings } from "@/lib/db/types"
 
 const PLANS: { value: SnowPlan; label: string }[] = [
   { value: "low", label: "Low (monthly)" },
@@ -393,5 +396,68 @@ export function DeleteRouteButton({ id }: { id: string }) {
     >
       <Trash2 aria-hidden="true" /> Remove
     </Button>
+  )
+}
+
+/** One bill's "pays by" and "paid" controls on the Snow and Mowing Bills pages. */
+export function BillControls({
+  id,
+  month,
+  name,
+  payMethod,
+  paid,
+  kind = "snow",
+}: {
+  id: string
+  month: string
+  name: string
+  payMethod: SnowPayMethod | null
+  paid: boolean
+  kind?: "snow" | "mow"
+}) {
+  const { pending, run } = useActionRunner()
+  const setBill = kind === "mow" ? setMowBill : setSnowBill
+  const [method, setMethod] = React.useState<string>(payMethod ?? "")
+  const [isPaid, setIsPaid] = React.useState(paid)
+  React.useEffect(() => setMethod(payMethod ?? ""), [payMethod])
+  React.useEffect(() => setIsPaid(paid), [paid])
+  const ids = { m: React.useId(), p: React.useId() }
+  return (
+    <div className="flex items-center gap-3">
+      <label htmlFor={ids.m} className="sr-only">
+        How {name} pays
+      </label>
+      <NativeSelect
+        id={ids.m}
+        className="h-9 w-28"
+        value={method}
+        disabled={pending}
+        onChange={(e) => {
+          const v = e.target.value
+          setMethod(v)
+          void run(() => setBill({ id, month, pay_method: v || null }), { success: v ? `${name}: pays by ${v}` : "Saved" })
+        }}
+      >
+        <option value="">Pays by…</option>
+        <option value="cash">Cash</option>
+        <option value="card">Card</option>
+        <option value="check">Check</option>
+      </NativeSelect>
+      <span className="flex items-center gap-1.5">
+        <Checkbox
+          id={ids.p}
+          checked={isPaid}
+          disabled={pending}
+          onCheckedChange={(v) => {
+            const next = v === true
+            setIsPaid(next)
+            void run(() => setBill({ id, month, paid: next }))
+          }}
+        />
+        <Label htmlFor={ids.p} className={isPaid ? "font-semibold text-brand-green-dark" : "text-ink-muted"}>
+          {isPaid ? "Paid" : "Not paid"}
+        </Label>
+      </span>
+    </div>
   )
 }

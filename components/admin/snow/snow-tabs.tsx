@@ -4,13 +4,14 @@ import { cn } from "@/lib/utils"
 const TABS = [
   { key: "customers", href: "/admin/snow", label: "Customers" },
   { key: "route", href: "/admin/snow/route", label: "Route" },
+  { key: "bills", href: "/admin/snow/bills", label: "Bills" },
   { key: "log", href: "/admin/snow/log", label: "Push log" },
   { key: "settings", href: "/admin/snow/settings", label: "Plans & settings" },
 ] as const
 
 export type SnowTabKey = (typeof TABS)[number]["key"]
 
-/** Customers / Route / Push log / Plans & settings at the top of the Snow pages. */
+/** Customers / Route / Bills / Push log / Plans & settings at the top of the Snow pages. */
 export function SnowTabs({ active }: { active: SnowTabKey }) {
   return (
     <nav aria-label="Snow views" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">

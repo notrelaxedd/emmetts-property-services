@@ -4,13 +4,14 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { actorOf, errorMessage } from "@/components/admin/inbox/server"
 import type { ActionResult } from "@/components/admin/inbox/types"
-import { loadRoutePlan } from "@/components/admin/snow/load"
+import { loadRoutePlan, loadSnowSettings, nextMonth } from "@/components/admin/snow/load"
 import { requireOwner } from "@/lib/auth/session"
-import { SNOW_PLANS, SNOW_SETTINGS_ID, type SnowRouteStop } from "@/lib/db/types"
-import { geocode } from "@/lib/geo/geocode"
+import { SNOW_PAY_METHODS, SNOW_PLANS, SNOW_SETTINGS_ID, type SnowRouteStop } from "@/lib/db/types"
+import { ensureCustomerLocation as ensureLocation, locate } from "@/lib/geo/locate"
 import { upsertCustomer } from "@/lib/ops/customers"
 import { check, one } from "@/lib/ops/types"
-import type { Db } from "@/lib/ops/types"
+import { zonedToUtc } from "@/lib/scheduler/time"
+import { monthCharge } from "@/lib/snow/billing"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 const Id = z.string().uuid()
@@ -20,27 +21,6 @@ function done(message: string): ActionResult {
   revalidatePath("/admin/snow", "layout")
   revalidatePath("/admin/schedule")
   return { ok: true, message }
-}
-
-/** Geocode with the site's geocoder, falling back to the free Census one when none is set. */
-async function locate(address: string): Promise<{ lat: number; lng: number } | null> {
-  const env = process.env.GEOCODER
-  try {
-    const hit = await geocode(address, { provider: env && env !== "none" ? env : "census" })
-    return hit ? { lat: hit.lat, lng: hit.lng } : null
-  } catch {
-    return null
-  }
-}
-
-async function ensureLocation(db: Db, customerId: string): Promise<boolean> {
-  const c = one(await db.from("customers").select("id,address,lat,lng").eq("id", customerId).single(), "snow(customer)")
-  if (c.lat !== null && c.lng !== null) return true
-  if (!c.address) return false
-  const hit = await locate(c.address)
-  if (!hit) return false
-  check(await db.from("customers").update(hit).eq("id", customerId), "snow(geocode)")
-  return true
 }
 
 const PlanFields = z
@@ -250,6 +230,61 @@ export async function deleteSnowRoute(id: string): Promise<ActionResult> {
   try {
     check(await requireSupabaseAdmin().from("snow_routes").delete().eq("id", Id.parse(id)), "route(delete)")
     return done("Route removed")
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) }
+  }
+}
+
+const BillSchema = z.object({
+  id: Id,
+  month: z.string().regex(/^\d{4}-\d{2}-01$/, "Bad month."),
+  pay_method: z.enum(SNOW_PAY_METHODS as [string, ...string[]]).nullable().optional(),
+  paid: z.boolean().optional(),
+})
+
+/**
+ * A customer's bill for one month: how they're paying and whether it's paid. Saves what the month
+ * comes to right now (pushes and amount); marking it paid freezes that amount. The pay method also
+ * becomes their default for next month.
+ */
+export async function setSnowBill(input: { id: string; month: string; pay_method?: string | null; paid?: boolean }): Promise<ActionResult> {
+  await requireOwner()
+  try {
+    const parsed = BillSchema.safeParse(input)
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid bill." }
+    const { id, month, pay_method, paid } = parsed.data
+    const db = requireSupabaseAdmin()
+    const sc = one(await db.from("snow_customers").select("*").eq("id", id).single(), "bill(customer)")
+    const existing = check(await db.from("snow_bills").select("*").eq("snow_customer_id", id).eq("month", month).maybeSingle(), "bill(existing)")
+
+    const from = zonedToUtc(month, "00:00").toISOString()
+    const to = zonedToUtc(nextMonth(month), "00:00").toISOString()
+    const pushes = check(await db.from("snow_pushes").select("price").eq("snow_customer_id", id).gte("pushed_at", from).lt("pushed_at", to), "bill(pushes)") ?? []
+    const charge = monthCharge(sc, await loadSnowSettings(db), pushes)
+
+    const method = pay_method === undefined ? (existing?.pay_method ?? sc.pay_method ?? null) : (pay_method as "cash" | "card" | "check" | null)
+    const paidAt = paid === undefined ? (existing?.paid_at ?? null) : paid ? (existing?.paid_at ?? new Date().toISOString()) : null
+    // A paid bill keeps the amount it was paid at; anything else tracks the pushes.
+    const frozen = existing?.paid_at && paidAt
+    check(
+      await db.from("snow_bills").upsert(
+        {
+          snow_customer_id: id,
+          month,
+          amount: frozen ? existing!.amount : charge.amount,
+          pushes: frozen ? existing!.pushes : pushes.length,
+          pay_method: method as never,
+          paid_at: paidAt,
+        },
+        { onConflict: "snow_customer_id,month" },
+      ),
+      "bill(save)",
+    )
+    if (pay_method !== undefined && pay_method !== null) {
+      check(await db.from("snow_customers").update({ pay_method: pay_method as never }).eq("id", id), "bill(default method)")
+    }
+    revalidatePath("/admin/snow", "layout")
+    return { ok: true, message: paid === undefined ? "Saved" : paid ? "Marked paid" : "Marked unpaid" }
   } catch (e) {
     return { ok: false, error: errorMessage(e) }
   }

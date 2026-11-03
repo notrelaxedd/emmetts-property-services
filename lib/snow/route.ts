@@ -148,16 +148,29 @@ export function mapsUrls(base: LatLng, stops: LatLng[]): string[] {
   return urls
 }
 
-export function planSnowRoute(input: { base: LatLng; stops: RouteInputStop[]; trucks: number; mph: number; finishBy: Date }): RoutePlan {
+/**
+ * Plan the route. Give `finishBy` to work back from a deadline (snow: done by 6:30am), or `startAt`
+ * to run forward from a start time (mowing: leave at 8am). `finishBy` in the result is the latest
+ * truck's finish.
+ */
+export function planSnowRoute(input: {
+  base: LatLng;
+  stops: RouteInputStop[];
+  trucks: number;
+  mph: number;
+  finishBy?: Date;
+  startAt?: Date;
+}): RoutePlan {
+  const anchor = input.finishBy ?? input.startAt ?? new Date()
   const located = input.stops.filter((s): s is Located => s.lat !== null && s.lng !== null)
   const unrouted = input.stops.filter((s) => s.lat === null || s.lng === null)
-  if (!located.length) return { trucks: [], unrouted, startAt: null, finishBy: input.finishBy }
+  if (!located.length) return { trucks: [], unrouted, startAt: null, finishBy: anchor }
 
   const order = orderStops(input.base, located, input.mph)
   const runs = splitAcrossTrucks(input.base, order, input.trucks, input.mph)
   const trucks: TruckPlan[] = runs.map((run, idx) => {
     const total = pathMinutes(input.base, run, input.mph)
-    const startAt = new Date(input.finishBy.getTime() - total * 60_000)
+    const startAt = input.finishBy ? new Date(input.finishBy.getTime() - total * 60_000) : anchor
     let t = startAt.getTime()
     let at: LatLng = input.base
     let drive = 0
@@ -175,5 +188,6 @@ export function planSnowRoute(input: { base: LatLng; stops: RouteInputStop[]; tr
     return { truck: idx + 1, stops, startAt, finishAt: new Date(t), driveMinutes: drive, workMinutes: work, mapsUrls: mapsUrls(input.base, run) }
   })
   const startAt = new Date(Math.min(...trucks.map((t) => t.startAt.getTime())))
-  return { trucks, unrouted, startAt, finishBy: input.finishBy }
+  const finishBy = input.finishBy ?? new Date(Math.max(...trucks.map((t) => t.finishAt.getTime())))
+  return { trucks, unrouted, startAt, finishBy }
 }
