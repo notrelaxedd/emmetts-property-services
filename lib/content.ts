@@ -69,13 +69,15 @@ export const content = {
     // Above the rest of the services, under the in-season one.
     moreLabel: "Also on the list",
     linkLabel: "Get a price",
+    // Under the list: everything else we take on.
+    moreNote: { title: "And more", body: "Junk removal, gutters, odd jobs around the yard. If it's outside, ask us and we'll give you a price." },
   },
 
   // On the home page this shares a section with `seasons`: the body is its intro, the pills a line under it.
   benefits: {
     headline: ["One crew", "covers it"],
     body: "From the first mow in spring to the last snowfall, one crew handles the whole yard. Tell us what you need and we'll send you one price for all of it.",
-    pills: ["Leaf Cleanup", "Edging", "Gutter Cleaning", "Snow Removal", "And More"],
+    pills: ["Weekly Mowing", "Edging", "Mulching", "Bed Cleanouts", "Bush Trimming", "Pressure Washing", "Snow Removal", "And More"],
   },
 
   // Bigger accounts. Keeps id="commercial" so the nav link lands here.

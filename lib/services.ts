@@ -3,7 +3,7 @@
  * and the search-engine data all read from here — add or edit a service once and it shows up everywhere.
  */
 
-export type ServiceIcon = "leaf" | "sprout" | "wind" | "house" | "snowflake";
+export type ServiceIcon = "leaf" | "sprout" | "wind" | "house" | "snowflake" | "scissors" | "shovel" | "flower" | "droplets";
 export type Season = "spring-summer" | "fall" | "winter";
 
 export type Service = {
@@ -28,9 +28,44 @@ export const services = [
   },
   {
     slug: "lawn-mowing",
-    title: "Lawn Mowing & Maintenance",
-    blurb: "Recurring mowing, trimming, and edging so the yard looks sharp all season.",
+    title: "Weekly Mowing",
+    blurb: "Weekly mowing, trimming, and edging so the yard looks sharp all season.",
     icon: "sprout",
+    season: "spring-summer",
+  },
+  {
+    slug: "edging",
+    title: "Edging",
+    blurb: "Crisp, clean lines along driveways, walks, and beds.",
+    icon: "scissors",
+    season: "spring-summer",
+  },
+  {
+    slug: "mulching",
+    title: "Mulching",
+    blurb: "Fresh mulch spread in your beds to keep weeds down and the yard looking finished.",
+    icon: "shovel",
+    season: "spring-summer",
+  },
+  {
+    slug: "bed-cleanout",
+    title: "Bed Cleanouts",
+    blurb: "Weeds, leaves, and dead growth pulled out of the beds, ready for mulch or planting.",
+    icon: "flower",
+    season: "spring-summer",
+  },
+  {
+    slug: "bush-trimming",
+    title: "Bush Trimming",
+    blurb: "Shrubs and hedges shaped and trimmed back, with the clippings hauled away.",
+    icon: "scissors",
+    season: "spring-summer",
+  },
+  {
+    slug: "pressure-washing",
+    title: "Pressure Washing",
+    blurb: "Driveways, walkways, patios, and siding washed clean.",
+    icon: "droplets",
     season: "spring-summer",
   },
   {
@@ -50,7 +85,7 @@ export const services = [
   {
     slug: "snow-removal",
     title: "Snow Removal",
-    blurb: "Driveways and walkways cleared so you can get out the door.",
+    blurb: "Driveways and walkways cleared so you can get out the door, on a monthly plan or per push.",
     icon: "snowflake",
     season: "winter",
   },

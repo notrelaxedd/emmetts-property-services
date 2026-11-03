@@ -44,6 +44,11 @@ export const siteConfig = {
       "leaf-removal": null,
       "gutter-cleaning": null,
       "snow-removal": null,
+      edging: null,
+      mulching: null,
+      "bed-cleanout": null,
+      "bush-trimming": null,
+      "pressure-washing": null,
     } as Record<string, string | null>,
   },
 
