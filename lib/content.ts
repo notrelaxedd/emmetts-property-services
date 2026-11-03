@@ -35,10 +35,13 @@ export const content = {
     // Shortcuts into the quote form with that service already ticked.
     quickStart: [
       { label: "Fall cleanup", slug: "fall-cleanup" },
-      { label: "Mowing", slug: "lawn-mowing" },
-      { label: "Leaves", slug: "leaf-removal" },
-      { label: "Gutters", slug: "gutter-cleaning" },
-      { label: "Snow", slug: "snow-removal" },
+      { label: "Weekly mowing", slug: "lawn-mowing" },
+      { label: "Edging", slug: "edging" },
+      { label: "Mulching", slug: "mulching" },
+      { label: "Bed cleanouts", slug: "bed-cleanout" },
+      { label: "Bush trimming", slug: "bush-trimming" },
+      { label: "Pressure washing", slug: "pressure-washing" },
+      { label: "Snow removal", slug: "snow-removal" },
     ],
     trust: ["Locally owned and operated", "Clear, upfront pricing", "Great reviews from local customers"],
     trustLabel: "Why customers hire us",
