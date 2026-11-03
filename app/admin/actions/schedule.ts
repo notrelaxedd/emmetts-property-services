@@ -15,11 +15,14 @@ import {
   check,
   clearQueuedReminder,
   clearWeatherHold,
+  crewChoicesForSlot,
   decideApproval,
   enqueueSchedule,
   finishJob,
   holdForWeather,
+  loadJob,
   PAYMENT_METHODS,
+  pollCrewForJob,
   scheduleJobAt,
   setOwnerHold,
   slotMinutes,
@@ -27,7 +30,7 @@ import {
   unplaceJob as unplaceJobCore,
   withdrawCallToConfirm,
 } from "@/lib/ops"
-import type { Db } from "@/lib/ops"
+import type { CrewChoice, Db } from "@/lib/ops"
 import { localDate } from "@/lib/scheduler/time"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
@@ -62,14 +65,15 @@ async function retireLegacyBookingApprovals(db: Db, jobId: string, actor: string
 }
 
 /**
- * Drag a quote from the "Needs a day" rail onto the calendar, or drag a placed job to another time.
- * Checks your open hours (not the crew: everyone who could work the new slot is asked by email and
- * says so themselves). A job the customer already confirmed goes back to "call to confirm" for the
+ * Drag a job from the rail onto the calendar, or drag a placed job to another time. Checks your open
+ * hours. Only the crew you ticked (`crewIds`) are asked and emailed; none ticked = nobody is emailed. A job the customer already confirmed goes back to "call to confirm" for the
  * new day.
  */
-export async function moveJob(jobId: string, newStartISO: string): Promise<ActionResult> {
+export async function moveJob(jobId: string, newStartISO: string, crewIds: string[] = []): Promise<ActionResult> {
   const session = await requireOwner()
-  const parsed = z.object({ jobId: idSchema, start: z.string().datetime({ offset: true }) }).safeParse({ jobId, start: newStartISO })
+  const parsed = z
+    .object({ jobId: idSchema, start: z.string().datetime({ offset: true }), crewIds: z.array(idSchema).max(30) })
+    .safeParse({ jobId, start: newStartISO, crewIds })
   if (!parsed.success) return { ok: false, reason: "Invalid move." }
   try {
     const db = requireSupabaseAdmin()
@@ -105,13 +109,13 @@ export async function moveJob(jobId: string, newStartISO: string): Promise<Actio
 
     const actor = actorOf(session)
     const wasPlaced = job.status !== "unscheduled"
-    const res = await scheduleJobAt(db, jobId, start, end, { actor, siteUrl: siteUrl() })
+    const res = await scheduleJobAt(db, jobId, start, end, { actor, siteUrl: siteUrl(), crewIds: parsed.data.crewIds })
     await retireLegacyBookingApprovals(db, jobId, actor, "Job moved on the schedule; crew re-asked.")
     revalidate()
 
     const crewLine =
       res.asked === 0
-        ? "No crew member can work that slot (hours, time off or another job), so nobody was asked."
+        ? "No crew emailed."
         : `${res.asked} crew member${res.asked === 1 ? "" : "s"} asked${res.emailed ? ` (${res.emailed} emailed)` : ""}.`
     const next = res.reconfirm
       ? " The customer had confirmed the old day: call them to re-confirm."
@@ -289,6 +293,43 @@ export async function markJobDone(jobId: string, hours: number): Promise<ActionR
     revalidatePath("/admin/money")
     revalidatePath("/crew", "layout")
     return { ok: true, message: changed ? "Job done. Collect payment from Money." : "Already marked done." }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+/** Who could work a slot, for the "who should we ask?" picker that opens when you drop a job. */
+export async function crewForSlot(
+  jobId: string,
+  startISO: string,
+  minutes: number,
+): Promise<{ ok: true; crew: CrewChoice[] } | { ok: false; reason: string }> {
+  await requireOwner()
+  const parsed = z
+    .object({ jobId: idSchema, start: z.string().datetime({ offset: true }), minutes: z.number().int().min(1).max(24 * 60) })
+    .safeParse({ jobId, start: startISO, minutes })
+  if (!parsed.success) return { ok: false, reason: "Invalid slot." }
+  try {
+    const start = new Date(parsed.data.start)
+    const end = new Date(start.getTime() + parsed.data.minutes * 60_000)
+    return { ok: true, crew: await crewChoicesForSlot(requireSupabaseAdmin(), { id: jobId }, start, end) }
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/** Ask (and email) more crew about a job already on the calendar. Existing answers stand. */
+export async function askMoreCrew(jobId: string, crewIds: string[]): Promise<ActionResult> {
+  await requireOwner()
+  const parsed = z.object({ jobId: idSchema, crewIds: z.array(idSchema).min(1, "Tick someone first.").max(30) }).safeParse({ jobId, crewIds })
+  if (!parsed.success) return { ok: false, reason: parsed.error.issues[0]?.message ?? "Invalid request." }
+  try {
+    const db = requireSupabaseAdmin()
+    const job = await loadJob(db, jobId)
+    if (!job.start_at || !job.end_at) return { ok: false, reason: "Put the job on the calendar first." }
+    const res = await pollCrewForJob(db, job, { siteUrl: siteUrl(), reset: false, onlyCrewIds: parsed.data.crewIds })
+    revalidate()
+    return { ok: true, message: res.emailed ? `${res.emailed} email${res.emailed === 1 ? "" : "s"} sent.` : "Asked (nobody new to email)." }
   } catch (e) {
     return fail(e)
   }

@@ -7,7 +7,7 @@
 
 export type GeocodeResult = { lat: number; lng: number; formatted: string; parcel_hint?: string };
 
-type Opts = { fetchImpl?: typeof fetch };
+type Opts = { fetchImpl?: typeof fetch; /** Overrides the GEOCODER env for this call. */ provider?: string };
 
 export const NOMINATIM_USER_AGENT_DEFAULT = "emmetts-property-services/1.0 (ops@example.invalid)";
 
@@ -77,7 +77,7 @@ const num = (v: unknown): number | null => {
 
 export async function geocode(address: string, opts: Opts = {}): Promise<GeocodeResult | null> {
   const q = address.trim();
-  const provider = process.env.GEOCODER ?? "none";
+  const provider = opts.provider ?? process.env.GEOCODER ?? "none";
   if (provider === "none" || !q) return null;
   const f = opts.fetchImpl ?? fetch;
 

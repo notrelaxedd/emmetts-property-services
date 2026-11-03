@@ -57,6 +57,8 @@ export type ScheduleDay = {
   /** Owner exception note for the day, if any. */
   note: string | null
   closed: boolean
+  /** A saved snow route that morning ("4:52–6:30am · 12 drives"), linking to the Snow route page. */
+  snow: { label: string; href: string } | null
 }
 
 /** A request the quotes worker hasn't estimated yet (lead `new` / `quoting`). Not draggable yet. */

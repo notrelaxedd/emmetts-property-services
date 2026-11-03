@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/components/ui/toast"
 import { zonedToUtc } from "@/lib/scheduler/time"
 import { cn } from "@/lib/utils"
+import { CrewPicker } from "./crew-picker"
 import { IncomingList } from "./incoming-list"
 import { JobDialog } from "./job-dialog"
 import { fmtDuration, fmtMinutes, hhmm, HATCH_STYLE, LOCKED_STATUSES, STATUS_LABEL, STATUS_SHORT, STATUS_STYLE } from "./status"
@@ -104,14 +105,17 @@ export function ScheduleBoard({
 
   const durationOf = (job: ScheduleJob) => (job.endMin ?? 0) - (job.startMin ?? 0) || Math.max(30, job.estMinutes) || SLOT
 
+  // A drop opens the "who should we email?" picker; the job moves once you confirm.
+  const [drop, setDrop] = React.useState<{ job: ScheduleJob; date: string; startMin: number } | null>(null)
+
   const move = React.useCallback(
-    (job: ScheduleJob, date: string, startMin: number) => {
+    (job: ScheduleJob, date: string, startMin: number, crewIds: string[]) => {
       const duration = durationOf(job)
       if (job.date === date && job.startMin === startMin) return
       setMoved((m) => ({ ...m, [job.id]: { date, startMin, endMin: startMin + duration } }))
       startTransition(async () => {
         const iso = zonedToUtc(date, hhmm(startMin)).toISOString()
-        const res = await moveJob(job.id, iso)
+        const res = await moveJob(job.id, iso, crewIds)
         setMoved((m) => {
           const next = { ...m }
           delete next[job.id]
@@ -173,6 +177,20 @@ export function ScheduleBoard({
 
   return (
     <div className="space-y-4">
+      <CrewPicker
+        open={!!drop}
+        jobId={drop?.job.id ?? null}
+        startISO={drop ? zonedToUtc(drop.date, hhmm(drop.startMin)).toISOString() : null}
+        minutes={drop ? durationOf(drop.job) : 60}
+        title={drop ? `${drop.job.customerName}: ${drop.job.date ? "move" : "put on the calendar"}` : ""}
+        description="Tick who should get the “job available” email. Leave everyone unticked to email nobody."
+        confirmLabel={drop?.job.date ? "Move" : "Put on calendar"}
+        onCancel={() => setDrop(null)}
+        onConfirm={(crewIds) => {
+          if (drop) move(drop.job, drop.date, drop.startMin, crewIds)
+          setDrop(null)
+        }}
+      />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-ink-muted" aria-label="Legend">
         {LEGEND.map((l) => (
           <span key={l.label} className="inline-flex items-center gap-1.5">
@@ -207,6 +225,15 @@ export function ScheduleBoard({
                   >
                     <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{d.weekday}</p>
                     <p className="text-sm font-semibold text-ink">{d.label}</p>
+                    {d.snow ? (
+                      <Link
+                        href={d.snow.href}
+                        className="mt-1 block truncate rounded bg-sky-100 px-1 py-0.5 text-[11px] font-semibold text-sky-900 hover:bg-sky-200"
+                        title={`Snow route ${d.snow.label}`}
+                      >
+                        ❄ {d.snow.label}
+                      </Link>
+                    ) : null}
                     {d.closed ? (
                       <p className="text-[11px] font-medium text-destructive">Closed</p>
                     ) : d.note ? (
@@ -254,7 +281,7 @@ export function ScheduleBoard({
                         drag.current = null
                         setHover(null)
                         const job = allJobs.find((j) => j.id === id)
-                        if (job && startMin !== null) move(job, d.date, startMin)
+                        if (job && startMin !== null && !(job.date === d.date && job.startMin === startMin)) setDrop({ job, date: d.date, startMin })
                       }}
                     >
                       {/* Owner open hours */}
@@ -375,7 +402,7 @@ export function ScheduleBoard({
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Incoming</CardTitle>
             <CardDescription>
-              New requests get estimated on their own. Drag a priced job onto the week; the crew get emailed, then you call the customer.
+              New requests get estimated on their own. Drag a priced job onto the week and tick who to email, then call the customer.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -528,7 +555,7 @@ export function ScheduleBoard({
         days={days}
         open={selected !== null}
         onOpenChange={(o) => !o && setSelectedId(null)}
-        onMove={(date, startMin) => selected && move(selected, date, startMin)}
+        onMove={(date, startMin) => selected && setDrop({ job: selected, date, startMin })}
       />
     </div>
   )

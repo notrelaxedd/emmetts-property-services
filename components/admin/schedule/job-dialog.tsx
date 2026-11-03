@@ -2,8 +2,8 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Banknote, Mail, Phone, RotateCcw, Send } from "lucide-react"
-import { cancelJob, confirmBooking, releaseJob, remindCrew, setWeatherHold, unplaceJob } from "@/app/admin/actions/schedule"
+import { Banknote, Mail, Phone, RotateCcw, Send, UserPlus } from "lucide-react"
+import { askMoreCrew, cancelJob, confirmBooking, releaseJob, remindCrew, setWeatherHold, unplaceJob } from "@/app/admin/actions/schedule"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -21,8 +21,10 @@ import { NativeSelect } from "@/components/ui/native-select"
 import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/components/ui/toast"
 import type { PaymentMethod } from "@/lib/db/types"
+import { zonedToUtc } from "@/lib/scheduler/time"
 import { PAYMENT_METHOD_LABEL, PAYMENT_METHODS } from "@/lib/ops/payment-methods"
-import { CREW_ANSWER, fmtDuration, fmtMinutes, fmtPhone, LOCKED_STATUSES, STATUS_LABEL, telHref } from "./status"
+import { CrewPicker } from "./crew-picker"
+import { CREW_ANSWER, fmtDuration, fmtMinutes, fmtPhone, hhmm, LOCKED_STATUSES, STATUS_LABEL, telHref } from "./status"
 import type { ScheduleDay, ScheduleJob } from "./types"
 
 const TIMES = Array.from({ length: 26 }, (_, i) => 7 * 60 + i * 30)
@@ -45,6 +47,7 @@ export function JobDialog({
   const { toast } = useToast()
   const [pending, startTransition] = React.useTransition()
   const [confirmCancel, setConfirmCancel] = React.useState(false)
+  const [asking, setAsking] = React.useState(false)
   const [date, setDate] = React.useState("")
   const [start, setStart] = React.useState(9 * 60)
   const [method, setMethod] = React.useState<PaymentMethod>("check")
@@ -173,14 +176,21 @@ export function JobDialog({
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-medium text-ink">{job.status === "booked" ? "Crew on the job" : "Who's free"}</p>
                 {onCalendar ? (
-                  <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={pending} onClick={() => run(() => remindCrew(job.id), "Couldn't email the crew")}>
-                    <Send aria-hidden="true" /> Ask again
-                  </Button>
+                  <span className="flex gap-1">
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={pending} onClick={() => setAsking(true)}>
+                      <UserPlus aria-hidden="true" /> Ask crew
+                    </Button>
+                    {job.crew.length ? (
+                      <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={pending} onClick={() => run(() => remindCrew(job.id), "Couldn't email the crew")}>
+                        <Send aria-hidden="true" /> Ask again
+                      </Button>
+                    ) : null}
+                  </span>
                 ) : null}
               </div>
               {job.crew.length === 0 ? (
                 <p className="text-xs text-ink-muted">
-                  Nobody was asked: no crew member has hours covering this slot (or they&apos;re paused / on another job). Move the job, or book it with just you.
+                  Nobody was emailed about this job. Use Ask crew to email the people you want, or book it with just you.
                 </p>
               ) : (
                 <ul className="space-y-1.5">
@@ -377,6 +387,23 @@ export function JobDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {(
+        <CrewPicker
+          open={asking}
+          jobId={job.id}
+          startISO={job.date !== null && job.startMin !== null ? zonedToUtc(job.date, hhmm(job.startMin)).toISOString() : null}
+          minutes={Math.max(30, (job.endMin ?? 0) - (job.startMin ?? 0) || job.estMinutes)}
+          title={`Ask crew about ${job.customerName}`}
+          description="Tick who should get the “job available” email."
+          confirmLabel="Send"
+          allowNone={false}
+          onCancel={() => setAsking(false)}
+          onConfirm={(ids) => {
+            setAsking(false)
+            run(() => askMoreCrew(job.id, ids), "Couldn't email the crew")
+          }}
+        />
+      )}
     </>
   )
 }

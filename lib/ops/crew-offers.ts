@@ -135,11 +135,22 @@ export type PollResult = {
  * (existing rows go back to `offered`, answers cleared), rows of crew who can't make the new slot are
  * removed, swap offers are withdrawn. `reset: false` (top up): only eligible crew without a row are
  * added; existing answers stand. Then everyone with an unsent offer is emailed.
+ *
+ * `onlyCrewIds` (the owner ticked names when placing the job): those crew are "eligible" and nobody
+ * else, whatever their hours say. An empty list asks and emails nobody.
  */
-export async function pollCrewForJob(db: Db, job: Job, opts: { siteUrl: string; reset: boolean }): Promise<PollResult> {
+export async function pollCrewForJob(
+  db: Db,
+  job: Job,
+  opts: { siteUrl: string; reset: boolean; onlyCrewIds?: string[] },
+): Promise<PollResult> {
   if (!job.start_at || !job.end_at) throw new Error("pollCrewForJob: the job is not on the calendar");
   const input = await loadEligibilityInput(db, job);
-  const { eligible, skipped } = eligibleCrewForSlot(input);
+  const auto = eligibleCrewForSlot(input);
+  // The owner ticked who to ask: exactly those (unpaused) crew, nobody else. Empty = nobody is emailed.
+  const chosen = opts.onlyCrewIds ? new Set(opts.onlyCrewIds) : null;
+  const eligible = chosen ? input.crew.filter((c) => chosen.has(c.id) && !c.paused) : auto.eligible;
+  const skipped = chosen ? auto.skipped.filter((s) => chosen.has(s.crew.id)) : auto.skipped;
   const eligibleIds = new Set(eligible.map((c) => c.id));
   const existing = check(await db.from("job_assignments").select("*").eq("job_id", job.id), "poll(existing)") ?? [];
 
@@ -299,4 +310,18 @@ export async function assignmentByToken(db: Db, token: string): Promise<JobAssig
 /** Convenience for callers that hold only an id. */
 export async function loadJob(db: Db, jobId: string): Promise<Job> {
   return one(await db.from("jobs").select("*").eq("id", jobId).maybeSingle(), `job ${jobId}`);
+}
+
+export type CrewChoice = { id: string; name: string; free: boolean; why: CrewSkipReason | null; hasEmail: boolean };
+
+/** Every active crew member with whether their hours / time off / other jobs fit a slot (for the "who to ask" picker). */
+export async function crewChoicesForSlot(db: Db, job: Pick<Job, "id">, start: Date, end: Date): Promise<CrewChoice[]> {
+  const input = await loadEligibilityInput(db, { id: job.id, start_at: start.toISOString(), end_at: end.toISOString() });
+  const { eligible, skipped } = eligibleCrewForSlot(input);
+  const free = new Set(eligible.map((c) => c.id));
+  const why = new Map(skipped.map((s) => [s.crew.id, s.why]));
+  return input.crew
+    .filter((c) => !c.paused)
+    .map((c) => ({ id: c.id, name: c.name, free: free.has(c.id), why: why.get(c.id) ?? null, hasEmail: !!c.email }))
+    .sort((a, b) => Number(b.free) - Number(a.free) || a.name.localeCompare(b.name));
 }

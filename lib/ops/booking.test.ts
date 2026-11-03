@@ -68,6 +68,19 @@ describe("scheduleJobAt (drag onto the calendar)", () => {
     expect(String(db.tables.approvals[0].title)).toMatch(/^Re-confirm with Pat Smith: Tue Oct 13/);
   });
 
+  it("only asks and emails the crew the owner ticked; none ticked emails nobody", async () => {
+    const db = world();
+    const res = await scheduleJobAt(db, "j1", START, END, { ...ctx, crewIds: ["B"] });
+    expect(res).toMatchObject({ asked: 1, emailed: 1 });
+    expect(db.tables.job_assignments.map((a) => a.crew_id)).toEqual(["B"]);
+
+    const none = world();
+    const r2 = await scheduleJobAt(none, "j1", START, END, { ...ctx, crewIds: [] });
+    expect(r2).toMatchObject({ asked: 0, emailed: 0 });
+    expect(none.tables.job_assignments ?? []).toHaveLength(0);
+    expect(none.tables.jobs[0]).toMatchObject({ status: "proposed" });
+  });
+
   it("refuses a job that already started", async () => {
     const db = world({ status: "in_progress", start_at: START.toISOString(), end_at: END.toISOString() });
     await expect(scheduleJobAt(db, "j1", START, END, ctx)).rejects.toThrow(/can't be moved/);

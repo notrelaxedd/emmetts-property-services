@@ -709,6 +709,67 @@ export type CanvassSettings = Base & {
 
 export const CANVASS_SETTINGS_ID = "00000000-0000-0000-0000-000000000001";
 
+// ---------- snow removal ----------
+
+export type SnowPlan = "low" | "medium" | "high" | "per_push";
+export const SNOW_PLANS: SnowPlan[] = ["low", "medium", "high", "per_push"];
+
+export type SnowSettings = Base & {
+  low_price: number;
+  medium_price: number;
+  high_price: number;
+  /** Pushes included per month on each tier; null = unlimited. */
+  low_pushes: number | null;
+  medium_pushes: number | null;
+  high_pushes: number | null;
+  default_per_push: number;
+  /** "HH:MM:SS": every driveway done by this time. */
+  finish_by: string;
+  default_minutes: number;
+  drive_mph: number;
+  trigger_inches: number;
+};
+export const SNOW_SETTINGS_ID = "00000000-0000-0000-0000-000000000001";
+
+export type SnowCustomer = Base & {
+  customer_id: string;
+  plan: SnowPlan;
+  per_push_price: number | null;
+  est_minutes: number | null;
+  notes: string | null;
+  active: boolean;
+};
+
+export type SnowPush = Base & {
+  snow_customer_id: string;
+  pushed_at: string;
+  price: number | null;
+  logged_by: string | null;
+  note: string | null;
+};
+
+/** One stop on a saved route (stored as JSON). */
+export type SnowRouteStop = {
+  snow_customer_id: string;
+  name: string;
+  address: string | null;
+  truck: number;
+  /** ISO times. */
+  arrive_at: string;
+  done_at: string;
+  minutes: number;
+};
+
+export type SnowRoute = Base & {
+  run_date: string;
+  start_at: string;
+  finish_at: string;
+  trucks: number;
+  stops: SnowRouteStop[];
+  note: string | null;
+};
+
+
 // ---------- supabase-js Database generic ----------
 
 type Table<R> = { Row: R; Insert: Partial<R>; Update: Partial<R>; Relationships: [] };
@@ -751,6 +812,10 @@ export type Database = {
       canvass_plans: Table<CanvassPlan>;
       canvass_summaries: Table<CanvassSummary>;
       canvass_settings: Table<CanvassSettings>;
+      snow_settings: Table<SnowSettings>;
+      snow_customers: Table<SnowCustomer>;
+      snow_pushes: Table<SnowPush>;
+      snow_routes: Table<SnowRoute>;
     };
     Views: {
       /** Crew-safe view of jobs: no prices, no customer phone/email. */
@@ -811,6 +876,7 @@ export type Database = {
       knock_outcome: KnockOutcome;
       hanger_event: HangerEventKind;
       home_pattern: HomePattern;
+      snow_plan: SnowPlan;
     };
     CompositeTypes: Record<string, never>;
   };

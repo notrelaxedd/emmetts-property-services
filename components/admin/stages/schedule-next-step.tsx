@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { CalendarPlus, CheckCircle2, PhoneCall } from "lucide-react"
 import { confirmBooking, markJobDone, moveJob } from "@/app/admin/actions/schedule"
+import { CrewPicker } from "@/components/admin/schedule/crew-picker"
 import { fmtMinutes, hhmm } from "@/components/admin/schedule/status"
 import type { ScheduleJob } from "@/components/admin/schedule/types"
 import { Button } from "@/components/ui/button"
@@ -27,6 +28,7 @@ export function ScheduleNextStep({ job, quoteHref }: { job: ScheduleJob; quoteHr
   const { toast } = useToast()
   const [pending, startTransition] = React.useTransition()
   const [open, setOpen] = React.useState(false)
+  const [picking, setPicking] = React.useState(false)
   const [date, setDate] = React.useState(() => addDays(localDate(new Date()), 1))
   const [start, setStart] = React.useState(9 * 60)
   const [method, setMethod] = React.useState<PaymentMethod>(job.quote?.paymentMethod ?? "check")
@@ -56,9 +58,23 @@ export function ScheduleNextStep({ job, quoteHref }: { job: ScheduleJob; quoteHr
         onSubmit={(e) => {
           e.preventDefault()
           if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return
-          run(() => moveJob(job.id, zonedToUtc(date, hhmm(start)).toISOString()), "Can't put the job there")
+          setPicking(true)
         }}
       >
+        <CrewPicker
+          open={picking}
+          jobId={job.id}
+          startISO={/^\d{4}-\d{2}-\d{2}$/.test(date) ? zonedToUtc(date, hhmm(start)).toISOString() : null}
+          minutes={Math.max(30, job.estMinutes)}
+          title={`${job.customerName}: put on the calendar`}
+          description="Tick who should get the “job available” email. Leave everyone unticked to email nobody."
+          confirmLabel="Put on calendar"
+          onCancel={() => setPicking(false)}
+          onConfirm={(crewIds) => {
+            setPicking(false)
+            run(() => moveJob(job.id, zonedToUtc(date, hhmm(start)).toISOString(), crewIds), "Can't put the job there")
+          }}
+        />
         <div className="grid gap-1">
           <Label htmlFor={ids.date}>Day</Label>
           <Input id={ids.date} type="date" value={date} required onChange={(e) => setDate(e.target.value)} />
