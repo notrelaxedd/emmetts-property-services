@@ -19,3 +19,17 @@ describe("mowing schedule", () => {
     expect(dueOnDate({ ...c, active: false }, "2026-05-06", false)).toBe(false);
   });
 });
+
+describe("mowing season", () => {
+  it("nothing is due outside the season dates", async () => {
+    const { inSeason, dueOnDate } = await import("./schedule");
+    const season = { season_start: "2026-04-01", season_end: "2026-11-30" };
+    expect(inSeason(season, "2026-03-31")).toBe(false);
+    expect(inSeason(season, "2026-04-01")).toBe(true);
+    expect(inSeason(season, "2026-12-01")).toBe(false);
+    expect(inSeason({ season_start: null, season_end: null }, "2026-01-15")).toBe(true);
+    const c = { frequency: "weekly" as const, anchor_date: "2026-04-06", preferred_day: null, active: true };
+    expect(dueOnDate(c, "2026-12-02", false, season)).toBe(false);
+    expect(dueOnDate(c, "2026-06-02", false, season)).toBe(true);
+  });
+});

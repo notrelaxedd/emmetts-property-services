@@ -14,12 +14,23 @@ export function dueThisWeek(frequency: MowFrequency, anchorDate: string, date: s
   return Math.abs(weeksBetween(anchorDate, date)) % 2 === 0;
 }
 
-/** Due that week, not cut yet that week, and the day matches their preferred day (or they have none). */
+export type Season = { season_start: string | null; season_end: string | null };
+
+/** Inside the mowing season (either end may be open). */
+export function inSeason(season: Season, date: string): boolean {
+  if (season.season_start && date < season.season_start) return false;
+  if (season.season_end && date > season.season_end) return false;
+  return true;
+}
+
+/** In season, due that week, not cut yet that week, and the day matches their preferred day (or they have none). */
 export function dueOnDate(
   c: { frequency: MowFrequency; anchor_date: string; preferred_day: number | null; active: boolean },
   date: string,
   cutThisWeek: boolean,
+  season: Season = { season_start: null, season_end: null },
 ): boolean {
+  if (!inSeason(season, date)) return false;
   if (!c.active || cutThisWeek || !dueThisWeek(c.frequency, c.anchor_date, date)) return false;
   if (c.preferred_day === null) return true;
   return new Date(`${date}T12:00:00Z`).getUTCDay() === c.preferred_day;

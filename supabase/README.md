@@ -21,6 +21,7 @@ one that has already been applied to the real project).
 | `20261103002100_snow.sql` | Snow tab: enum `snow_plan`; tables `snow_settings` (single row: plan prices, finish-by, route defaults), `snow_customers`, `snow_pushes` (push log), `snow_routes` (saved mornings, shown on the Jobs calendar); owner-only RLS |
 | `20261103002300_snow_bills.sql` | Snow monthly bills: `snow_bills` (amount, pushes, pay method, paid) and `snow_customers.pay_method` |
 | `20261103002400_mowing.sql` | Mowing tab: enum `mow_frequency`; tables `mow_settings`, `mow_customers` (weekly / biweekly, price per cut), `mow_cuts`, `mow_routes`, `mow_bills`; owner-only RLS |
+| `20261103002500_mow_season.sql` | `mow_settings.season_start` / `season_end`: outside them no lawn is due |
 | `20261030001800_canvass.sql` | Canvass tab: enums `knock_outcome`, `hanger_event`, `home_pattern`; tables `parcels`, `block_groups`, `knocks`, `pitches`, `hanger_codes`, `hanger_events`, `canvass_plans`, `canvass_summaries`, `canvass_settings` (single row); crew policies; seeds the settings row and three pitches |
 | `20261031001900_canvass_v3.sql` | Canvass v3: lot-size price tiers, tier minutes, crew size / pay rate, score weights, walk doors on `canvass_settings` (old per-sqft pricing columns dropped); `parcels.state`; crew no longer reads `canvass_settings` |
 

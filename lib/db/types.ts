@@ -785,6 +785,9 @@ export type MowSettings = Base & {
   drive_mph: number;
   /** "HH:MM:SS" route start. */
   start_time: string;
+  /** "YYYY-MM-DD"; outside the season nothing is due. Null = no limit. */
+  season_start: string | null;
+  season_end: string | null;
 };
 export const MOW_SETTINGS_ID = "00000000-0000-0000-0000-000000000001";
 

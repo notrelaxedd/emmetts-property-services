@@ -4,7 +4,7 @@ import { nextMonth } from "@/components/admin/snow/load"
 import { opsConfig } from "@/lib/config"
 import type { Customer, MowBill, MowCustomer, MowCut, MowSettings, SnowPayMethod } from "@/lib/db/types"
 import { MOW_SETTINGS_ID } from "@/lib/db/types"
-import { dueOnDate, dueThisWeek } from "@/lib/mowing/schedule"
+import { dueOnDate, dueThisWeek, inSeason } from "@/lib/mowing/schedule"
 import { getSettings } from "@/lib/ops/settings"
 import { check } from "@/lib/ops/types"
 import type { Db } from "@/lib/ops/types"
@@ -19,6 +19,8 @@ export const DEFAULT_MOW_SETTINGS: MowSettings = {
   default_minutes: 30,
   drive_mph: 25,
   start_time: "08:00:00",
+  season_start: null,
+  season_end: null,
 }
 
 export async function loadMowSettings(db: Db): Promise<MowSettings> {
@@ -35,22 +37,27 @@ export type MowRow = {
   monthTotal: number
   seasonCuts: number
   lastCut: string | null
-  /** Due in the week of `date` (weekly, or biweekly on-week). */
+  /** Due in the week of `date` (in season, and weekly or biweekly on-week). */
   dueWeek: boolean
   /** Already cut in the week of `date`. */
   cutWeek: boolean
 }
 
 /** Every mowing customer with this month's cuts and whether they're due / cut the week of `date`. THROWS on a query error. */
-export async function loadMowRows(db: Db, date = localDate(new Date())): Promise<{ settings: MowSettings; rows: MowRow[] }> {
-  const season = zonedToUtc(`${date.slice(0, 4)}-01-01`, "00:00").toISOString()
+export async function loadMowRows(
+  db: Db,
+  date = localDate(new Date()),
+): Promise<{ settings: MowSettings; rows: MowRow[]; inSeason: boolean }> {
   const month = zonedToUtc(`${date.slice(0, 7)}-01`, "00:00").toISOString()
   const week = weekStart(date)
   const weekFrom = zonedToUtc(week, "00:00").toISOString()
   const weekTo = zonedToUtc(addDays(week, 7), "00:00").toISOString()
   const [settings, mcsRes] = await Promise.all([loadMowSettings(db), db.from("mow_customers").select("*").order("created_at")])
+  const open = inSeason(settings, date)
+  // "This season" counts from the season start (or Jan 1 when none is set).
+  const season = zonedToUtc(settings.season_start && settings.season_start <= date ? settings.season_start : `${date.slice(0, 4)}-01-01`, "00:00").toISOString()
   const list = check(mcsRes, "mow customers") ?? []
-  if (!list.length) return { settings, rows: [] }
+  if (!list.length) return { settings, rows: [], inSeason: open }
   const [customers, cuts] = await Promise.all([
     db.from("customers").select("id,name,address,phone,email,lat,lng").in("id", list.map((m) => m.customer_id)),
     db.from("mow_cuts").select("mow_customer_id,cut_at,price").gte("cut_at", season).order("cut_at", { ascending: false }),
@@ -67,19 +74,19 @@ export async function loadMowRows(db: Db, date = localDate(new Date())): Promise
       monthTotal: thisMonth.reduce((a, c) => a + Number(c.price), 0),
       seasonCuts: mine.length,
       lastCut: mine[0]?.cut_at ?? null,
-      dueWeek: dueThisWeek(mc.frequency, mc.anchor_date, date),
+      dueWeek: open && dueThisWeek(mc.frequency, mc.anchor_date, date),
       cutWeek: mine.some((c) => c.cut_at >= weekFrom && c.cut_at < weekTo),
     }
   })
   rows.sort((a, b) => Number(b.mc.active) - Number(a.mc.active) || a.customer.name.localeCompare(b.customer.name))
-  return { settings, rows }
+  return { settings, rows, inSeason: open }
 }
 
 /** One day's mowing route: customers due that day, from the shop, starting at the start time. */
-export async function loadMowRoutePlan(db: Db, date: string, trucks: number): Promise<{ plan: RoutePlan; settings: MowSettings; rows: MowRow[]; due: MowRow[] }> {
-  const [{ settings, rows }, ops] = await Promise.all([loadMowRows(db, date), getSettings(db)])
+export async function loadMowRoutePlan(db: Db, date: string, trucks: number): Promise<{ plan: RoutePlan; settings: MowSettings; rows: MowRow[]; due: MowRow[]; inSeason: boolean }> {
+  const [{ settings, rows, inSeason: open }, ops] = await Promise.all([loadMowRows(db, date), getSettings(db)])
   const base = { lat: ops.base_lat ?? opsConfig.defaultBase.lat, lng: ops.base_lng ?? opsConfig.defaultBase.lng }
-  const due = rows.filter((r) => dueOnDate(r.mc, date, r.cutWeek))
+  const due = rows.filter((r) => dueOnDate(r.mc, date, r.cutWeek, settings))
   const plan = planSnowRoute({
     base,
     trucks,
@@ -94,7 +101,7 @@ export async function loadMowRoutePlan(db: Db, date: string, trucks: number): Pr
       minutes: r.mc.est_minutes ?? settings.default_minutes,
     })),
   })
-  return { plan, settings, rows, due }
+  return { plan, settings, rows, due, inSeason: open }
 }
 
 export type MowBillRow = {

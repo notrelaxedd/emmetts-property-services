@@ -20,6 +20,8 @@ export const metadata = { title: "Mowing" }
 
 const usd = (n: number) => `$${n.toFixed(2).replace(/\.00$/, "")}`
 const when = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric" })
+const day = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" })
+const fmt = (d: string | null) => (d ? day.format(new Date(`${d}T12:00:00Z`)) : null)
 
 export default async function MowingPage() {
   await requireOwner()
@@ -50,6 +52,15 @@ export default async function MowingPage() {
         description={`${active.length} lawns · ${dueLeft} still to cut this week · about ${usd(weekly)}/week · ${usd(monthTotal)} cut this month`}
       />
       <MowingTabs active="customers" />
+      {data ? (
+        <p className={data.inSeason ? "text-sm text-ink-muted" : "rounded-md border border-amber-400 bg-amber-100 px-3 py-2 text-sm text-amber-950"}>
+          {data.inSeason ? "Season: " : "Off season. Nothing is due until the season starts. Season: "}
+          {fmt(data.settings.season_start) ?? "open"} – {fmt(data.settings.season_end) ?? "open"}{" "}
+          <Link href="/admin/mowing/settings" className="underline">
+            Change
+          </Link>
+        </p>
+      ) : null}
       {error ? (
         <Alert variant="destructive">
           <AlertDescription>Couldn&apos;t load mowing: {error}</AlertDescription>
@@ -71,7 +82,8 @@ export default async function MowingPage() {
                     {!r.mc.active ? <Badge variant="outline">Paused</Badge> : null}
                     {r.mc.active && r.cutWeek ? <Badge variant="success">Cut this week</Badge> : null}
                     {r.mc.active && r.dueWeek && !r.cutWeek ? <Badge variant="warning">Due this week</Badge> : null}
-                    {r.mc.active && !r.dueWeek ? <Badge variant="outline">Off week</Badge> : null}
+                    {r.mc.active && !r.dueWeek && data.inSeason ? <Badge variant="outline">Off week</Badge> : null}
+                    {r.mc.active && !data.inSeason ? <Badge variant="outline">Off season</Badge> : null}
                   </p>
                   <p className="flex items-center gap-1 truncate text-sm text-ink-body">
                     {r.customer.lat === null ? <MapPinOff className="size-3.5 shrink-0 text-amber-600" aria-label="Not on the map" /> : null}
@@ -80,7 +92,7 @@ export default async function MowingPage() {
                   <p className="text-xs text-ink-muted">
                     {r.mc.est_minutes ?? data.settings.default_minutes} min
                     {r.mc.preferred_day !== null ? ` · ${WEEKDAYS[r.mc.preferred_day]}s` : ""} · {r.monthCuts} cut{r.monthCuts === 1 ? "" : "s"} this month (
-                    {usd(r.monthTotal)}){r.lastCut ? ` · last ${when.format(new Date(r.lastCut))}` : ""}
+                    {usd(r.monthTotal)}) · {r.seasonCuts} this season{r.lastCut ? ` · last ${when.format(new Date(r.lastCut))}` : ""}
                   </p>
                 </div>
                 <CutButton id={r.mc.id} name={r.customer.name} />

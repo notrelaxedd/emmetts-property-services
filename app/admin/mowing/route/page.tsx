@@ -76,8 +76,12 @@ export default async function MowRoutePage({ searchParams }: { searchParams: { d
       ) : data && !error ? (
         <EmptyState
           icon={Truck}
-          title="No lawns due that day"
-          description="Lawns show up on their mow day (or any day if none is set) in a week they're due and not cut yet."
+          title={data.inSeason ? "No lawns due that day" : "That day is outside the mowing season"}
+          description={
+            data.inSeason
+              ? "Lawns show up on their mow day (or any day if none is set) in a week they're due and not cut yet."
+              : "Change the season dates in Mowing settings if you're still cutting."
+          }
         />
       ) : null}
 

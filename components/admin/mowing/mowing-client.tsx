@@ -266,6 +266,8 @@ export function MowSettingsForm({ settings }: { settings: MowSettings }) {
     default_minutes: String(settings.default_minutes),
     drive_mph: String(settings.drive_mph),
     start_time: settings.start_time.slice(0, 5),
+    season_start: settings.season_start ?? "",
+    season_end: settings.season_end ?? "",
   })
   const field = (key: keyof typeof v, label: string, props: React.InputHTMLAttributes<HTMLInputElement>) => (
     <div className="grid gap-1.5">
@@ -283,10 +285,23 @@ export function MowSettingsForm({ settings }: { settings: MowSettings }) {
             default_minutes: Number(v.default_minutes),
             drive_mph: Number(v.drive_mph),
             start_time: v.start_time,
+            season_start: v.season_start || null,
+            season_end: v.season_end || null,
           }),
         )
       }}
+      className="space-y-4"
     >
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Season</CardTitle>
+          <CardDescription>Outside these dates no lawn is due and the route is empty. Leave one blank for no limit.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {field("season_start", "Season starts", { type: "date" })}
+          {field("season_end", "Season ends", { type: "date" })}
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Defaults</CardTitle>

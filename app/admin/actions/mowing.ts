@@ -122,6 +122,8 @@ const SettingsSchema = z.object({
   default_minutes: z.coerce.number().int().min(1).max(480),
   drive_mph: z.coerce.number().min(1).max(80),
   start_time: z.string().regex(/^\d{2}:\d{2}$/, "Pick a start time."),
+  season_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  season_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
 })
 
 export async function saveMowSettings(input: z.input<typeof SettingsSchema>): Promise<ActionResult> {
@@ -129,6 +131,8 @@ export async function saveMowSettings(input: z.input<typeof SettingsSchema>): Pr
   try {
     const parsed = SettingsSchema.safeParse(input)
     if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the numbers." }
+    const { season_start, season_end } = parsed.data
+    if (season_start && season_end && season_end < season_start) return { ok: false, error: "The season has to end after it starts." }
     check(
       await requireSupabaseAdmin().from("mow_settings").upsert({ id: MOW_SETTINGS_ID, ...parsed.data, start_time: `${parsed.data.start_time}:00` }),
       "mow(settings)",
