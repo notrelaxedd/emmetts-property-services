@@ -1,6 +1,6 @@
 import "server-only"
 
-import type { ScheduleCrew, ScheduleJob } from "@/components/admin/schedule/types"
+import type { Incoming, ScheduleCrew, ScheduleJob } from "@/components/admin/schedule/types"
 import { initials } from "@/components/admin/stages/stages"
 import type { AssignmentStatus, Job, PaymentMethod } from "@/lib/db/types"
 import type { Db } from "@/lib/ops/types"
@@ -93,4 +93,59 @@ export async function loadScheduleJobs(db: Db, jobs: Job[]): Promise<(j: Job) =>
   }
 
   return toScheduleJob
+}
+
+/**
+ * What's coming in ahead of the "Ready to schedule" rail: requests still being estimated, and quotes
+ * with nothing priced yet (no job to drag until you set a price). THROWS on a query error.
+ */
+export async function loadIncoming(db: Db, limit = 50): Promise<Incoming> {
+  const [leads, quotes] = await Promise.all([
+    db.from("leads").select("id,customer_id,requested_service_ids,custom_request,created_at").in("status", ["new", "quoting"]).order("created_at").limit(limit),
+    db.from("quotes").select("id,customer_id,created_at").in("status", ["needs_owner", "draft"]).order("created_at").limit(limit),
+  ])
+  for (const r of [leads, quotes]) if (r.error) throw new Error(r.error.message)
+  const leadRows = (leads.data ?? []) as { id: string; customer_id: string; requested_service_ids: string[]; custom_request: string | null; created_at: string }[]
+  const quoteRows = (quotes.data ?? []) as { id: string; customer_id: string; created_at: string }[]
+
+  const quoteIds = quoteRows.map((q) => q.id)
+  const none = Promise.resolve({ data: [], error: null })
+  const [jobs, items] = await Promise.all([
+    quoteIds.length ? db.from("jobs").select("quote_id").in("quote_id", quoteIds).neq("status", "cancelled") : none,
+    quoteIds.length ? db.from("quote_items").select("quote_id,description,sort_order").in("quote_id", quoteIds) : none,
+  ])
+  for (const r of [jobs, items]) if (r.error) throw new Error(r.error.message)
+  const withJob = new Set(((jobs.data ?? []) as { quote_id: string | null }[]).map((j) => j.quote_id))
+  const waiting = quoteRows.filter((q) => !withJob.has(q.id))
+
+  const serviceIds = Array.from(new Set(leadRows.flatMap((l) => l.requested_service_ids ?? [])))
+  const customerIds = Array.from(new Set([...leadRows, ...waiting].map((r) => r.customer_id)))
+  const [services, customers] = await Promise.all([
+    serviceIds.length ? db.from("services").select("id,name").in("id", serviceIds) : none,
+    customerIds.length ? db.from("customers").select("id,name,address").in("id", customerIds) : none,
+  ])
+  for (const r of [services, customers]) if (r.error) throw new Error(r.error.message)
+  const serviceName = new Map(((services.data ?? []) as { id: string; name: string }[]).map((s) => [s.id, s.name]))
+  const customer = new Map(((customers.data ?? []) as { id: string; name: string; address: string | null }[]).map((c) => [c.id, c]))
+  const itemsByQuote = new Map<string, string[]>()
+  for (const i of ((items.data ?? []) as { quote_id: string; description: string; sort_order: number }[]).sort((a, b) => a.sort_order - b.sort_order)) {
+    itemsByQuote.set(i.quote_id, [...(itemsByQuote.get(i.quote_id) ?? []), i.description])
+  }
+
+  return {
+    estimating: leadRows.map((l) => ({
+      leadId: l.id,
+      customerName: customer.get(l.customer_id)?.name ?? "Customer",
+      address: customer.get(l.customer_id)?.address ?? null,
+      services: [...(l.requested_service_ids ?? []).map((id) => serviceName.get(id) ?? "Service"), ...(l.custom_request ? ["Custom request"] : [])],
+      createdAt: l.created_at,
+    })),
+    needsPrice: waiting.map((q) => ({
+      quoteId: q.id,
+      customerName: customer.get(q.customer_id)?.name ?? "Customer",
+      address: customer.get(q.customer_id)?.address ?? null,
+      services: itemsByQuote.get(q.id) ?? [],
+      createdAt: q.created_at,
+    })),
+  }
 }

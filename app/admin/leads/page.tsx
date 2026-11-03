@@ -1,10 +1,6 @@
-import { LeadsBody, parseLeadStatus } from "@/components/admin/stages/leads-body"
-import { requireOwner } from "@/lib/auth/session"
+import { redirect } from "next/navigation"
 
-export const dynamic = "force-dynamic"
-export const metadata = { title: "Leads" }
-
-export default async function LeadsPage({ searchParams }: { searchParams: { status?: string } }) {
-  await requireOwner()
-  return <LeadsBody status={parseLeadStatus(searchParams.status)} />
+/** Leads now live on Jobs: incoming requests, their estimates, and the calendar in one place. */
+export default function Page() {
+  redirect("/admin/schedule")
 }

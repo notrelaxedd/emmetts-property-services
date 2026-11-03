@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { CloudLightning, GripVertical, Play } from "lucide-react"
 import { moveJob, releaseJob, runScheduler } from "@/app/admin/actions/schedule"
 import { Badge } from "@/components/ui/badge"
@@ -11,9 +12,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/components/ui/toast"
 import { zonedToUtc } from "@/lib/scheduler/time"
 import { cn } from "@/lib/utils"
+import { IncomingList } from "./incoming-list"
 import { JobDialog } from "./job-dialog"
 import { fmtDuration, fmtMinutes, hhmm, HATCH_STYLE, LOCKED_STATUSES, STATUS_LABEL, STATUS_SHORT, STATUS_STYLE } from "./status"
-import type { ScheduleDay, ScheduleJob } from "./types"
+import type { Incoming, ScheduleDay, ScheduleJob } from "./types"
 
 const DAY_START = 7 * 60
 const DAY_END = 20 * 60
@@ -78,6 +80,7 @@ export function ScheduleBoard({
   extra = [],
   hasWindows,
   focusJobId = null,
+  incoming = { estimating: [], needsPrice: [] },
 }: {
   days: ScheduleDay[]
   jobs: ScheduleJob[]
@@ -86,6 +89,8 @@ export function ScheduleBoard({
   extra?: ScheduleJob[]
   hasWindows: boolean
   focusJobId?: string | null
+  /** Requests still being estimated / waiting on your price, shown above the draggable jobs. */
+  incoming?: Incoming
 }) {
   const { toast } = useToast()
   const [pending, startTransition] = React.useTransition()
@@ -365,15 +370,17 @@ export function ScheduleBoard({
           ) : null}
         </Card>
 
-        {/* The rail: estimated quotes waiting for a day */}
-        <Card className="h-fit">
+        {/* The rail: incoming requests → estimated → drag onto the week */}
+        <Card className="h-fit xl:sticky xl:top-4">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Needs a day</CardTitle>
+            <CardTitle className="text-base">Incoming</CardTitle>
             <CardDescription>
-              Drag a quote onto the calendar. The crew get emailed to say if they&apos;re free, then you call the customer to confirm.
+              New requests get estimated on their own. Drag a priced job onto the week; the crew get emailed, then you call the customer.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
+            <IncomingList incoming={incoming} />
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Ready to schedule</h3>
             {railShown.length === 0 ? (
               <p className="text-sm text-ink-muted">Nothing waiting.</p>
             ) : (
@@ -417,6 +424,11 @@ export function ScheduleBoard({
                       </span>
                     </span>
                   </div>
+                  {j.quote?.needsOwner ? (
+                    <Button asChild variant="ghost" size="sm" className="h-7 w-full text-xs">
+                      <Link href={`/admin/quotes/${j.quote.id}`}>Set the rest of the price</Link>
+                    </Button>
+                  ) : null}
                   {j.ownerHold ? (
                     <Button
                       variant="ghost"

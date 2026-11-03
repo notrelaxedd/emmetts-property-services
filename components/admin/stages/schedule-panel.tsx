@@ -1,8 +1,9 @@
 import Link from "next/link"
 import { CalendarDays } from "lucide-react"
-import { loadScheduleJobs } from "@/app/admin/schedule/load"
+import { loadIncoming, loadScheduleJobs } from "@/app/admin/schedule/load"
 import { money } from "@/components/admin/inbox/format"
-import type { ScheduleJob } from "@/components/admin/schedule/types"
+import { IncomingList } from "@/components/admin/schedule/incoming-list"
+import type { Incoming, ScheduleJob } from "@/components/admin/schedule/types"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -32,14 +33,16 @@ function order(a: ScheduleJob, b: ScheduleJob): number {
 }
 
 /**
- * The front page's Schedule stage: every job that isn't done or cancelled, with one next-step button
- * each (the same booking actions as the schedule board). The drag-and-drop board stays on its page.
+ * The front page's Jobs stage: requests being estimated or waiting on your price, then every job that
+ * isn't done or cancelled with one next-step button each. The drag-and-drop calendar is on /admin/schedule.
  */
 export async function SchedulePanel() {
   let jobs: ScheduleJob[] = []
+  let incoming: Incoming = { estimating: [], needsPrice: [] }
   let error: string | null = null
   try {
     const db = requireSupabaseAdmin()
+    incoming = await loadIncoming(db)
     const rows: Job[] =
       check(
         await db.from("jobs").select("*").not("status", "in", "(done,cancelled)").order("start_at", { ascending: true, nullsFirst: true }).limit(LIMIT),
@@ -54,7 +57,7 @@ export async function SchedulePanel() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-ink-muted">Drag jobs around the week on the full schedule.</p>
+        <p className="text-sm text-ink-muted">Drag jobs onto the week on the calendar.</p>
         <Button asChild variant="outline" className="h-11 sm:h-9">
           <Link href="/admin/schedule">
             <CalendarDays aria-hidden="true" /> Open the calendar
@@ -66,6 +69,7 @@ export async function SchedulePanel() {
           <AlertDescription>Couldn&apos;t load the schedule: {error}</AlertDescription>
         </Alert>
       ) : null}
+      <IncomingList incoming={incoming} />
       {jobs.length ? (
         <ul className="divide-y divide-ink/10 overflow-hidden rounded-lg border border-ink/10 bg-white">
           {jobs.map((j) => {
@@ -109,7 +113,7 @@ export async function SchedulePanel() {
           })}
         </ul>
       ) : error ? null : (
-        <EmptyState icon={CalendarDays} title="Nothing on the schedule" description="Quotes land here once they have a price." />
+        <EmptyState icon={CalendarDays} title="No jobs yet" description="Requests land here once they're estimated." />
       )}
     </div>
   )

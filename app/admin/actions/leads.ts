@@ -22,8 +22,8 @@ export async function rerunQuote(leadId: string): Promise<ActionResult> {
     // No dedupe key: the form's original task used `quote:<leadId>`, and a re-run must not be swallowed by it.
     await enqueueTask(db, { type: "quote", payload: { lead_id: id, rerun: true, requested_by: actorOf(session) } })
     revalidatePath(`/admin/leads/${id}`)
-    revalidatePath("/admin/leads")
-    return { ok: true, message: "Re-quote queued. A new card will land in the inbox." }
+    revalidatePath("/admin", "layout")
+    return { ok: true, message: "Estimating again. It shows up on Jobs when it's priced." }
   } catch (e) {
     return { ok: false, error: errorMessage(e) }
   }
@@ -41,7 +41,7 @@ export async function setLeadStatus(leadId: string, status: "spam" | "lost" | "n
     const rows = check(await db.from("leads").update({ status: next }).eq("id", id).select("id"), "setLeadStatus")
     if (!rows?.length) return { ok: false, error: "Lead not found." }
     revalidatePath(`/admin/leads/${id}`)
-    revalidatePath("/admin/leads")
+    revalidatePath("/admin", "layout")
     return { ok: true, message: next === "new" ? "Restored" : `Marked ${next}` }
   } catch (e) {
     return { ok: false, error: errorMessage(e) }

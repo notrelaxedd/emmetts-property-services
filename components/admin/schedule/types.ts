@@ -58,3 +58,23 @@ export type ScheduleDay = {
   note: string | null
   closed: boolean
 }
+
+/** A request the quotes worker hasn't estimated yet (lead `new` / `quoting`). Not draggable yet. */
+export type IncomingLead = {
+  leadId: string
+  customerName: string
+  address: string | null
+  services: string[]
+  createdAt: string
+}
+
+/** An estimated quote with nothing priced yet, so no job exists to drag: it needs your price first. */
+export type IncomingQuote = {
+  quoteId: string
+  customerName: string
+  address: string | null
+  services: string[]
+  createdAt: string
+}
+
+export type Incoming = { estimating: IncomingLead[]; needsPrice: IncomingQuote[] }

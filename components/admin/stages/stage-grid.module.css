@@ -1,7 +1,8 @@
 /*
- * The front page's stage row. Wide: five main boxes in a row with arrows between them, Customers above
- * Leads pointing down into it, Crew below Schedule pointing up into it, and the two standalone tools
- * (Fleet below Leads, Autopilot above Schedule). Narrow (< 760px): one column, every arrow points down.
+ * The front page's stage row. Wide: three main boxes in a row (Ads → Jobs → Money) with arrows between
+ * them, Customers above Jobs pointing down into it, Crew below Jobs pointing up into it, and the two
+ * standalone tools (Fleet left of Customers, Autopilot right of it). Narrow (< 760px): one column,
+ * every arrow points down.
  */
 .grid {
   display: grid;
@@ -13,14 +14,10 @@
     "a1"
     "customers"
     "cdown"
-    "leads"
-    "a2"
-    "quotes"
-    "a3"
     "crew"
     "cup"
     "schedule"
-    "a4"
+    "a2"
     "money"
     "autopilot";
 }
@@ -28,14 +25,13 @@
 @media (min-width: 760px) {
   .grid {
     gap: 0.375rem;
-    grid-template-columns:
-      minmax(0, 1fr) 1.5rem minmax(0, 1fr) 1.5rem minmax(0, 1fr) 1.5rem minmax(0, 1fr) 1.5rem minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 1.5rem minmax(0, 1.4fr) 1.5rem minmax(0, 1fr);
     grid-template-areas:
-      ".   .  customers .  .      .  autopilot .  ."
-      ".   .  cdown     .  .      .  .         .  ."
-      "ads a1 leads     a2 quotes a3 schedule  a4 money"
-      ".   .  .         .  .      .  cup       .  ."
-      ".   .  fleet     .  .      .  crew      .  .";
+      "fleet .  customers .  autopilot"
+      ".     .  cdown     .  ."
+      "ads   a1 schedule  a2 money"
+      ".     .  cup       .  ."
+      ".     .  crew      .  .";
   }
 }
 

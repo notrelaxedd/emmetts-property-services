@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { StageCount } from "./load-counts"
 import styles from "./stage-grid.module.css"
-import { initials, STAGE_META, stageHref, STAGES, type StageKey } from "./stages"
+import { initials, STAGE_META, stageHref, STAGES, type BoxKey, type StageKey } from "./stages"
 
 /** Initials circles for the customers sitting in a stage (up to 4, then +N). */
 function People({ names, total, dark }: { names: string[]; total: number; dark: boolean }) {
@@ -33,7 +33,7 @@ function People({ names, total, dark }: { names: string[]; total: number; dark: 
   )
 }
 
-function StageBox({ stage, count, open }: { stage: StageKey; count: StageCount; open: boolean }) {
+function StageBox({ stage, count, open }: { stage: BoxKey; count: StageCount; open: boolean }) {
   const meta = STAGE_META[stage]
   const Icon = meta.icon
   // Money is the dark box, unless it's the open one (every open box looks the same).
@@ -79,21 +79,20 @@ function Arrow({ area, dir }: { area: string; dir: "right" | "down" | "up" }) {
 }
 
 /**
- * The front page's one row of stages: Ads → Leads → Quotes → Schedule → Money, with Customers feeding
- * Leads and Crew feeding Schedule, and Fleet / Autopilot standing alone. Plain links: the open stage
+ * The front page's one row of stages: Ads → Jobs → Money, with Customers and Crew feeding Jobs, and
+ * Fleet / Autopilot standing alone. An open lead or quote lights up Jobs. Plain links: the open stage
  * lives in the URL (`?stage=`), so back / forward and shared links work.
  */
-export function StageRow({ counts, open }: { counts: Record<StageKey, StageCount>; open: StageKey | null }) {
+export function StageRow({ counts, open }: { counts: Record<BoxKey, StageCount>; open: StageKey | null }) {
+  const lit: BoxKey | null = open === "leads" || open === "quotes" ? "schedule" : open
   return (
     <nav aria-label="Stages">
       <div className={styles.grid}>
         {STAGES.map((s) => (
-          <StageBox key={s} stage={s} count={counts[s]} open={open === s} />
+          <StageBox key={s} stage={s} count={counts[s]} open={lit === s} />
         ))}
         <Arrow area="a1" dir="right" />
         <Arrow area="a2" dir="right" />
-        <Arrow area="a3" dir="right" />
-        <Arrow area="a4" dir="right" />
         <Arrow area="cdown" dir="down" />
         <Arrow area="cup" dir="up" />
       </div>

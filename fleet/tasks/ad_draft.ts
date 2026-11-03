@@ -33,6 +33,31 @@ const SEASON_OFFER: Record<Season, string> = {
   winter: "Snow removal",
 };
 
+/**
+ * Writing angles. Each draft takes one, skipping the angles the last few ads used, so drafts on the
+ * same topic don't come out sounding alike. The text is what Claude is told to do.
+ */
+export const AD_ANGLES: Record<string, string> = {
+  problem: "Open on the problem the homeowner is looking at right now, then show the crew taking it off their plate.",
+  time_back: "Lead with what they get to do instead of yard work this weekend. The work is the background, their free time is the point.",
+  window: "Frame it around the seasonal window closing (before the ground freezes, before the first snow). No specific dates.",
+  local: "Neighbor to neighbor: the crew works these streets and is close by. Warm and plain.",
+  question: "Open with one direct question the reader would answer yes to, then answer it.",
+  included: "Concrete and practical: spell out what the job actually covers, step by step in short sentences.",
+  after: "Paint the result: how the yard, driveway or walk looks when the crew is done.",
+  easy: "Make booking sound effortless: what they send, what happens next, how little they have to do.",
+  blunt: "Very short and blunt. Use the bottom of the channel's length range. No warm-up line.",
+};
+const ANGLE_KEYS = Object.keys(AD_ANGLES);
+
+/** A random angle the last `avoid` ads didn't use (falls back to any angle). */
+export function pickAngle(recentAngles: (string | null)[], rand: () => number = Math.random, avoid = 4): string {
+  const used = new Set(recentAngles.slice(0, avoid).filter(Boolean));
+  const pool = ANGLE_KEYS.filter((k) => !used.has(k));
+  const from = pool.length ? pool : ANGLE_KEYS;
+  return from[Math.floor(rand() * from.length) % from.length];
+}
+
 /** The offer the site is leading with right now (the hero headline), else a seasonal default. */
 export function currentOffer(season: Season): string {
   const headline = content.hero.headline.join(" ").replace(/\s+/g, " ").trim();
@@ -74,9 +99,26 @@ export async function runAdDraft(ctx: TaskContext, payload: AdDraftPayload): Pro
   const base = `${payload.channel}-${payload.season}-${yyyymmdd(now)}`.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
   const { code, reuse } = await freeUtmCode(db, base);
 
+  const topic = (payload.topic ?? "").trim();
+  // The last ads (any channel) so Claude writes something that reads different, and the angles to skip.
+  const recent =
+    check(
+      await db.from("ads").select("id,channel,headline,body,cta,angle").order("created_at", { ascending: false }).limit(11),
+      "ad_draft(recent)",
+    ) ?? [];
+  const others = recent.filter((r) => r.id !== reuse?.id).slice(0, 10);
+  const angle = pickAngle(others.map((r) => r.angle));
+
   let draft;
   try {
-    draft = await ctx.ai.draftAd(db, { channel: payload.channel, season: payload.season, offer });
+    draft = await ctx.ai.draftAd(db, {
+      channel: payload.channel,
+      season: payload.season,
+      offer,
+      topic,
+      angle: AD_ANGLES[angle],
+      recent: others.map((r) => ({ channel: r.channel, headline: r.headline, body: r.body, cta: r.cta })),
+    });
   } catch (e) {
     if (e instanceof AiCapExceededError) return { skipped: "ai_cap" };
     throw e;
@@ -86,7 +128,7 @@ export async function runAdDraft(ctx: TaskContext, payload: AdDraftPayload): Pro
   const center = { lat: settings.base_lat ?? opsConfig.defaultBase.lat, lng: settings.base_lng ?? opsConfig.defaultBase.lng };
   const fields = {
     channel: payload.channel, headline: draft.headline, body: draft.body, cta: draft.cta, season: payload.season,
-    offer, utm_code: code, status: "draft" as const,
+    offer, topic: topic || null, angle, utm_code: code, status: "draft" as const,
     // Targeting is a starting point for the owner in Ads Manager; radius etc. are set there.
     targeting: { center },
   };
@@ -102,7 +144,7 @@ export async function runAdDraft(ctx: TaskContext, payload: AdDraftPayload): Pro
       ref_id: ad.id,
       payload: { ad_id: ad.id, channel: ad.channel, headline: ad.headline, body: ad.body, cta: ad.cta },
       title: `${ad.channel} ad: ${ad.headline}`,
-      summary: `${payload.season} · ${offer} · utm ${ad.utm_code}`,
+      summary: `${topic ? `${topic} · ` : ""}${payload.season} · ${offer} · utm ${ad.utm_code}`,
       created_by: ctx.worker,
     },
     settings,

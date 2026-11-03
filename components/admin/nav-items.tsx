@@ -7,11 +7,9 @@ import {
   House,
   Inbox,
   Megaphone,
-  Receipt,
   Rocket,
   Users,
   UserRound,
-  UserSearch,
   type LucideIcon,
 } from "lucide-react"
 
@@ -22,10 +20,8 @@ export const adminNav: AdminNavItem[] = [
   { href: "/admin", label: "Home", icon: House, exact: true },
   { href: "/admin/inbox", label: "Inbox", icon: Inbox, badge: "pending" },
   { href: "/admin/ads", label: "Ads", icon: Megaphone },
-  { href: "/admin/leads", label: "Leads", icon: UserSearch },
+  { href: "/admin/schedule", label: "Jobs", icon: CalendarDays },
   { href: "/admin/canvass", label: "Canvass", icon: DoorOpen },
-  { href: "/admin/quotes", label: "Quotes", icon: Receipt },
-  { href: "/admin/schedule", label: "Schedule", icon: CalendarDays },
   { href: "/admin/availability", label: "Availability", icon: CalendarClock },
   { href: "/admin/employees", label: "Employees", icon: Users },
   { href: "/admin/customers", label: "Customers", icon: UserRound },

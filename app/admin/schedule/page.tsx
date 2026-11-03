@@ -10,10 +10,10 @@ import type { Job } from "@/lib/db/types"
 import { ownerOpenForDay } from "@/lib/scheduler/capacity"
 import { addDays, localDate, weekStart, zonedToUtc } from "@/lib/scheduler/time"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
-import { loadScheduleJobs, minutesOfDay } from "./load"
+import { loadIncoming, loadScheduleJobs, minutesOfDay } from "./load"
 
 export const dynamic = "force-dynamic"
-export const metadata = { title: "Schedule" }
+export const metadata = { title: "Jobs" }
 
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -30,12 +30,13 @@ async function loadWeek(monday: string, focusJobId: string | null) {
   const from = zonedToUtc(monday, "00:00").toISOString()
   const to = zonedToUtc(addDays(monday, 7), "00:00").toISOString()
 
-  const [weekJobs, railJobs, windows, exceptions, focus] = await Promise.all([
+  const [weekJobs, railJobs, windows, exceptions, focus, incoming] = await Promise.all([
     db.from("jobs").select("*").gte("start_at", from).lt("start_at", to).order("start_at"),
     db.from("jobs").select("*").is("start_at", null).not("status", "in", "(cancelled,done)").order("created_at", { ascending: true }).limit(100),
     db.from("owner_windows").select("*"),
     db.from("owner_exceptions").select("*").gte("date", dates[0]).lte("date", dates[6]),
     focusJobId ? db.from("jobs").select("*").eq("id", focusJobId).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    loadIncoming(db),
   ])
   for (const r of [weekJobs, railJobs, windows, exceptions, focus]) if (r.error) throw new Error(r.error.message)
 
@@ -69,6 +70,7 @@ async function loadWeek(monday: string, focusJobId: string | null) {
     unscheduled: rail.map(toScheduleJob),
     extra: extra.map(toScheduleJob),
     hasWindows: (windows.data ?? []).length > 0,
+    incoming,
   }
 }
 
@@ -102,7 +104,7 @@ export default async function SchedulePage({ searchParams }: { searchParams: { w
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Schedule"
+        title="Jobs"
         description={title}
         actions={
           <>
@@ -132,6 +134,7 @@ export default async function SchedulePage({ searchParams }: { searchParams: { w
           extra={data.extra}
           hasWindows={data.hasWindows}
           focusJobId={focusJobId}
+          incoming={data.incoming}
         />
       )}
     </div>

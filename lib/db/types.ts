@@ -389,6 +389,8 @@ export type Ad = Base & {
   status: AdStatus;
   season: string | null;
   offer: string | null;
+  topic: string | null;
+  angle: string | null;
   posted_at: string | null;
 };
 

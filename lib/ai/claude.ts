@@ -302,12 +302,31 @@ export async function loadPhotos(photoUrls: string[]): Promise<LoadedPhotos> {
 
 export async function draftAd(
   db: Db,
-  input: { channel: AdChannel; season: string; offer: string; business?: BusinessContext },
+  input: {
+    channel: AdChannel;
+    season: string;
+    offer: string;
+    /** What this ad is about ("gutters before winter"). Blank = the offer and the season. */
+    topic?: string;
+    /** The writing angle to take (see AD_ANGLES in fleet/tasks/ad_draft.ts). */
+    angle?: string;
+    /** Newest first. Claude is told to read clearly different from these. */
+    recent?: { channel: string; headline: string; body: string; cta: string | null }[];
+    business?: BusinessContext;
+  },
   opts: AiCallOptions = {},
 ): Promise<AdDraft> {
+  const recent = (input.recent ?? []).slice(0, 10);
+  const recentBlock = recent.length
+    ? `<recent_ads>\n${recent
+        .map((r, i) => `ad ${i + 1} (${esc(r.channel)})\nheadline: ${esc(r.headline)}\nbody: ${esc(r.body)}\ncta: ${esc(r.cta ?? "")}`)
+        .join("\n\n")}\n</recent_ads>\n`
+    : "";
   const text =
     `${businessBlock(input.business ?? defaultBusiness)}\n` +
-    `<request>\nchannel: ${input.channel}\nseason: ${esc(input.season)}\noffer: ${esc(input.offer)}\n</request>\n\n` +
+    recentBlock +
+    `<request>\nchannel: ${input.channel}\nseason: ${esc(input.season)}\noffer: ${esc(input.offer)}\n` +
+    `topic: ${esc(input.topic ?? "")}\nangle: ${esc(input.angle ?? "")}\n</request>\n\n` +
     `Write one ${input.channel} ad and submit it with the ${AD_TOOL_NAME} tool.`;
   return runStructured({
     db,

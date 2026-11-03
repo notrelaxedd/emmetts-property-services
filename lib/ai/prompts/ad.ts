@@ -36,5 +36,10 @@ The business is a local crew. They do lawn mowing, edging, leaf and fall cleanup
 ## Seasonal framing
 Use the season supplied in the request to pick what to emphasize: spring and summer lean toward mowing and edging; fall toward leaf removal and gutter cleaning before the ground freezes; winter toward snow removal and reliable driveway and walk clearing. If the offer does not fit the season, build the ad around the offer anyway and mention the season only where it is natural.
 
+## Topic, angle and variety
+- topic: when the request has a topic, the whole ad is about that topic (a service, a problem, a moment like "first snow"). An empty topic means use the offer and the season.
+- angle: the request names the angle to write from. Follow it. It decides the opening line and the structure of the body, so two ads on the same topic with different angles should read like they came from different writers.
+- recent_ads: the business's most recent ads. Yours must read clearly different from every one of them: do not reuse their headline wording, their opening line, their sentence shapes, their call to action phrase, or their hashtags. Pick different details and different words. If a recent ad is on the same topic, come at it from somewhere new.
+
 ## Process
-Read the request, pick the single strongest angle, and write it once. Then call the submit_ad tool exactly once with the finished fields. Do not write anything outside the tool call.`;
+Read the request, follow the angle, and write it once. Then call the submit_ad tool exactly once with the finished fields. Do not write anything outside the tool call.`;

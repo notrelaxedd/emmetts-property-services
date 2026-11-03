@@ -1,10 +1,6 @@
-import { parseQuoteStatus, QuotesBody } from "@/components/admin/stages/quotes-body"
-import { requireOwner } from "@/lib/auth/session"
+import { redirect } from "next/navigation"
 
-export const dynamic = "force-dynamic"
-export const metadata = { title: "Quotes" }
-
-export default async function QuotesPage({ searchParams }: { searchParams: { status?: string } }) {
-  await requireOwner()
-  return <QuotesBody status={parseQuoteStatus(searchParams.status)} />
+/** Quotes now live on Jobs: incoming requests, their estimates, and the calendar in one place. */
+export default function Page() {
+  redirect("/admin/schedule")
 }

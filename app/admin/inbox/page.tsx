@@ -115,7 +115,7 @@ export default async function InboxPage({ searchParams }: { searchParams: { filt
           ) : null}
           {toCollect ? (
             <Link
-              href="/admin/quotes?status=accepted"
+              href="/admin/money"
               className="flex items-center gap-3 rounded-lg border border-amber-400 bg-amber-100 px-4 py-3 text-sm text-amber-950 hover:bg-amber-200/70"
             >
               <Phone className="size-5 shrink-0" aria-hidden="true" />

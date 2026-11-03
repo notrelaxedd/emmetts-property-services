@@ -293,8 +293,8 @@ export async function QuoteDetailBody({ id, variant = "page" }: { id: string; va
   return (
     <div className="space-y-4">
       <Button asChild variant="ghost" size="sm" className="-ml-2">
-        <Link href={panel ? stageHref("quotes") : "/admin/quotes"} scroll={panel ? false : undefined}>
-          <ArrowLeft aria-hidden="true" /> {panel ? "All quotes" : "Quotes"}
+        <Link href={panel ? stageHref("schedule") : "/admin/schedule"} scroll={panel ? false : undefined}>
+          <ArrowLeft aria-hidden="true" /> Jobs
         </Link>
       </Button>
       <PageHeader
@@ -321,7 +321,7 @@ export async function QuoteDetailBody({ id, variant = "page" }: { id: string; va
               customerName={customer?.name ?? "this customer"}
               amount={quote.price_total}
               paid={!!quote.paid_at}
-              redirectTo={panel ? stageHref("quotes") : "/admin/quotes"}
+              redirectTo={panel ? stageHref("schedule") : "/admin/schedule"}
             />
           </>
         }

@@ -101,7 +101,7 @@ ERROR failed, will retry w=W4 task=send_message id=9f8e7d6c err="Resend 503: …
 | `quote` | quotes | `{ lead_id }` | quote form server action; `custom_summary` (re-price after tree cover) | none / `quote:<lead>:tree_cover` |
 | `custom_summary` | quotes | `{ lead_id }` | `quote` | `custom_summary:<lead_id>` |
 | `schedule` | scheduler | `{ reason, job_ids? }` | `enqueueSchedule` (Stripe webhook, crew changes, weather holds), host + scheduler every 15 min | `schedule:<15-min bucket>` |
-| `ad_draft` | ads | `{ channel, season, offer }` | ads worker on startup and from Monday 07:00 ET; admin "draft ad" | `ad_draft:<channel>:<ISO week>` |
+| `ad_draft` | ads | `{ channel, season, offer, topic? }` | ads worker on startup and from Monday 07:00 ET; admin "draft ad" | `ad_draft:<channel>:<ISO week>` |
 | `followup_review` | followup | `{ job_id }` | host, for jobs done 24–72 h ago | `review:<job_id>` |
 | `followup_reminder` | followup | `{ job_id }` | host, for booked jobs starting in 20–28 h | `reminder:<job_id>` |
 | `weather_watch` | followup | `{ slot? }` | host, every 6 h | `weather:<yyyy-mm-dd>-<0..3>` |
@@ -128,7 +128,7 @@ What each task writes:
   `schedule_reason`, assignments `offered`. Unplaceable → `booking` approval `{ job_id, unschedulable: true, reason }`.
   Short-handed jobs with a declined/dropped crew member get a `findCover` offer, else a `booking` approval
   `{ job_id, needs_cover: true, missing, declined_crew_ids }`.
-- **ad_draft**: `ads` row (`draft`, `utm_code = <channel>-<season>-<yyyymmdd>`, `-2`… if taken) → `ad` approval.
+- **ad_draft**: picks a writing angle the last 4 ads didn't use and sends Claude the 10 most recent ads to steer away from → `ads` row (`draft`, `topic`, `angle`, `utm_code = <channel>-<season>-<yyyymmdd>`, `-2`… if taken) → `ad` approval.
 - **followup_review / followup_reminder**: AI draft (plain template if the AI fails or the cap is hit) → `messages`
   draft → `followup` approval `{ message_id, kind, subject, body, job_id }`. Reviews need email opt-in; reminders
   are transactional (email, or SMS only with `sms_opt_in`).

@@ -7,7 +7,7 @@ import { localDate, weekStart, zonedToUtc } from "@/lib/scheduler/time"
 import { getSupabaseAdmin } from "@/lib/supabase/admin"
 import { OPEN_LEAD_STATUSES } from "./leads-body"
 import { OPEN_QUOTE_STATUSES } from "./quotes-body"
-import type { StageKey } from "./stages"
+import type { BoxKey } from "./stages"
 import { freeOn, upcomingWeekend } from "./weekend"
 
 /** Online = a heartbeat in the last 2 minutes (same rule as `app/admin/layout.tsx`). */
@@ -20,11 +20,11 @@ export type StageCount = {
   line: string
   /** Something here needs the owner. */
   attention: boolean
-  /** Customers sitting in this stage (Leads, Quotes, Schedule, Money only). */
+  /** Customers sitting in this stage (Jobs and Money only). */
   people?: { names: string[]; total: number }
 }
 
-export type FrontPageData = { counts: Record<StageKey, StageCount>; pendingApprovals: number }
+export type FrontPageData = { counts: Record<BoxKey, StageCount>; pendingApprovals: number }
 
 const usd0 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })
 const usd = (n: number) => usd0.format(Number.isFinite(n) ? n : 0)
@@ -116,9 +116,8 @@ export async function loadFrontPage(now: Date = new Date()): Promise<FrontPageDa
   const toCollectUnique = Array.from(new Map(toCollect.map((q) => [q.id, q])).values())
 
   const peopleIds = {
-    leads: distinct(leadRows.map((l) => l.customer_id)),
-    quotes: distinct(quoteRows.map((q) => q.customer_id)),
-    schedule: distinct(jobRows.map((j) => j.customer_id)),
+    // Jobs: requests still being estimated first, then jobs by day.
+    schedule: distinct([...leadRows.map((l) => l.customer_id), ...jobRows.map((j) => j.customer_id)]),
     money: distinct(toCollectUnique.map((q) => q.customer_id)),
   }
   const shownIds = distinct(Object.values(peopleIds).flatMap((ids) => ids.slice(0, 4)))
@@ -132,33 +131,29 @@ export async function loadFrontPage(now: Date = new Date()): Promise<FrontPageDa
   const draftAds = adRows.filter((a) => a.status === "draft").length
   const readyAds = adRows.filter((a) => a.status === "approved").length
   const needsYou = quoteRows.filter((q) => q.status === "needs_owner").length
-  const quoteTotal = quoteRows.reduce((a, q) => a + (Number(q.price_total) || 0), 0)
   const toCall = jobRows.filter((j) => j.status === "proposed" || j.status === "crew_confirmed").length
+  const toPlace = jobRows.filter((j) => j.status === "unscheduled").length
   const freeSat = crewRows.filter((c) => freeOn(c.id, sat, blockRows, exceptionRows)).length
   const cutoff = now.getTime() - ONLINE_WINDOW_MS
   const online = workerRows.filter((w) => w.last_heartbeat && new Date(w.last_heartbeat).getTime() >= cutoff).length
   const autopilot = settings && typeof settings === "object" && "autopilot" in settings ? settings.autopilot : null
   const rulesOn = autopilot ? AUTOPILOT_KINDS.filter((k) => autopilot[k.kind]?.enabled).length : 0
 
-  const counts: Record<StageKey, StageCount> = {
+  const counts: Record<BoxKey, StageCount> = {
     ads: { value: String(readyAds), line: `ready to post · ${draftAds} draft`, attention: draftAds > 0 },
-    leads: {
-      value: String(leadRows.length),
-      line: "waiting on a quote",
-      attention: leadRows.some((l) => l.status === "new"),
-      people: people(peopleIds.leads),
-    },
     customers: { value: String(countOf(customers as { count: number | null; error: unknown } | null)), line: "in customer log", attention: false },
-    quotes: {
-      value: String(quoteRows.length),
-      line: `${needsYou} need${needsYou === 1 ? "s" : ""} you · ${usd(quoteTotal)}`,
-      attention: needsYou > 0,
-      people: people(peopleIds.quotes),
-    },
     schedule: {
-      value: String(jobRows.length),
-      line: toCall ? `${toCall} to call and confirm` : "all confirmed",
-      attention: jobRows.some((j) => j.status === "unscheduled" || j.status === "proposed" || j.status === "crew_confirmed"),
+      value: String(jobRows.length + leadRows.length),
+      line:
+        [
+          leadRows.length ? `${leadRows.length} estimating` : null,
+          needsYou ? `${needsYou} need${needsYou === 1 ? "s" : ""} your price` : null,
+          toPlace ? `${toPlace} to place` : null,
+          toCall ? `${toCall} to call` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ") || "all set",
+      attention: needsYou > 0 || toPlace > 0 || toCall > 0 || leadRows.some((l) => l.status === "new"),
       people: people(peopleIds.schedule),
     },
     money: {

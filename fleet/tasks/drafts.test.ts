@@ -3,7 +3,7 @@ import { AiCapExceededError } from "../../lib/ai/claude";
 import { registerApprovalHandler } from "../../lib/ops/approvals";
 import { customerRow, jobRow, settingsRow } from "../../lib/ops/test-utils";
 import { fakeAi, fleetDb, makeCtx } from "../test-helpers";
-import { runAdDraft } from "./ad_draft";
+import { AD_ANGLES, pickAngle, runAdDraft } from "./ad_draft";
 import { payloadSchemas } from "./schemas";
 import { PermanentTaskError } from "../errors";
 import { MAX_DEFERS, runCustomSummary } from "./custom_summary";
@@ -109,6 +109,29 @@ describe("ad_draft", () => {
     expect(ai.draftAd.mock.calls[0][1]).toMatchObject({ channel: "facebook", season: "fall", offer: "Fall lawn cleanup" });
     expect(db.tables.ads[0]).toMatchObject({ offer: "Fall lawn cleanup" });
     expect(String(db.tables.approvals[0].summary)).toContain("fall · Fall lawn cleanup");
+  });
+
+  it("passes the topic and recent ads to Claude and picks an angle the last ads didn't use", async () => {
+    const db = fleetDb({
+      settings: [settingsRow()],
+      ads: [
+        { id: "a1", channel: "facebook", headline: "Old one", body: "Old body", cta: "Call us", angle: "problem", status: "posted", utm_code: "x1", created_at: T0 } as never,
+      ],
+    });
+    const ai = fakeAi();
+    await runAdDraft(makeCtx(db, { ai, role: "ads", worker: "W1", now: () => NOW }), { channel: "facebook", season: "fall", offer: "", topic: "gutters before winter" });
+    const input = ai.draftAd.mock.calls[0][1];
+    expect(input).toMatchObject({ topic: "gutters before winter", recent: [{ headline: "Old one", body: "Old body", cta: "Call us" }] });
+    expect(input.angle).not.toBe(AD_ANGLES.problem);
+    const saved = db.tables.ads.find((a) => a.id !== "a1")!;
+    expect(saved).toMatchObject({ topic: "gutters before winter" });
+    expect(Object.keys(AD_ANGLES)).toContain(saved.angle);
+  });
+
+  it("pickAngle skips the recent angles and falls back when every angle was used", () => {
+    const keys = Object.keys(AD_ANGLES);
+    for (let i = 0; i < 20; i++) expect(keys.slice(0, 4)).not.toContain(pickAngle(keys.slice(0, 4)));
+    expect(keys).toContain(pickAngle(keys, () => 0.5, keys.length));
   });
 
   it("autopilot marks the ad approved via the ad handler; the cap skips", async () => {

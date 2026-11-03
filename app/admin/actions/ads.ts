@@ -35,10 +35,11 @@ const DraftAdSchema = z.object({
   channel: z.enum(["facebook", "instagram", "nextdoor"]),
   season: z.string().trim().min(1, "Pick a season").max(40),
   offer: z.string().trim().max(300),
+  topic: z.string().trim().max(200).default(""),
 })
 
 /** Queues an `ad_draft` task for the ads worker; the draft comes back through the inbox. */
-export async function draftNewAd(input: { channel: string; season: string; offer: string }): Promise<ActionResult> {
+export async function draftNewAd(input: { channel: string; season: string; offer: string; topic?: string }): Promise<ActionResult> {
   const session = await requireOwner()
   try {
     const parsed = DraftAdSchema.safeParse(input)
@@ -50,6 +51,72 @@ export async function draftNewAd(input: { channel: string; season: string; offer
     })
     revalidatePath("/admin/ads")
     return { ok: true, message: "Queued. The draft will land in your inbox." }
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) }
+  }
+}
+
+const EditAdSchema = z.object({
+  headline: z.string().trim().min(1, "Headline can't be empty").max(200),
+  body: z.string().trim().min(1, "Body can't be empty").max(3000),
+  cta: z.string().trim().max(100),
+  offer: z.string().trim().max(300),
+})
+
+/**
+ * Edits an ad's copy at any status. A draft's pending inbox card gets the same text, so approving it
+ * later keeps the edit instead of writing the old copy back.
+ */
+export async function updateAd(
+  adId: string,
+  input: { headline: string; body: string; cta: string; offer: string },
+): Promise<ActionResult> {
+  await requireOwner()
+  try {
+    const id = z.string().uuid().parse(adId)
+    const parsed = EditAdSchema.safeParse(input)
+    if (!parsed.success) return { ok: false, error: parsed.error.issues.map((i) => i.message).join("; ") }
+    const { headline, body, cta, offer } = parsed.data
+    const db = requireSupabaseAdmin()
+    const rows = check(
+      await db.from("ads").update({ headline, body, cta: cta || null, offer: offer || null }).eq("id", id).select("id,channel"),
+      "updateAd",
+    )
+    if (!rows?.length) return { ok: false, error: "That ad is gone." }
+    const pending =
+      check(
+        await db.from("approvals").select("id,payload").eq("ref_table", "ads").eq("ref_id", id).eq("status", "pending"),
+        "updateAd(approvals)",
+      ) ?? []
+    for (const a of pending) {
+      check(
+        await db
+          .from("approvals")
+          .update({ payload: { ...a.payload, headline, body, cta }, title: `${rows[0].channel} ad: ${headline}` })
+          .eq("id", a.id),
+        "updateAd(approval)",
+      )
+    }
+    revalidatePath("/admin", "layout")
+    return { ok: true, message: "Ad saved" }
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) }
+  }
+}
+
+/** Deletes an ad that never got posted (draft or approved), and its inbox card. Posted ads stay for tracking. */
+export async function deleteAd(adId: string): Promise<ActionResult> {
+  await requireOwner()
+  try {
+    const id = z.string().uuid().parse(adId)
+    const db = requireSupabaseAdmin()
+    const ad = check(await db.from("ads").select("id,status").eq("id", id).maybeSingle(), "deleteAd(ad)")
+    if (!ad) return { ok: false, error: "That ad is already gone." }
+    if (ad.status === "posted") return { ok: false, error: "Posted ads stay so their leads can be tracked." }
+    check(await db.from("approvals").delete().eq("ref_table", "ads").eq("ref_id", id), "deleteAd(approvals)")
+    check(await db.from("ads").delete().eq("id", id).neq("status", "posted"), "deleteAd")
+    revalidatePath("/admin", "layout")
+    return { ok: true, message: "Ad deleted" }
   } catch (e) {
     return { ok: false, error: errorMessage(e) }
   }

@@ -24,6 +24,8 @@ export const adDraftPayload = z.looseObject({
   season: z.string().trim().min(1).max(40),
   /** Optional: the admin "Draft ad" form leaves it blank to mean "whatever the site is leading with". */
   offer: z.string().trim().max(300).default(""),
+  /** Optional: what the ad is about ("gutters before winter"). Blank = offer + season. */
+  topic: z.string().trim().max(200).optional(),
 });
 export const followupReviewPayload = z.looseObject({ job_id: id });
 export const followupReminderPayload = z.looseObject({ job_id: id });

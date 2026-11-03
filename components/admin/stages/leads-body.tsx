@@ -265,8 +265,8 @@ export async function LeadDetailBody({ id, variant = "page" }: { id: string; var
   return (
     <div className="space-y-4">
       <Button asChild variant="ghost" size="sm" className="-ml-2">
-        <Link href={panel ? stageHref("leads") : "/admin/leads"} scroll={panel ? false : undefined}>
-          <ArrowLeft aria-hidden="true" /> {panel ? "All leads" : "Leads"}
+        <Link href={panel ? stageHref("schedule") : "/admin/schedule"} scroll={panel ? false : undefined}>
+          <ArrowLeft aria-hidden="true" /> Jobs
         </Link>
       </Button>
       <PageHeader

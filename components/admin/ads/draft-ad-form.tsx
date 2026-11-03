@@ -26,7 +26,8 @@ export function DraftAdForm({ submitLabel = "Draft ad" }: { submitLabel?: string
   const [channel, setChannel] = React.useState("facebook")
   const [season, setSeason] = React.useState<string>(currentSeason)
   const [offer, setOffer] = React.useState("")
-  const ids = { c: React.useId(), s: React.useId(), o: React.useId() }
+  const [topic, setTopic] = React.useState("")
+  const ids = { c: React.useId(), s: React.useId(), o: React.useId(), t: React.useId() }
 
   return (
     <Card>
@@ -34,14 +35,22 @@ export function DraftAdForm({ submitLabel = "Draft ad" }: { submitLabel?: string
         <CardTitle className="flex items-center gap-2 text-base">
           <Sparkles className="size-4 text-brand-green-dark" aria-hidden="true" /> Draft a new ad
         </CardTitle>
-        <CardDescription>The ads worker writes it with Claude and sends it to your inbox for approval.</CardDescription>
+        <CardDescription>
+          Give it a topic and Claude writes it from a fresh angle each time, different from your recent ads. It lands below and in
+          your inbox.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <form
-          className="grid gap-3 sm:grid-cols-[1fr_1fr_2fr_auto] sm:items-end"
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_2fr_2fr_auto] lg:items-end"
           onSubmit={(e) => {
             e.preventDefault()
-            void run(() => draftNewAd({ channel, season, offer }), { onSuccess: () => setOffer("") })
+            void run(() => draftNewAd({ channel, season, offer, topic }), {
+              onSuccess: () => {
+                setOffer("")
+                setTopic("")
+              },
+            })
           }}
         >
           <div className="grid gap-1.5">
@@ -63,13 +72,23 @@ export function DraftAdForm({ submitLabel = "Draft ad" }: { submitLabel?: string
             </NativeSelect>
           </div>
           <div className="grid gap-1.5">
+            <Label htmlFor={ids.t}>Topic</Label>
+            <Input
+              id={ids.t}
+              value={topic}
+              maxLength={200}
+              onChange={(e) => setTopic(e.target.value)}
+              placeholder="e.g. gutters before winter, first snow, leaves on the lawn"
+            />
+          </div>
+          <div className="grid gap-1.5">
             <Label htmlFor={ids.o}>Offer (optional)</Label>
             <Input
               id={ids.o}
               value={offer}
               maxLength={300}
               onChange={(e) => setOffer(e.target.value)}
-              placeholder="e.g. $20 off first fall cleanup (blank = the site's current headline)"
+              placeholder="e.g. $20 off first cleanup (blank = site headline)"
             />
           </div>
           <Button type="submit" disabled={pending}>

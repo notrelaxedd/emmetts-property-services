@@ -6,10 +6,10 @@ import { AutopilotBody } from "@/components/admin/stages/autopilot-body"
 import { CrewPanel } from "@/components/admin/stages/crew-panel"
 import { AddCustomerCard, CustomerDetailBody, CustomersBody } from "@/components/admin/stages/customers-body"
 import { FleetBody } from "@/components/admin/stages/fleet-body"
-import { LeadDetailBody, LeadsBody } from "@/components/admin/stages/leads-body"
+import { LeadDetailBody } from "@/components/admin/stages/leads-body"
 import { loadFrontPage } from "@/components/admin/stages/load-counts"
 import { MoneyPanel } from "@/components/admin/stages/money-panel"
-import { QuoteDetailBody, QuotesBody } from "@/components/admin/stages/quotes-body"
+import { QuoteDetailBody } from "@/components/admin/stages/quotes-body"
 import { SchedulePanel } from "@/components/admin/stages/schedule-panel"
 import { StagePanel } from "@/components/admin/stages/stage-panel"
 import { StageRow } from "@/components/admin/stages/stage-row"
@@ -28,13 +28,13 @@ function PanelBody({ stage, params }: { stage: StageKey; params: Params }) {
     case "ads":
       return <AdsBody variant="panel" status={parseAdStatus(params.adStatus)} />
     case "leads":
-      return id ? <LeadDetailBody variant="panel" id={id} /> : <LeadsBody variant="panel" status="all" />
+      return id ? <LeadDetailBody variant="panel" id={id} /> : <SchedulePanel />
     case "customers":
       if (id) return <CustomerDetailBody variant="panel" id={id} />
       if (params.add === "1") return <AddCustomerCard variant="panel" />
       return <CustomersBody variant="panel" q={typeof params.q === "string" ? params.q.slice(0, 100) : ""} />
     case "quotes":
-      return id ? <QuoteDetailBody variant="panel" id={id} /> : <QuotesBody variant="panel" status="all" />
+      return id ? <QuoteDetailBody variant="panel" id={id} /> : <SchedulePanel />
     case "schedule":
       return <SchedulePanel />
     case "money":

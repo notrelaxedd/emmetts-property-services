@@ -12,11 +12,14 @@ import {
 } from "lucide-react"
 
 /** The boxes on the console's front page (`/admin?stage=<key>`). */
-export const STAGES = ["ads", "leads", "customers", "quotes", "schedule", "money", "crew", "fleet", "autopilot"] as const
-export type StageKey = (typeof STAGES)[number]
+export const STAGES = ["ads", "customers", "schedule", "money", "crew", "fleet", "autopilot"] as const
+export type BoxKey = (typeof STAGES)[number]
+/** No box of their own: they open one lead / quote in the panel (`?stage=quotes&id=`) under Jobs. */
+export const RECORD_STAGES = ["leads", "quotes"] as const
+export type StageKey = BoxKey | (typeof RECORD_STAGES)[number]
 
 export function isStage(v: unknown): v is StageKey {
-  return typeof v === "string" && (STAGES as readonly string[]).includes(v)
+  return typeof v === "string" && ([...STAGES, ...RECORD_STAGES] as readonly string[]).includes(v)
 }
 
 export type StageMeta = {
@@ -44,39 +47,39 @@ export const STAGE_META: Record<StageKey, StageMeta> = {
   leads: {
     name: "Leads",
     icon: UserSearch,
-    step: "Stage 2",
-    description: "People who asked for a quote and are waiting on one. Tap a lead to see who they are.",
-    fullPage: "/admin/leads",
+    step: "Jobs",
+    description: "One request and the customer who sent it.",
+    fullPage: "/admin/schedule",
     kind: "main",
   },
   customers: {
     name: "Customers",
     icon: UserRound,
-    step: "Feeds leads",
-    description: "Everyone on file. Add, edit or delete them, or rebook one as a new lead.",
+    step: "Feeds jobs",
+    description: "Everyone on file. Add, edit or delete them, or rebook one as a new job.",
     fullPage: "/admin/customers",
     kind: "feeder",
   },
   quotes: {
     name: "Quotes",
     icon: Receipt,
-    step: "Stage 3",
-    description: "Estimated quotes and the ones that need your price. Tap a quote to edit it.",
-    fullPage: "/admin/quotes",
+    step: "Jobs",
+    description: "One estimate: lines, crew, hours and price.",
+    fullPage: "/admin/schedule",
     kind: "main",
   },
   schedule: {
-    name: "Schedule",
+    name: "Jobs",
     icon: CalendarDays,
-    step: "Stage 4",
-    description: "Put jobs on the calendar, call the customer to confirm, then mark them done.",
+    step: "Stage 2",
+    description: "Requests come in and get estimated. Drag them onto the calendar, call to confirm, mark done.",
     fullPage: "/admin/schedule",
     kind: "main",
   },
   money: {
     name: "Money",
     icon: BadgeDollarSign,
-    step: "Stage 5",
+    step: "Stage 3",
     description: "Collect after the job by cash, check or an emailed card link.",
     fullPage: "/admin/money",
     kind: "main",
@@ -84,7 +87,7 @@ export const STAGE_META: Record<StageKey, StageMeta> = {
   crew: {
     name: "Crew",
     icon: HardHat,
-    step: "Feeds schedule",
+    step: "Feeds jobs",
     description: "Who can work this weekend, hours this week and pay owed.",
     fullPage: "/admin/employees",
     kind: "feeder",

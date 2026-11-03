@@ -17,6 +17,7 @@ one that has already been applied to the real project).
 | `20261012000700_storage.sql` | Private `lead-photos` bucket + owner-read policy (skipped when there's no `storage` schema) |
 | … | later migrations in filename order (schedule fixes, Stripe invoicing, removed crew, cash / check, flyer workers, price log, service names) |
 | `20261029001700_call_to_confirm.sql` | Pay after the job: `quotes.paid_at`, crew availability email tokens (`job_assignments.respond_token` / `notified_at`), `settings.auto_schedule`; the assignment guard protects the new columns |
+| `20261103002000_ads_topic_angle.sql` | `ads.topic` (owner's topic) and `ads.angle` (the writing angle the ads worker picked, so the next draft can pick another) |
 | `20261030001800_canvass.sql` | Canvass tab: enums `knock_outcome`, `hanger_event`, `home_pattern`; tables `parcels`, `block_groups`, `knocks`, `pitches`, `hanger_codes`, `hanger_events`, `canvass_plans`, `canvass_summaries`, `canvass_settings` (single row); crew policies; seeds the settings row and three pitches |
 | `20261031001900_canvass_v3.sql` | Canvass v3: lot-size price tiers, tier minutes, crew size / pay rate, score weights, walk doors on `canvass_settings` (old per-sqft pricing columns dropped); `parcels.state`; crew no longer reads `canvass_settings` |
 
