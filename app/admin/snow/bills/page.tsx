@@ -5,14 +5,13 @@ import { SendBill } from "@/components/admin/billing/send-bill"
 import { BillControls } from "@/components/admin/snow/snow-client"
 import { SnowTabs } from "@/components/admin/snow/snow-tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageHeader } from "@/components/ui/page-header"
 import { requireOwner } from "@/lib/auth/session"
 import { localDate } from "@/lib/scheduler/time"
-import { PLAN_LABEL, planPriceLabel } from "@/lib/snow/billing"
+import { planPriceLabel } from "@/lib/snow/billing"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 import { cn } from "@/lib/utils"
 
@@ -118,12 +117,7 @@ export default async function SnowBillsPage({ searchParams }: { searchParams: { 
                     {r.name}
                   </Link>
                   <p className="text-xs text-ink-muted">
-                    {PLAN_LABEL[r.sc.plan]} · {planPriceLabel(r.sc, data.settings)} · {r.pushes} push{r.pushes === 1 ? "" : "es"}
-                    {r.over ? (
-                      <Badge variant="warning" className="ml-2">
-                        {r.over} over plan
-                      </Badge>
-                    ) : null}
+                    {planPriceLabel(r.sc, data.settings)} · {r.pushes} push{r.pushes === 1 ? "" : "es"}
                   </p>
                 </div>
                 <p className="text-xl font-bold tabular-nums text-ink lg:text-right">{usd(r.amount)}</p>
@@ -150,7 +144,7 @@ export default async function SnowBillsPage({ searchParams }: { searchParams: { 
           </ul>
         </Card>
       ) : data ? (
-        <EmptyState icon={Receipt} title="No bills this month" description="Snow customers on a plan or with pushes show up here." />
+        <EmptyState icon={Receipt} title="No bills this month" description="Active snow customers and anyone with pushes show up here." />
       ) : null}
     </div>
   )

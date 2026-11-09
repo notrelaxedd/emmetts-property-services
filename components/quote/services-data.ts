@@ -4,8 +4,12 @@ import { services as siteServices, type ServiceIcon } from "@/lib/services";
 
 export type QuoteServiceOption = { slug: string; name: string; blurb?: string; icon?: ServiceIcon };
 
+/** Snow isn't a tile on the quote form: the "per-push snow quote" checkbox asks for it instead. */
+export const SNOW_SLUG = "snow-removal";
+const onForm = (o: QuoteServiceOption) => o.slug !== SNOW_SLUG;
+
 const fallback = (): QuoteServiceOption[] =>
-  siteServices.map((s) => ({ slug: s.slug, name: s.title, blurb: s.blurb, icon: s.icon }));
+  siteServices.map((s) => ({ slug: s.slug, name: s.title, blurb: s.blurb, icon: s.icon })).filter(onForm);
 
 /**
  * Active services for the quote form's checkboxes. Reads `services` (active, in sort order) and
@@ -28,10 +32,12 @@ export async function loadQuoteServices(): Promise<QuoteServiceOption[]> {
       console.warn("[quote] services query failed or empty; using the static service list", error?.message);
       return fallback();
     }
-    return data.map((r) => {
-      const site = siteServices.find((s) => s.slug === r.slug);
-      return { slug: r.slug, name: r.name, blurb: site?.blurb, icon: site?.icon };
-    });
+    return data
+      .map((r) => {
+        const site = siteServices.find((s) => s.slug === r.slug);
+        return { slug: r.slug, name: r.name, blurb: site?.blurb, icon: site?.icon };
+      })
+      .filter(onForm);
   } catch {
     return fallback();
   }

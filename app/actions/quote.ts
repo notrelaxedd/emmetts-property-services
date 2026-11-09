@@ -240,17 +240,19 @@ export async function submitQuote(_prev: QuoteFormState, formData: FormData): Pr
       photos.push({ file, type });
     }
 
-    // Services arrive as slugs; leads store services.id.
+    // Services arrive as slugs; leads store services.id. The per-push snow quote box isn't a service
+    // tile, but it puts snow removal on the lead so it shows up as a snow request.
+    const slugs = data.snowList ? Array.from(new Set([...data.services, "snow-removal"])) : data.services;
     let serviceIds: string[] = [];
-    if (data.services.length > 0) {
+    if (slugs.length > 0) {
       const { data: rows, error } = await db
         .from("services")
         .select("id, slug")
         .eq("active", true)
-        .in("slug", data.services);
+        .in("slug", slugs);
       if (error) throw new Error(`services lookup: ${error.message}`);
       serviceIds = (rows ?? []).map((r) => r.id);
-      if (serviceIds.length === 0 && data.customRequest === "") {
+      if (serviceIds.length === 0 && data.customRequest === "" && !data.snowList) {
         return errorState(copy.fix, values, hadPhotos, {
           services: "That service isn't available right now. Please pick another.",
         });

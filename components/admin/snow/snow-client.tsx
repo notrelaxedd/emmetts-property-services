@@ -24,14 +24,7 @@ import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import type { SnowPayMethod, SnowPlan, SnowSettings } from "@/lib/db/types"
-
-const PLANS: { value: SnowPlan; label: string }[] = [
-  { value: "low", label: "Low (monthly)" },
-  { value: "medium", label: "Medium (monthly)" },
-  { value: "high", label: "High (monthly)" },
-  { value: "per_push", label: "Per push" },
-]
+import type { SnowPayMethod, SnowSettings } from "@/lib/db/types"
 
 const numOrNull = (v: string) => (v.trim() === "" ? null : Number(v))
 
@@ -72,42 +65,27 @@ export function DeletePushButton({ id }: { id: string }) {
   )
 }
 
+/** Price per push and minutes per driveway. Every snow customer is billed per push. */
 function PlanFields({
-  plan,
-  setPlan,
   price,
   setPrice,
   minutes,
   setMinutes,
   defaults,
 }: {
-  plan: SnowPlan
-  setPlan: (p: SnowPlan) => void
   price: string
   setPrice: (v: string) => void
   minutes: string
   setMinutes: (v: string) => void
   defaults: SnowSettings
 }) {
-  const ids = { p: React.useId(), pr: React.useId(), m: React.useId() }
+  const ids = { pr: React.useId(), m: React.useId() }
   return (
     <>
       <div className="grid gap-1.5">
-        <Label htmlFor={ids.p}>Plan</Label>
-        <NativeSelect id={ids.p} value={plan} onChange={(e) => setPlan(e.target.value as SnowPlan)}>
-          {PLANS.map((p) => (
-            <option key={p.value} value={p.value}>
-              {p.label}
-            </option>
-          ))}
-        </NativeSelect>
+        <Label htmlFor={ids.pr}>Price per push ($)</Label>
+        <Input id={ids.pr} type="number" inputMode="decimal" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} />
       </div>
-      {plan === "per_push" ? (
-        <div className="grid gap-1.5">
-          <Label htmlFor={ids.pr}>Price per push ($)</Label>
-          <Input id={ids.pr} type="number" inputMode="decimal" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} />
-        </div>
-      ) : null}
       <div className="grid gap-1.5">
         <Label htmlFor={ids.m}>Minutes per push</Label>
         <Input
@@ -132,7 +110,6 @@ export function AddSnowCustomerForm({ settings, existing }: { settings: SnowSett
   const [name, setName] = React.useState("")
   const [phone, setPhone] = React.useState("")
   const [address, setAddress] = React.useState("")
-  const [plan, setPlan] = React.useState<SnowPlan>("medium")
   const [price, setPrice] = React.useState(String(settings.default_per_push))
   const [minutes, setMinutes] = React.useState("")
   const ids = { c: React.useId(), n: React.useId(), ph: React.useId(), a: React.useId() }
@@ -158,7 +135,7 @@ export function AddSnowCustomerForm({ settings, existing }: { settings: SnowSett
               () =>
                 addSnowCustomer(
                   { customer_id: customerId || null, name, phone, address },
-                  { plan, per_push_price: plan === "per_push" ? numOrNull(price) : null, est_minutes: numOrNull(minutes), notes: null },
+                  { per_push_price: numOrNull(price), est_minutes: numOrNull(minutes), notes: null },
                 ),
               { onSuccess: reset },
             )
@@ -192,7 +169,7 @@ export function AddSnowCustomerForm({ settings, existing }: { settings: SnowSett
               </div>
             </>
           )}
-          <PlanFields plan={plan} setPlan={setPlan} price={price} setPrice={setPrice} minutes={minutes} setMinutes={setMinutes} defaults={settings} />
+          <PlanFields price={price} setPrice={setPrice} minutes={minutes} setMinutes={setMinutes} defaults={settings} />
           <Button type="submit" disabled={pending}>
             {pending ? "Adding…" : "Add to snow"}
           </Button>
@@ -202,7 +179,7 @@ export function AddSnowCustomerForm({ settings, existing }: { settings: SnowSett
   )
 }
 
-/** Edit one snow customer's plan (their page). */
+/** Edit one snow customer's price, minutes, notes and address (their page). */
 export function SnowPlanForm({
   id,
   settings,
@@ -210,11 +187,10 @@ export function SnowPlanForm({
 }: {
   id: string
   settings: SnowSettings
-  initial: { plan: SnowPlan; per_push_price: number | null; est_minutes: number | null; notes: string | null; active: boolean; address: string }
+  initial: { per_push_price: number | null; est_minutes: number | null; notes: string | null; active: boolean; address: string }
 }) {
   const router = useRouter()
   const { pending, run } = useActionRunner()
-  const [plan, setPlan] = React.useState<SnowPlan>(initial.plan)
   const [price, setPrice] = React.useState(String(initial.per_push_price ?? settings.default_per_push))
   const [minutes, setMinutes] = React.useState(initial.est_minutes === null ? "" : String(initial.est_minutes))
   const [notes, setNotes] = React.useState(initial.notes ?? "")
@@ -228,8 +204,7 @@ export function SnowPlanForm({
         e.preventDefault()
         void run(() =>
           updateSnowCustomer(id, {
-            plan,
-            per_push_price: plan === "per_push" ? numOrNull(price) : null,
+            per_push_price: numOrNull(price),
             est_minutes: numOrNull(minutes),
             notes: notes || null,
             active,
@@ -242,7 +217,7 @@ export function SnowPlanForm({
         <Label htmlFor={ids.a}>Address</Label>
         <Input id={ids.a} value={address} maxLength={300} onChange={(e) => setAddress(e.target.value)} />
       </div>
-      <PlanFields plan={plan} setPlan={setPlan} price={price} setPrice={setPrice} minutes={minutes} setMinutes={setMinutes} defaults={settings} />
+      <PlanFields price={price} setPrice={setPrice} minutes={minutes} setMinutes={setMinutes} defaults={settings} />
       <div className="grid gap-1.5 sm:col-span-3">
         <Label htmlFor={ids.n}>Notes (gate code, where to pile snow…)</Label>
         <Textarea id={ids.n} rows={2} value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} />
@@ -273,16 +248,10 @@ export function SnowPlanForm({
   )
 }
 
-/** Plan prices and route defaults. */
+/** Per-push pricing and route defaults. */
 export function SnowSettingsForm({ settings }: { settings: SnowSettings }) {
   const { pending, run } = useActionRunner()
   const [v, setV] = React.useState({
-    low_price: String(settings.low_price),
-    medium_price: String(settings.medium_price),
-    high_price: String(settings.high_price),
-    low_pushes: settings.low_pushes === null ? "" : String(settings.low_pushes),
-    medium_pushes: settings.medium_pushes === null ? "" : String(settings.medium_pushes),
-    high_pushes: settings.high_pushes === null ? "" : String(settings.high_pushes),
     default_per_push: String(settings.default_per_push),
     finish_by: settings.finish_by.slice(0, 5),
     default_minutes: String(settings.default_minutes),
@@ -296,7 +265,6 @@ export function SnowSettingsForm({ settings }: { settings: SnowSettings }) {
     </div>
   )
   const n = { type: "number", inputMode: "decimal" as const, min: 0, step: "0.01" }
-  const i = { type: "number", inputMode: "numeric" as const, min: 0, placeholder: "unlimited" }
   return (
     <form
       className="space-y-4"
@@ -304,12 +272,6 @@ export function SnowSettingsForm({ settings }: { settings: SnowSettings }) {
         e.preventDefault()
         void run(() =>
           saveSnowSettings({
-            low_price: Number(v.low_price),
-            medium_price: Number(v.medium_price),
-            high_price: Number(v.high_price),
-            low_pushes: numOrNull(v.low_pushes),
-            medium_pushes: numOrNull(v.medium_pushes),
-            high_pushes: numOrNull(v.high_pushes),
             default_per_push: Number(v.default_per_push),
             finish_by: v.finish_by,
             default_minutes: Number(v.default_minutes),
@@ -321,17 +283,11 @@ export function SnowSettingsForm({ settings }: { settings: SnowSettings }) {
     >
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Monthly plans</CardTitle>
-          <CardDescription>Price per month, and how many pushes each month includes (blank = unlimited). Going over is flagged on the list.</CardDescription>
+          <CardTitle className="text-base">Pricing</CardTitle>
+          <CardDescription>Everyone is billed per push. New customers start at this price; you can set each customer&apos;s own on their page.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-3">
-          {field("low_price", "Low ($/month)", n)}
-          {field("medium_price", "Medium ($/month)", n)}
-          {field("high_price", "High ($/month)", n)}
-          {field("low_pushes", "Low: pushes included", i)}
-          {field("medium_pushes", "Medium: pushes included", i)}
-          {field("high_pushes", "High: pushes included", i)}
-          {field("default_per_push", "Default per-push price ($)", n)}
+          {field("default_per_push", "Default price per push ($)", n)}
           {field("trigger_inches", "Plow at (inches)", { ...n, step: "0.5" })}
         </CardContent>
       </Card>

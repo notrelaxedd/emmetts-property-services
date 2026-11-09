@@ -24,7 +24,7 @@ export const services = [
       "Leaf removal, edging, and gutter cleaning. Gets your lawn ready to survive winter and bounce back stronger in spring.",
     icon: "leaf",
     season: "fall",
-    includes: ["Leaf removal", "Edging", "Gutter cleaning"],
+    includes: ["Leaf removal", "Edging", "Gutter cleaning (single-story homes)"],
   },
   {
     slug: "lawn-mowing",
@@ -78,14 +78,14 @@ export const services = [
   {
     slug: "gutter-cleaning",
     title: "Gutter Cleaning",
-    blurb: "Clogged gutters cleared out so rain and snowmelt drain away from the house.",
+    blurb: "Clogged gutters cleared out so rain and snowmelt drain away from the house. Single-story homes only.",
     icon: "house",
     season: "fall",
   },
   {
     slug: "snow-removal",
     title: "Snow Removal",
-    blurb: "Driveways and walkways cleared so you can get out the door, on a monthly plan or per push.",
+    blurb: "Driveways and walkways cleared so you can get out the door, priced per push.",
     icon: "snowflake",
     season: "winter",
   },

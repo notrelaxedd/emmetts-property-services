@@ -64,6 +64,7 @@ export default async function QuotePage({ searchParams }: { searchParams: { serv
           <QuoteForm
             services={services}
             defaultService={defaultService}
+            defaultSnow={requested === "snow-removal"}
             verifyAddress={opsConfig.geocoder !== "none"}
             turnstileSiteKey={opsConfig.turnstileSiteKey}
           />

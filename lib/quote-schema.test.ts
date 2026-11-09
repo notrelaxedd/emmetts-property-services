@@ -47,6 +47,10 @@ describe("quoteSchema", () => {
     expect(r.success).toBe(true);
   });
 
+  it("accepts the per-push snow quote box on its own", () => {
+    expect(quoteSchema.safeParse({ ...valid, services: [], customRequest: "", snowList: true }).success).toBe(true);
+  });
+
   it("rejects when there is neither a service nor a note", () => {
     const r = quoteSchema.safeParse({ ...valid, services: [], customRequest: "   " });
     expect(r.success).toBe(false);

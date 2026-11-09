@@ -6,12 +6,12 @@ import { actorOf, errorMessage } from "@/components/admin/inbox/server"
 import type { ActionResult } from "@/components/admin/inbox/types"
 import { loadRoutePlan, loadSnowSettings, nextMonth } from "@/components/admin/snow/load"
 import { requireOwner } from "@/lib/auth/session"
-import { SNOW_PAY_METHODS, SNOW_PLANS, SNOW_SETTINGS_ID, type SnowRouteStop } from "@/lib/db/types"
+import { SNOW_PAY_METHODS, SNOW_SETTINGS_ID, type SnowRouteStop } from "@/lib/db/types"
 import { ensureCustomerLocation as ensureLocation, locate } from "@/lib/geo/locate"
 import { upsertCustomer } from "@/lib/ops/customers"
 import { check, one } from "@/lib/ops/types"
 import { zonedToUtc } from "@/lib/scheduler/time"
-import { monthCharge } from "@/lib/snow/billing"
+import { monthCharge, pushPrice } from "@/lib/snow/billing"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 const Id = z.string().uuid()
@@ -23,14 +23,12 @@ function done(message: string): ActionResult {
   return { ok: true, message }
 }
 
-const PlanFields = z
-  .object({
-    plan: z.enum(SNOW_PLANS as [string, ...string[]]),
-    per_push_price: money.nullable(),
-    est_minutes: z.coerce.number().int().min(1).max(240).nullable(),
-    notes: z.string().trim().max(500).nullable(),
-  })
-  .refine((v) => v.plan !== "per_push" || v.per_push_price !== null, { message: "Set the price per push." })
+// Every snow customer is billed per push; there are no monthly plans.
+const PlanFields = z.object({
+  per_push_price: money.nullable().refine((v) => v !== null, { message: "Set the price per push." }),
+  est_minutes: z.coerce.number().int().min(1).max(240).nullable(),
+  notes: z.string().trim().max(500).nullable(),
+})
 
 const AddSchema = z.object({
   customer_id: Id.nullable(),
@@ -39,9 +37,9 @@ const AddSchema = z.object({
   address: z.string().trim().max(300),
 })
 
-export type SnowPlanInput = { plan: string; per_push_price: number | null; est_minutes: number | null; notes: string | null }
+export type SnowPlanInput = { per_push_price: number | null; est_minutes: number | null; notes: string | null }
 
-/** Put a customer on a snow plan: an existing customer, or a new one by name / phone / address. */
+/** Put a customer on snow removal (per push): an existing customer, or a new one by name / phone / address. */
 export async function addSnowCustomer(
   who: { customer_id: string | null; name: string; phone: string; address: string },
   plan: SnowPlanInput,
@@ -62,12 +60,12 @@ export async function addSnowCustomer(
       check(await db.from("customers").update({ snow_list: true }).eq("id", customerId), "snow(snow_list)")
     }
     const existing = check(await db.from("snow_customers").select("id").eq("customer_id", customerId).maybeSingle(), "snow(existing)")
-    if (existing) return { ok: false, error: "They're already on a snow plan." }
+    if (existing) return { ok: false, error: "They're already on snow removal." }
     check(
       await db.from("snow_customers").insert({
         customer_id: customerId,
-        plan: p.data.plan as SnowPlanInput["plan"] as never,
-        per_push_price: p.data.plan === "per_push" ? p.data.per_push_price : null,
+        plan: "per_push",
+        per_push_price: p.data.per_push_price,
         est_minutes: p.data.est_minutes,
         notes: p.data.notes || null,
       }),
@@ -80,7 +78,7 @@ export async function addSnowCustomer(
   }
 }
 
-/** Change a snow customer's plan, price, minutes, notes, address or active flag. */
+/** Change a snow customer's price per push, minutes, notes, address or active flag. */
 export async function updateSnowCustomer(
   id: string,
   plan: SnowPlanInput & { active: boolean; address: string },
@@ -96,8 +94,8 @@ export async function updateSnowCustomer(
       await db
         .from("snow_customers")
         .update({
-          plan: p.data.plan as never,
-          per_push_price: p.data.plan === "per_push" ? p.data.per_push_price : null,
+          plan: "per_push",
+          per_push_price: p.data.per_push_price,
           est_minutes: p.data.est_minutes,
           notes: p.data.notes || null,
           active: !!plan.active,
@@ -135,12 +133,8 @@ export async function logPush(id: string): Promise<ActionResult> {
   const session = await requireOwner()
   try {
     const db = requireSupabaseAdmin()
-    const sc = one(await db.from("snow_customers").select("id,plan,per_push_price").eq("id", Id.parse(id)).single(), "push(row)")
-    let price: number | null = null
-    if (sc.plan === "per_push") {
-      const s = one(await db.from("snow_settings").select("default_per_push").eq("id", SNOW_SETTINGS_ID).single(), "push(settings)")
-      price = Number(sc.per_push_price ?? s.default_per_push)
-    }
+    const sc = one(await db.from("snow_customers").select("id,per_push_price").eq("id", Id.parse(id)).single(), "push(row)")
+    const price = pushPrice(sc, await loadSnowSettings(db))
     check(await db.from("snow_pushes").insert({ snow_customer_id: sc.id, price, logged_by: actorOf(session) }), "push(insert)")
     return done("Push logged")
   } catch (e) {
@@ -160,12 +154,6 @@ export async function deletePush(pushId: string): Promise<ActionResult> {
 }
 
 const SettingsSchema = z.object({
-  low_price: money,
-  medium_price: money,
-  high_price: money,
-  low_pushes: z.coerce.number().int().min(0).max(100).nullable(),
-  medium_pushes: z.coerce.number().int().min(0).max(100).nullable(),
-  high_pushes: z.coerce.number().int().min(0).max(100).nullable(),
   default_per_push: money,
   finish_by: z.string().regex(/^\d{2}:\d{2}$/, "Pick a finish time."),
   default_minutes: z.coerce.number().int().min(1).max(240),

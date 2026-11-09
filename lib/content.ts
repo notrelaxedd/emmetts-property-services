@@ -226,8 +226,10 @@ export const content = {
         verifyHint: "We'll verify the address.",
       },
       services: {
-        hint: "Pick as many as you like.",
+        hint: "Pick as many as you like. Gutter cleaning is for single-story homes only.",
       },
+      // Snow isn't a service tile on the form; this box asks for a per-push quote instead.
+      snow: "Reach out to me with a per-push snow removal quote.",
       custom: {
         toggle: "Something not listed?",
         label: "Something else?",
@@ -254,7 +256,6 @@ export const content = {
         legend: "Stay in touch (optional)",
         email: "Email me updates, seasonal reminders, and offers.",
         sms: "Text me about my jobs and appointments. Message and data rates may apply.",
-        snow: "Add me to the snow list so you can reach me when it snows.",
         note: "You can opt out any time. We never share your details.",
       },
       submit: "Send my quote request",

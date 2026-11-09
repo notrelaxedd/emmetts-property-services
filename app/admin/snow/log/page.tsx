@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { requireOwner } from "@/lib/auth/session"
 import type { SnowPush } from "@/lib/db/types"
 import { check } from "@/lib/ops/types"
-import { PLAN_LABEL, planPriceLabel } from "@/lib/snow/billing"
+import { planPriceLabel } from "@/lib/snow/billing"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 export const dynamic = "force-dynamic"
@@ -47,14 +47,14 @@ export default async function SnowLogPage() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">This month</CardTitle>
-          <CardDescription>Monthly plans bill their plan price; per-push customers bill each push. Total {usd(total)}.</CardDescription>
+          <CardDescription>Billed per push. Total {usd(total)}.</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Customer</TableHead>
-                <TableHead>Plan</TableHead>
+                <TableHead>Price</TableHead>
                 <TableHead className="text-right">Pushes</TableHead>
                 <TableHead className="text-right">Winter</TableHead>
                 <TableHead className="text-right">Owes</TableHead>
@@ -71,8 +71,7 @@ export default async function SnowLogPage() {
                       </Link>
                     </TableCell>
                     <TableCell className="text-ink-muted">
-                      {PLAN_LABEL[r.sc.plan]} · {data ? planPriceLabel(r.sc, data.settings) : ""}
-                      {r.over ? <span className="ml-1 text-amber-700">({r.over} over)</span> : null}
+                      {data ? planPriceLabel(r.sc, data.settings) : ""}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{r.monthPushes}</TableCell>
                     <TableCell className="text-right tabular-nums">{r.seasonPushes}</TableCell>

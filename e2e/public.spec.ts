@@ -26,6 +26,9 @@ test.describe("public site", () => {
     await expect(page.getByText(/step 1 of 3/i)).toBeVisible();
     await expect(page.locator('input[name="services"]').first()).toBeVisible();
     await expect(page.locator('input[name="services"][value="lawn-mowing"]')).toBeChecked();
+    // Snow is a per-push quote box on step 1, not a service tile.
+    await expect(page.locator('input[name="snowList"]')).toBeVisible();
+    await expect(page.locator('input[name="services"][value="snow-removal"]')).toHaveCount(0);
     await expect(page.locator('input[name="name"]')).toBeHidden();
     await page.getByText(/something not listed/i).click();
     await expect(page.locator('textarea[name="customRequest"]')).toBeVisible();
@@ -42,7 +45,6 @@ test.describe("public site", () => {
 
     await expect(page.locator('input[name="name"]')).toBeVisible();
     await expect(page.locator('input[name="emailOptIn"]')).toBeVisible();
-    await expect(page.locator('input[name="snowList"]')).toBeVisible();
     await page.getByRole("button", { name: /back/i }).click();
     await expect(page.locator('input[name="street"]')).toHaveValue("123 Lake Rd");
     // Honeypot is present but off-screen, hidden from assistive tech and out of the tab order.

@@ -13,7 +13,7 @@ export default async function SnowSettingsPage() {
   const settings = await loadSnowSettings(requireSupabaseAdmin())
   return (
     <div className="space-y-4">
-      <PageHeader title="Plans & settings" description="Monthly plan prices and how the morning route is planned." />
+      <PageHeader title="Settings" description="Per-push pricing and how the morning route is planned." />
       <SnowTabs active="settings" />
       <SnowSettingsForm settings={settings} />
     </div>
