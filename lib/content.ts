@@ -227,6 +227,14 @@ export const content = {
       },
       services: {
         hint: "Pick as many as you like.",
+        // Quote-form wording that differs from the site's service cards. Snow is sold as a season
+        // plan, so the box reads as interest in a winter quote rather than booking a single push.
+        overrides: {
+          "snow-removal": {
+            name: "Snow removal for the winter",
+            blurb: "I'm interested in a quote for the whole season: driveway and walks cleared every time it snows.",
+          },
+        } as Record<string, { name?: string; blurb?: string }>,
       },
       custom: {
         toggle: "Something not listed?",

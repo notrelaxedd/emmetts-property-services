@@ -1,11 +1,15 @@
 import "server-only";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { content } from "@/lib/content";
 import { services as siteServices, type ServiceIcon } from "@/lib/services";
 
 export type QuoteServiceOption = { slug: string; name: string; blurb?: string; icon?: ServiceIcon };
 
+/** Applies the quote form's own wording for a service (e.g. snow as a season quote), when it has one. */
+const withQuoteCopy = (o: QuoteServiceOption): QuoteServiceOption => ({ ...o, ...content.quote.form.services.overrides[o.slug] });
+
 const fallback = (): QuoteServiceOption[] =>
-  siteServices.map((s) => ({ slug: s.slug, name: s.title, blurb: s.blurb, icon: s.icon }));
+  siteServices.map((s) => withQuoteCopy({ slug: s.slug, name: s.title, blurb: s.blurb, icon: s.icon }));
 
 /**
  * Active services for the quote form's checkboxes. Reads `services` (active, in sort order) and
@@ -30,7 +34,7 @@ export async function loadQuoteServices(): Promise<QuoteServiceOption[]> {
     }
     return data.map((r) => {
       const site = siteServices.find((s) => s.slug === r.slug);
-      return { slug: r.slug, name: r.name, blurb: site?.blurb, icon: site?.icon };
+      return withQuoteCopy({ slug: r.slug, name: r.name, blurb: site?.blurb, icon: site?.icon });
     });
   } catch {
     return fallback();
