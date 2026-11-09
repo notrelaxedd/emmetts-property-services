@@ -34,7 +34,6 @@ export type SnowRow = {
   seasonPushes: number
   lastPush: string | null
   monthCharge: number
-  over: number
 }
 
 export async function loadSnowSettings(db: Db): Promise<SnowSettings> {
@@ -70,7 +69,6 @@ export async function loadSnowRows(db: Db, now = new Date()): Promise<{ settings
       seasonPushes: mine.length,
       lastPush: mine[0]?.pushed_at ?? null,
       monthCharge: charge.amount,
-      over: charge.over,
     }
   })
   rows.sort((a, b) => Number(b.sc.active) - Number(a.sc.active) || a.customer.name.localeCompare(b.customer.name))
@@ -108,7 +106,6 @@ export type BillRow = {
   email: string | null
   pushes: number
   amount: number
-  over: number
   payMethod: SnowPayMethod | null
   paidAt: string | null
 }
@@ -158,7 +155,6 @@ export async function loadSnowBills(db: Db, month: string): Promise<{ settings: 
       email: people.get(sc.customer_id)?.email ?? null,
       pushes: paid ? bill!.pushes : mine.length,
       amount: paid ? Number(bill!.amount) : live.amount,
-      over: paid ? 0 : live.over,
       payMethod: bill?.pay_method ?? sc.pay_method ?? null,
       paidAt: bill?.paid_at ?? null,
     }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { monthCharge, seasonStart } from "./billing";
+import { monthCharge, planPriceLabel, seasonStart } from "./billing";
 import { driveMinutes, mapsUrls, planSnowRoute } from "./route";
 import type { SnowSettings } from "../db/types";
 
@@ -44,13 +44,14 @@ describe("planSnowRoute", () => {
 });
 
 describe("billing", () => {
-  const s = { low_price: 60, medium_price: 100, high_price: 150, low_pushes: 4, medium_pushes: null, high_pushes: null, default_per_push: 35 } as SnowSettings;
-  it("monthly plans charge the plan price and flag pushes over the included count", () => {
-    expect(monthCharge({ plan: "low", per_push_price: null }, s, Array(6).fill({ price: null }))).toEqual({ amount: 60, over: 2 });
-    expect(monthCharge({ plan: "medium", per_push_price: null }, s, Array(9).fill({ price: null }))).toEqual({ amount: 100, over: 0 });
+  const s = { default_per_push: 35 } as SnowSettings;
+  it("adds up the price logged on each push, using the customer's price for pushes without one", () => {
+    expect(monthCharge({ per_push_price: 40 }, s, [{ price: 40 }, { price: 45 }, { price: null }])).toEqual({ amount: 125 });
   });
-  it("per push adds up the price logged on each push", () => {
-    expect(monthCharge({ plan: "per_push", per_push_price: 40 }, s, [{ price: 40 }, { price: 45 }, { price: null }])).toEqual({ amount: 125, over: 0 });
+  it("falls back to the default per-push price", () => {
+    expect(monthCharge({ per_push_price: null }, s, [{ price: null }, { price: null }])).toEqual({ amount: 70 });
+    expect(planPriceLabel({ per_push_price: null }, s)).toBe("$35/push");
+    expect(planPriceLabel({ per_push_price: 42.5 }, s)).toBe("$42.50/push");
   });
   it("the season starts Sept 1", () => {
     expect(seasonStart("2026-12-10")).toBe("2026-09-01");

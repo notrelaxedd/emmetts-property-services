@@ -151,6 +151,7 @@ export const quoteSchema = z
       .transform((days) => Array.from(new Set(days)).sort((a, b) => a - b) as Weekday[]),
     emailOptIn: z.boolean().default(false),
     smsOptIn: z.boolean().default(false),
+    /** "Reach out with a per-push snow removal quote": puts them on the snow list and snow removal on the lead. */
     snowList: z.boolean().default(false),
     photos: z
       .array(z.object({ name: z.string(), type: z.string(), size: z.number() }))
@@ -184,11 +185,11 @@ export const quoteSchema = z
     if (v.photos.length + v.photoPaths.length > MAX_PHOTOS) {
       ctx.addIssue({ code: "custom", path: ["photos"], message: `Please add up to ${MAX_PHOTOS} photos.` });
     }
-    if (v.services.length === 0 && v.customRequest.length === 0) {
+    if (v.services.length === 0 && v.customRequest.length === 0 && !v.snowList) {
       ctx.addIssue({
         code: "custom",
         path: ["services"],
-        message: "Pick at least one service, or tell us what you need in the box below.",
+        message: "Pick at least one service, tick the snow box, or tell us what you need below.",
       });
     }
   });

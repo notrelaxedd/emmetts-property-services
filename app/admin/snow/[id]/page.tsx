@@ -10,7 +10,7 @@ import { requireOwner } from "@/lib/auth/session"
 import type { SnowPush } from "@/lib/db/types"
 import { check } from "@/lib/ops/types"
 import { localDate } from "@/lib/scheduler/time"
-import { monthCharge, PLAN_LABEL, planPriceLabel, seasonStart } from "@/lib/snow/billing"
+import { monthCharge, planPriceLabel, seasonStart } from "@/lib/snow/billing"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 export const dynamic = "force-dynamic"
@@ -54,7 +54,7 @@ export default async function SnowCustomerPage({ params }: { params: { id: strin
       </Button>
       <PageHeader
         title={c.name}
-        description={`${PLAN_LABEL[sc.plan]} · ${planPriceLabel(sc, settings)} · ${seasonCount} push${seasonCount === 1 ? "" : "es"} this winter`}
+        description={`${planPriceLabel(sc, settings)} · ${seasonCount} push${seasonCount === 1 ? "" : "es"} this winter`}
         actions={<PushButton id={sc.id} name={c.name} />}
       />
       {c.lat === null ? (
@@ -65,7 +65,7 @@ export default async function SnowCustomerPage({ params }: { params: { id: strin
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Plan</CardTitle>
+            <CardTitle className="text-base">Details</CardTitle>
             {c.phone ? (
               <CardDescription>
                 <a href={`tel:${c.phone}`} className="inline-flex items-center gap-1 underline">
@@ -79,7 +79,6 @@ export default async function SnowCustomerPage({ params }: { params: { id: strin
               id={sc.id}
               settings={settings}
               initial={{
-                plan: sc.plan,
                 per_push_price: sc.per_push_price === null ? null : Number(sc.per_push_price),
                 est_minutes: sc.est_minutes,
                 notes: sc.notes,
@@ -106,7 +105,6 @@ export default async function SnowCustomerPage({ params }: { params: { id: strin
                     </span>
                     <span className="tabular-nums">
                       {usd(charge.amount)}
-                      {charge.over ? <span className="ml-1 text-xs font-normal text-amber-700">({charge.over} over plan)</span> : null}
                     </span>
                   </h3>
                   <ul className="divide-y divide-ink/10 rounded-md border border-ink/10">

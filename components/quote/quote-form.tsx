@@ -40,6 +40,8 @@ type Props = {
   services: QuoteServiceOption[];
   /** Pre-checked service (`?service=<slug>`), already validated against `services` by the page. */
   defaultService?: string;
+  /** `?service=snow-removal`: pre-ticks the per-push snow quote box (snow isn't a tile). */
+  defaultSnow?: boolean;
   /** True when a geocoder is configured: shows the "we'll verify the address" hint. */
   verifyAddress: boolean;
   /** NEXT_PUBLIC_TURNSTILE_SITE_KEY; the widget only renders when set. */
@@ -273,7 +275,7 @@ function SubmitButton({ busy, hidden }: { busy: boolean; hidden: boolean }) {
 
 /* ---------- the form ---------- */
 
-export function QuoteForm({ services, defaultService, verifyAddress, turnstileSiteKey }: Props) {
+export function QuoteForm({ services, defaultService, defaultSnow = false, verifyAddress, turnstileSiteKey }: Props) {
   const [state, formAction] = useFormState(submitQuote, initialQuoteState);
   const [clientErrors, setClientErrors] = useState<QuoteFieldErrors | null>(null);
   const [photoMsg, setPhotoMsg] = useState<string | null>(null);
@@ -309,7 +311,7 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
     preferredDays: [],
     emailOptIn: false,
     smsOptIn: false,
-    snowList: false,
+    snowList: defaultSnow,
   };
 
   const errors: QuoteFieldErrors = { ...(clientErrors ?? serverState?.fieldErrors ?? {}) };
@@ -631,6 +633,9 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
             </div>
 
             <div className="mt-5 grid gap-5">
+              {/* Snow is quoted per push, so it's a request box rather than a service tile. */}
+              <CheckRow name="snowList" value="on" defaultChecked={values.snowList} title={copy.snow} icon="snowflake" />
+
               {/* Collapsed until wanted; opens itself when there's something in it or the list needs it. */}
               <details
                 open={Boolean(values.customRequest || errors.customRequest || errors.services)}
@@ -867,7 +872,6 @@ export function QuoteForm({ services, defaultService, verifyAddress, turnstileSi
             <div className="grid gap-3">
               <CheckRow name="emailOptIn" value="on" defaultChecked={values.emailOptIn} title={copy.consent.email} />
               <CheckRow name="smsOptIn" value="on" defaultChecked={values.smsOptIn} title={copy.consent.sms} />
-              <CheckRow name="snowList" value="on" defaultChecked={values.snowList} title={copy.consent.snow} />
             </div>
           </Group>
 

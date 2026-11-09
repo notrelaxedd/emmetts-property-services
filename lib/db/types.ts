@@ -711,17 +711,18 @@ export const CANVASS_SETTINGS_ID = "00000000-0000-0000-0000-000000000001";
 
 // ---------- snow removal ----------
 
+/** The DB enum still has the old monthly tiers; every customer is now `per_push`. */
 export type SnowPlan = "low" | "medium" | "high" | "per_push";
-export const SNOW_PLANS: SnowPlan[] = ["low", "medium", "high", "per_push"];
 
 export type SnowSettings = Base & {
+  /** Retired monthly-plan columns, kept in the table but no longer used. */
   low_price: number;
   medium_price: number;
   high_price: number;
-  /** Pushes included per month on each tier; null = unlimited. */
   low_pushes: number | null;
   medium_pushes: number | null;
   high_pushes: number | null;
+  /** Price per push for customers without their own. */
   default_per_push: number;
   /** "HH:MM:SS": every driveway done by this time. */
   finish_by: string;

@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { PageHeader } from "@/components/ui/page-header"
 import { requireOwner } from "@/lib/auth/session"
 import { check } from "@/lib/ops/types"
-import { PLAN_LABEL, planPriceLabel } from "@/lib/snow/billing"
+import { planPriceLabel } from "@/lib/snow/billing"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 import { cn } from "@/lib/utils"
 
@@ -47,7 +47,7 @@ export default async function SnowPage() {
     <div className="space-y-4">
       <PageHeader
         title="Snow removal"
-        description={`${active.length} on a plan · ${pushesMonth} push${pushesMonth === 1 ? "" : "es"} this month · ${usd(monthTotal)} billed this month`}
+        description={`${active.length} active · ${pushesMonth} push${pushesMonth === 1 ? "" : "es"} this month · ${usd(monthTotal)} billed this month`}
       />
       <SnowTabs active="customers" />
       {error ? (
@@ -68,11 +68,8 @@ export default async function SnowPage() {
                     <Link href={`/admin/snow/${r.sc.id}`} className="font-semibold text-ink hover:underline">
                       {r.customer.name}
                     </Link>
-                    <Badge variant={r.sc.plan === "per_push" ? "outline" : "secondary"}>
-                      {PLAN_LABEL[r.sc.plan]} · {planPriceLabel(r.sc, data.settings)}
-                    </Badge>
+                    <Badge variant="outline">{planPriceLabel(r.sc, data.settings)}</Badge>
                     {!r.sc.active ? <Badge variant="outline">Paused</Badge> : null}
-                    {r.over ? <Badge variant="warning">{r.over} over plan</Badge> : null}
                   </p>
                   <p className="flex items-center gap-1 truncate text-sm text-ink-body">
                     {r.customer.lat === null ? <MapPinOff className="size-3.5 shrink-0 text-amber-600" aria-label="Not on the map" /> : null}

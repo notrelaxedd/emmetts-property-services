@@ -226,16 +226,10 @@ export const content = {
         verifyHint: "We'll verify the address.",
       },
       services: {
-        hint: "Pick as many as you like.",
-        // Quote-form wording that differs from the site's service cards. Snow is sold as a season
-        // plan, so the box reads as interest in a winter quote rather than booking a single push.
-        overrides: {
-          "snow-removal": {
-            name: "Snow removal for the winter",
-            blurb: "I'm interested in a quote for the whole season: driveway and walks cleared every time it snows.",
-          },
-        } as Record<string, { name?: string; blurb?: string }>,
+        hint: "Pick as many as you like. Gutter cleaning is for single-story homes only.",
       },
+      // Snow isn't a service tile on the form; this box asks for a per-push quote instead.
+      snow: "Reach out to me with a per-push snow removal quote.",
       custom: {
         toggle: "Something not listed?",
         label: "Something else?",
@@ -262,7 +256,6 @@ export const content = {
         legend: "Stay in touch (optional)",
         email: "Email me updates, seasonal reminders, and offers.",
         sms: "Text me about my jobs and appointments. Message and data rates may apply.",
-        snow: "Add me to the snow list so you can reach me when it snows.",
         note: "You can opt out any time. We never share your details.",
       },
       submit: "Send my quote request",
