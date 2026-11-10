@@ -10,6 +10,7 @@ import { day, formatPhone, titleCase } from "@/components/admin/customers/format
 import { LogInteractionForm } from "@/components/admin/customers/log-interaction-form"
 import { PriceLogTable } from "@/components/admin/customers/price-log-table"
 import { RebookButton } from "@/components/admin/customers/rebook-button"
+import { ScheduleJobForm } from "@/components/admin/customers/schedule-job-form"
 import { PaidJobForm, RemovePaidJobButton } from "@/components/admin/money/paid-job-form"
 import { DeleteQuoteButton } from "@/components/admin/quotes/delete-quote-button"
 import { Badge } from "@/components/ui/badge"
@@ -415,6 +416,15 @@ export async function CustomerDetailBody({ id, variant = "page" }: { id: string;
                 <p className="text-sm text-ink-muted">Nothing logged yet.</p>
               )}
               <LogInteractionForm today={today} customer={{ id: data.customer.id, name: data.customer.name }} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Schedule a job</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScheduleJobForm today={today} customer={{ id: data.customer.id, name: data.customer.name }} />
             </CardContent>
           </Card>
 

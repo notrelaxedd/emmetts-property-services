@@ -31,7 +31,8 @@ import {
   withdrawCallToConfirm,
 } from "@/lib/ops"
 import type { CrewChoice, Db } from "@/lib/ops"
-import { localDate } from "@/lib/scheduler/time"
+import { createOwnerJob } from "@/lib/ops/owner-jobs"
+import { localDate, zonedToUtc } from "@/lib/scheduler/time"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; reason: string }
@@ -332,5 +333,123 @@ export async function askMoreCrew(jobId: string, crewIds: string[]): Promise<Act
     return { ok: true, message: res.emailed ? `${res.emailed} email${res.emailed === 1 ? "" : "s"} sent.` : "Asked (nobody new to email)." }
   } catch (e) {
     return fail(e)
+  }
+}
+
+// ---------- Schedule a job by hand (customer page) ----------
+
+/** No job exists yet when the form asks who's free, so eligibility runs against a placeholder id. */
+const NO_JOB = "00000000-0000-0000-0000-000000000000"
+const dayRe = /^\d{4}-\d{2}-\d{2}$/
+const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/
+
+/** Who's free for a slot on a job that doesn't exist yet (the "Schedule a job" form on a customer's page). */
+export async function crewForNewJob(
+  date: string,
+  time: string,
+  minutes: number,
+): Promise<{ ok: true; crew: CrewChoice[] } | { ok: false; reason: string }> {
+  await requireOwner()
+  if (!dayRe.test(date) || !timeRe.test(time) || !(minutes > 0)) return { ok: false, reason: "Pick a day and time." }
+  try {
+    const start = zonedToUtc(date, time)
+    const end = new Date(start.getTime() + slotMinutes(Math.round(minutes)) * 60_000)
+    return { ok: true, crew: await crewChoicesForSlot(requireSupabaseAdmin(), { id: NO_JOB }, start, end) }
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+const OwnerJobSchema = z
+  .object({
+    customerId: idSchema,
+    description: z.string().trim().min(1, "Say what the job is.").max(250),
+    price: z.number().min(0, "The price can't be negative.").max(100_000),
+    hours: z.number().min(0.25, "Set how long the job takes (at least 15 minutes).").max(24),
+    paymentMethod: z.enum(PAYMENT_METHODS),
+    /** Empty date = no day yet: the job waits on the "Needs a day" rail. */
+    date: z.union([z.literal(""), z.string().regex(dayRe, "Bad date")]),
+    time: z.union([z.literal(""), z.string().regex(timeRe, "Pick a start time")]),
+    crewIds: z.array(idSchema).max(20),
+  })
+  .refine((v) => !v.date || v.time, { message: "Pick a start time.", path: ["time"] })
+export type OwnerJobInput = z.infer<typeof OwnerJobSchema>
+
+/**
+ * "Schedule a job" on a customer's page: you already agreed the job, price and day with them, so it skips
+ * the quote form and the AI estimate. Creates the accepted quote and the job; with a day and time it goes
+ * straight onto the calendar and is booked with the crew you ticked (only they are emailed), and the
+ * customer gets the usual confirmation. Without a day it waits on the schedule's "Needs a day" rail.
+ */
+export async function scheduleForCustomer(input: OwnerJobInput): Promise<ActionResult> {
+  const session = await requireOwner()
+  const parsed = OwnerJobSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, reason: parsed.error.issues[0]?.message ?? "Invalid job." }
+  const v = parsed.data
+  if (v.date && v.date < localDate(new Date())) return { ok: false, reason: "That day has already passed. Use \"Add a paid job\" for past work." }
+  const actor = actorOf(session)
+  const db = requireSupabaseAdmin()
+  const done = () => {
+    revalidate()
+    revalidatePath("/admin/customers")
+    revalidatePath(`/admin/customers/${v.customerId}`)
+  }
+
+  let jobId: string
+  try {
+    const { job } = await createOwnerJob(db, {
+      customerId: v.customerId,
+      description: v.description,
+      price: v.price,
+      hours: v.hours,
+      crewSize: Math.max(1, v.crewIds.length),
+      paymentMethod: v.paymentMethod,
+      recordedBy: actor,
+    })
+    jobId = job.id
+  } catch (e) {
+    return fail(e)
+  }
+  if (!v.date) {
+    done()
+    return { ok: true, message: "Job saved. It's on the schedule's \"Needs a day\" list until you give it a day." }
+  }
+
+  // On the calendar, then booked. If either step fails the job is kept and waits on the rail.
+  const onRail = (why: string): ActionResult => {
+    done()
+    return { ok: true, message: `Job saved, but it couldn't go on the calendar: ${why} It's on the schedule's "Needs a day" list.` }
+  }
+  try {
+    const start = zonedToUtc(v.date, v.time)
+    const end = new Date(start.getTime() + slotMinutes(Math.round(v.hours * 60)) * 60_000)
+    const [windows, ownerExceptions] = await Promise.all([
+      db.from("owner_windows").select("*"),
+      db.from("owner_exceptions").select("*").eq("date", v.date),
+    ])
+    const reason = checkMove({
+      jobId,
+      start,
+      end,
+      crew: [],
+      ownerWindows: check(windows, "owner windows") ?? [],
+      ownerExceptions: check(ownerExceptions, "owner exceptions") ?? [],
+      crewAvailability: [],
+      crewExceptions: [],
+      otherAssignments: [],
+    })
+    if (reason) return onRail(reason)
+    await scheduleJobAt(db, jobId, start, end, { actor, siteUrl: siteUrl(), crewIds: v.crewIds })
+    const offered = check(await db.from("job_assignments").select("crew_id,status").eq("job_id", jobId), "job offers") ?? []
+    const crewIds = offered.filter((a) => a.status === "offered" || a.status === "accepted").map((a) => a.crew_id)
+    const res = await bookJob(db, jobId, { paymentMethod: v.paymentMethod, crewIds, actor, siteUrl: siteUrl(), note: null })
+    done()
+    const who = crewIds.length ? `${crewIds.length} crew on it` : "just you on it"
+    return {
+      ok: true,
+      message: `Scheduled and booked, ${who}. ${res.confirmationSent ? "Confirmation emailed to the customer." : "No confirmation went out (no email on file)."}`,
+    }
+  } catch (e) {
+    return onRail(e instanceof Error ? e.message : String(e))
   }
 }
