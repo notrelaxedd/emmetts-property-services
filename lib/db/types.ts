@@ -227,6 +227,8 @@ export type Lead = Base & {
   status: LeadStatus;
   /** Flyer worker whose flyer brought this lead in (QR link, or set by the owner). */
   flyer_worker_id: string | null;
+  /** Sales rep who booked this lead on /door, as typed (null for other sources). */
+  door_rep: string | null;
 };
 
 export type Quote = Base & {

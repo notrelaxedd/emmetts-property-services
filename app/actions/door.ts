@@ -31,7 +31,7 @@ const errorState = (message: string, values: DoorFormValues, fieldErrors = {}): 
 });
 
 /**
- * A rep books a homeowner at the door. Same path as the public quote form, so the job comes out the
+ * A rep books a homeowner at the door (their name goes on the lead as `door_rep`). Same path as the public quote form, so the job comes out the
  * same way: customer → lead (`source: door`, the picked weekday as the preferred day) → the quotes
  * worker prices it and puts the job on the "Needs a day" rail. The day the homeowner asked for goes
  * in the customer's notes (shown on the lead and customer pages) and the lead's utm. Nothing is sent
@@ -88,6 +88,7 @@ export async function submitDoorBooking(_prev: DoorFormState, formData: FormData
       photo_paths: [],
       status: "new",
       flyer_worker_id: null,
+      door_rep: data.rep,
     };
     const { data: lead, error: leadError } = await db.from("leads").insert(leadRow).select("id").single();
     if (leadError || !lead) throw new Error(`lead insert: ${leadError?.message ?? "no row returned"}`);

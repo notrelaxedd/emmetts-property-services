@@ -272,7 +272,7 @@ export async function LeadDetailBody({ id, variant = "page" }: { id: string; var
       <PageHeader
         as={panel ? "h3" : "h1"}
         title={customer?.name ?? "Lead"}
-        description={`Submitted ${dateTime(lead.created_at)} via ${lead.source || "quote form"}`}
+        description={`Submitted ${dateTime(lead.created_at)} via ${lead.source || "quote form"}${lead.door_rep ? ` (booked by ${lead.door_rep})` : ""}`}
         actions={<LeadActions leadId={lead.id} status={lead.status} />}
       />
       <div className="grid gap-4 lg:grid-cols-2">
@@ -291,6 +291,7 @@ export async function LeadDetailBody({ id, variant = "page" }: { id: string; var
                 v={lead.preferred_days.length ? lead.preferred_days.map((d) => WEEKDAYS[d] ?? d).join(", ") : "Any"}
               />
               <Row k="Source" v={lead.source || "—"} />
+              {lead.door_rep ? <Row k="Booked by" v={lead.door_rep} /> : null}
               <Row k="UTM" v={utm.length ? utm.map(([k, v]) => `${k}: ${v}`).join(" · ") : "—"} />
               {flyerWorkers.length ? (
                 <Row k="Flyer worker" v={<FlyerCredit leadId={lead.id} current={lead.flyer_worker_id} workers={flyerWorkers} />} />

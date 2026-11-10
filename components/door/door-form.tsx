@@ -14,6 +14,23 @@ type Option = { slug: string; name: string };
 
 const TOWNS = ["Rocky River", "Westlake", "Bay Village", "Lakewood"];
 
+/** The rep's name is kept on their phone so they only type it once. */
+const REP_KEY = "eod-door-rep";
+function readRep(): string {
+  try {
+    return window.localStorage.getItem(REP_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+function saveRep(name: string) {
+  try {
+    window.localStorage.setItem(REP_KEY, name.trim());
+  } catch {
+    // Private mode etc.: they'll just type it again next time.
+  }
+}
+
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
@@ -48,6 +65,12 @@ function Booking({ services, today, lastDay, onDone }: { services: Option[]; tod
     if (state.status === "ok") onDone(state.summary);
   }, [state, onDone]);
 
+  // Fill in the saved name after mount (localStorage isn't there during server render).
+  const repRef = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => {
+    if (repRef.current && !repRef.current.value) repRef.current.value = readRep();
+  }, [state]);
+
   const field = (name: DoorField) => ({
     name,
     id: `door-${name}`,
@@ -57,7 +80,16 @@ function Booking({ services, today, lastDay, onDone }: { services: Option[]; tod
 
   return (
     // Error states remount with the typed values (nonce), so nothing the rep typed is lost.
-    <form key={state.status === "error" ? state.nonce : "new"} action={action} className="space-y-5" noValidate>
+    <form
+      key={state.status === "error" ? state.nonce : "new"}
+      action={(fd) => {
+        const rep = fd.get("rep");
+        if (typeof rep === "string" && rep.trim()) saveRep(rep);
+        return action(fd);
+      }}
+      className="space-y-5"
+      noValidate
+    >
       {state.status === "error" ? (
         <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {state.message}
@@ -68,6 +100,12 @@ function Booking({ services, today, lastDay, onDone }: { services: Option[]; tod
       <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
         <label htmlFor="door-company">Company</label>
         <input id="door-company" name="company" type="text" tabIndex={-1} autoComplete="off" />
+      </div>
+
+      <div>
+        <Label htmlFor="door-rep">Your name</Label>
+        <Input {...field("rep")} ref={repRef} className="mt-1 h-11 text-base" autoComplete="off" placeholder="So we know who got the job" defaultValue={values.rep} required />
+        <FieldError id="door-rep-error" message={errors.rep} />
       </div>
 
       <div>

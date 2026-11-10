@@ -3,6 +3,7 @@ import { doorAddress, doorDayLabel, doorFieldErrors, doorNote, doorPreferredDays
 
 const TODAY = "2026-11-09"; // a Monday
 const valid = {
+  rep: " Addy ",
   name: "  Pat Neighbor ",
   phone: "(440) 823-5545",
   street: "123 Wooster Rd",
@@ -15,6 +16,7 @@ describe("doorSchema", () => {
   it("accepts a booking and cleans it up", () => {
     const r = doorSchema(TODAY).parse(valid);
     expect(r).toEqual({
+      rep: "Addy",
       name: "Pat Neighbor",
       phone: "4408235545",
       street: "123 Wooster Rd",
@@ -44,6 +46,12 @@ describe("doorSchema", () => {
     expect(doorSchema(TODAY).safeParse({ ...valid, date: "" }).success).toBe(false);
   });
 
+  it("needs the rep's name", () => {
+    const r = doorSchema(TODAY).safeParse({ ...valid, rep: "  " });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(doorFieldErrors(r.error).rep).toMatch(/your name/);
+  });
+
   it("needs a 10-digit phone and at least one service", () => {
     const r = doorSchema(TODAY).safeParse({ ...valid, phone: "823-5545", services: [] });
     expect(r.success).toBe(false);
@@ -65,8 +73,8 @@ describe("door helpers", () => {
   it("labels the day and keeps its weekday", () => {
     expect(doorDayLabel("2026-11-14")).toBe("Sat, Nov 14");
     expect(doorPreferredDays("2026-11-14")).toEqual([6]);
-    expect(doorNote({ date: "2026-11-14", street: "123 Wooster Rd", city: "Rocky River", other: "" }, ["Fall Cleanup", "Edging"])).toBe(
-      "Door booking: wants Sat, Nov 14 (2026-11-14) for Fall Cleanup, Edging at 123 Wooster Rd, Rocky River, OH 44116.",
+    expect(doorNote({ rep: "Addy", date: "2026-11-14", street: "123 Wooster Rd", city: "Rocky River", other: "" }, ["Fall Cleanup", "Edging"])).toBe(
+      "Door booking by Addy: wants Sat, Nov 14 (2026-11-14) for Fall Cleanup, Edging at 123 Wooster Rd, Rocky River, OH 44116.",
     );
     expect(doorWants(["Edging"], "Junk removal")).toBe("Edging, Other: Junk removal");
     expect(doorWants([], "Junk removal")).toBe("Other: Junk removal");
@@ -74,12 +82,13 @@ describe("door helpers", () => {
 
   it("reads the form, including every ticked service and the honeypot", () => {
     const fd = new FormData();
-    for (const [k, v] of Object.entries({ name: "Pat", phone: "4408235545", street: "1 A St", city: "Lakewood", date: "2026-11-14", company: "", other: "Junk removal" })) fd.set(k, v);
+    for (const [k, v] of Object.entries({ rep: "Addy", name: "Pat", phone: "4408235545", street: "1 A St", city: "Lakewood", date: "2026-11-14", company: "", other: "Junk removal" })) fd.set(k, v);
     fd.append("services", "fall-cleanup");
     fd.append("services", "edging");
     const { values, honeypot } = parseDoorFormData(fd);
     expect(values.services).toEqual(["fall-cleanup", "edging"]);
     expect(values.city).toBe("Lakewood");
+    expect(values.rep).toBe("Addy");
     expect(values.other).toBe("Junk removal");
     expect(honeypot).toBe("");
   });

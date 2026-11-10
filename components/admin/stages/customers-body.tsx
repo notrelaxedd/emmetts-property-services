@@ -544,7 +544,7 @@ export async function CustomerDetailBody({ id, variant = "page" }: { id: string;
                         day(l.created_at)
                       )}
                     </TableCell>
-                    <TableCell>{l.source}</TableCell>
+                    <TableCell>{l.door_rep ? `${l.source} · ${l.door_rep}` : l.source}</TableCell>
                     <TableCell className="max-w-[22rem]">
                       <span className="block truncate">
                         {[...l.requested_service_ids.map((s) => data!.serviceName.get(s) ?? "Service"), l.custom_request ? `"${l.custom_request}"` : null]
