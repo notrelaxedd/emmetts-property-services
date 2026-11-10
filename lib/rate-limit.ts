@@ -48,6 +48,9 @@ export function createRateLimiter(opts: { limit: number; windowMs: number }): Ra
 /** Quote form: 5 submissions per 10 minutes per client IP. */
 export const quoteRateLimiter = createRateLimiter({ limit: 5, windowMs: 10 * 60 * 1000 });
 
+/** Door booking page (`/door`): a rep on a good street books more often than a homeowner asks for quotes. */
+export const doorRateLimiter = createRateLimiter({ limit: 20, windowMs: 10 * 60 * 1000 });
+
 /** Client IP from `x-forwarded-for` (first hop), falling back to `x-real-ip`, else "unknown". */
 export function clientIpFrom(headers: { get(name: string): string | null }): string {
   const xff = headers.get("x-forwarded-for");

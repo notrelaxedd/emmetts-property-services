@@ -16,6 +16,20 @@ const fallback = (): QuoteServiceOption[] =>
  * falls back to the site's static list when Supabase isn't configured or has nothing yet, so the
  * page always renders. Blurbs and icons come from `lib/services.ts` when the slug matches.
  */
+/** Active services for the door booking page (`/door`): every one, snow included, in sort order. */
+export async function loadDoorServices(): Promise<QuoteServiceOption[]> {
+  const db = getSupabaseAdmin();
+  const all = () => siteServices.map((s) => ({ slug: s.slug, name: s.title, icon: s.icon }));
+  if (!db) return all();
+  try {
+    const { data, error } = await db.from("services").select("slug, name, sort_order").eq("active", true).order("sort_order", { ascending: true });
+    if (error || !data || data.length === 0) return all();
+    return data.map((r) => ({ slug: r.slug, name: r.name, icon: siteServices.find((s) => s.slug === r.slug)?.icon }));
+  } catch {
+    return all();
+  }
+}
+
 export async function loadQuoteServices(): Promise<QuoteServiceOption[]> {
   const db = getSupabaseAdmin();
   if (!db) {
