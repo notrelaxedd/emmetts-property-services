@@ -19,7 +19,8 @@ export const DOOR_DEFAULT_CITY = "Rocky River";
 /** `today` is the business-timezone "YYYY-MM-DD" (passed in so the schema stays pure). */
 export function doorSchema(today: string) {
   const last = addDays(today, DOOR_MAX_DAYS_AHEAD);
-  return z.object({
+  return z
+    .object({
     name: z.string().trim().min(2, "Enter the homeowner's name.").max(100, "Keep the name under 100 characters."),
     phone: z
       .string()
@@ -37,17 +38,23 @@ export function doorSchema(today: string) {
       .refine((d) => d <= last, `Pick a day within the next ${DOOR_MAX_DAYS_AHEAD} days.`),
     services: z
       .array(z.string().regex(SLUG_RE, "That service isn't available."))
-      .min(1, "Tick at least one service.")
       .max(20)
       .transform((s) => Array.from(new Set(s))),
-  });
+    /** "Other": anything not on the list, in the rep's words. Becomes the lead's custom request (needs your price). */
+    other: z.string().trim().max(500, "Keep it under 500 characters.").default(""),
+  })
+    .superRefine((d, ctx) => {
+      if (d.services.length === 0 && d.other === "") {
+        ctx.addIssue({ code: "custom", path: ["services"], message: "Tick a service, or write what they want under Other." });
+      }
+    });
 }
 
 export type DoorData = z.output<ReturnType<typeof doorSchema>>;
-export type DoorField = "name" | "phone" | "street" | "city" | "date" | "services";
+export type DoorField = "name" | "phone" | "street" | "city" | "date" | "services" | "other";
 export type DoorFieldErrors = Partial<Record<DoorField, string>>;
 
-export type DoorFormValues = { name: string; phone: string; street: string; city: string; date: string; services: string[] };
+export type DoorFormValues = { name: string; phone: string; street: string; city: string; date: string; services: string[]; other: string };
 
 export type DoorFormState =
   | { status: "idle" }
@@ -70,6 +77,7 @@ export function parseDoorFormData(fd: FormData): { values: DoorFormValues; honey
       city: str(fd, "city"),
       date: str(fd, "date"),
       services: fd.getAll("services").filter((v): v is string => typeof v === "string"),
+      other: str(fd, "other"),
     },
     honeypot: str(fd, "company"),
   };
@@ -109,7 +117,12 @@ export function doorPreferredDays(date: string): Weekday[] {
   return [weekdayOf(date) as Weekday];
 }
 
+/** What they want, for the notes and the rep's confirmation: the ticked services, then "Other: …". */
+export function doorWants(serviceNames: string[], other: string): string {
+  return [...serviceNames, ...(other ? [`Other: ${other}`] : [])].join(", ");
+}
+
 /** The line added to the customer's notes, so the day they asked for shows on the lead and customer pages. */
-export function doorNote(d: Pick<DoorData, "date" | "street" | "city">, serviceNames: string[]): string {
-  return `Door booking: wants ${doorDayLabel(d.date)} (${d.date}) for ${serviceNames.join(", ")} at ${doorAddress(d)}.`;
+export function doorNote(d: Pick<DoorData, "date" | "street" | "city" | "other">, serviceNames: string[]): string {
+  return `Door booking: wants ${doorDayLabel(d.date)} (${d.date}) for ${doorWants(serviceNames, d.other)} at ${doorAddress(d)}.`;
 }

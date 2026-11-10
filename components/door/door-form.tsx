@@ -7,6 +7,7 @@ import { submitDoorBooking } from "@/app/actions/door";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { DOOR_DEFAULT_CITY, initialDoorState, type DoorField, type DoorFormValues } from "@/lib/door-schema";
 
 type Option = { slug: string; name: string };
@@ -37,6 +38,11 @@ function Booking({ services, today, lastDay, onDone }: { services: Option[]; tod
   const [state, action] = useFormState(submitDoorBooking, initialDoorState);
   const values: Partial<DoorFormValues> = state.status === "error" ? state.values : {};
   const errors: Partial<Record<DoorField, string>> = state.status === "error" ? state.fieldErrors : {};
+  // Open when the rep ticks Other, and stays open (with their words) after an error.
+  const [otherOn, setOtherOn] = React.useState(false);
+  React.useEffect(() => {
+    if (state.status === "error" && state.values.other.trim()) setOtherOn(true);
+  }, [state]);
 
   React.useEffect(() => {
     if (state.status === "ok") onDone(state.summary);
@@ -111,6 +117,26 @@ function Booking({ services, today, lastDay, onDone }: { services: Option[]; tod
               {s.name}
             </label>
           ))}
+          <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-md border border-input bg-white px-3 text-base text-ink shadow-sm has-[:checked]:border-ink has-[:checked]:bg-ink/5">
+            <input type="checkbox" checked={otherOn} onChange={(e) => setOtherOn(e.target.checked)} className="size-5 accent-ink" />
+            Other
+          </label>
+          {otherOn ? (
+            <div>
+              <Label htmlFor="door-other" className="sr-only">
+                What else do they want?
+              </Label>
+              <Textarea
+                {...field("other")}
+                className="min-h-20 text-base"
+                placeholder="Junk removal in the backyard, gutters on the garage…"
+                maxLength={500}
+                defaultValue={values.other}
+                autoFocus={!values.other}
+              />
+              <FieldError id="door-other-error" message={errors.other} />
+            </div>
+          ) : null}
         </div>
         <FieldError id="door-services-error" message={errors.services} />
       </fieldset>
