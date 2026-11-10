@@ -8,6 +8,7 @@ import {
   doorPreferredDays,
   doorDayLabel,
   doorSchema,
+  doorWants,
   parseDoorFormData,
   type DoorFormState,
   type DoorFormValues,
@@ -54,13 +55,16 @@ export async function submitDoorBooking(_prev: DoorFormState, formData: FormData
   }
 
   try {
-    const { data: rows, error } = await db.from("services").select("id, slug, name").eq("active", true).in("slug", data.services);
-    if (error) throw new Error(`services lookup: ${error.message}`);
-    // Keep the order the rep ticked them in.
-    const picked = data.services
-      .map((slug) => (rows ?? []).find((r) => r.slug === slug))
-      .filter((r): r is { id: string; slug: string; name: string } => !!r);
-    if (picked.length === 0) {
+    let picked: { id: string; slug: string; name: string }[] = [];
+    if (data.services.length > 0) {
+      const { data: rows, error } = await db.from("services").select("id, slug, name").eq("active", true).in("slug", data.services);
+      if (error) throw new Error(`services lookup: ${error.message}`);
+      // Keep the order the rep ticked them in.
+      picked = data.services
+        .map((slug) => (rows ?? []).find((r) => r.slug === slug))
+        .filter((r): r is { id: string; slug: string; name: string } => !!r);
+    }
+    if (picked.length === 0 && data.other === "") {
       return errorState("Fix the highlighted fields.", values, { services: "Those services aren't available right now." });
     }
     const names = picked.map((s) => s.name);
@@ -78,7 +82,8 @@ export async function submitDoorBooking(_prev: DoorFormState, formData: FormData
       source: DOOR_PAGE_SOURCE,
       utm: { source: DOOR_PAGE_SOURCE, medium: "rep", content: `wants ${data.date}` },
       requested_service_ids: picked.map((s) => s.id),
-      custom_request: null,
+      // "Other" works like the quote form's "something else?": the quotes worker turns it into a line you price.
+      custom_request: data.other || null,
       preferred_days: doorPreferredDays(data.date),
       photo_paths: [],
       status: "new",
@@ -90,6 +95,9 @@ export async function submitDoorBooking(_prev: DoorFormState, formData: FormData
     // Logged, not shown: the lead is saved and the owner sees it; a retry would only make a duplicate.
     try {
       await enqueueTask(db, { type: "quote", payload: { lead_id: lead.id }, dedupeKey: `quote:${lead.id}` });
+      if (data.other !== "") {
+        await enqueueTask(db, { type: "custom_summary", payload: { lead_id: lead.id }, dedupeKey: `custom_summary:${lead.id}` });
+      }
     } catch (e) {
       console.error(`[door] enqueue failed for lead ${lead.id}:`, e instanceof Error ? e.message : e);
     }
@@ -97,7 +105,7 @@ export async function submitDoorBooking(_prev: DoorFormState, formData: FormData
     return {
       status: "ok",
       nonce: Date.now(),
-      summary: `${data.name}, ${data.street}: ${names.join(", ")} on ${doorDayLabel(data.date)}.`,
+      summary: `${data.name}, ${data.street}: ${doorWants(names, data.other)} on ${doorDayLabel(data.date)}.`,
     };
   } catch (e) {
     console.error("[door] booking failed:", e instanceof Error ? e.message : e);
