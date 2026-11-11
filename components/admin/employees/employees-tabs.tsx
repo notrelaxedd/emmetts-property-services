@@ -3,10 +3,11 @@ import { cn } from "@/lib/utils"
 
 const TABS = [
   { key: "crew", href: "/admin/employees", label: "Crew" },
+  { key: "sales", href: "/admin/employees/sales", label: "Sales reps" },
   { key: "flyers", href: "/admin/employees/flyers", label: "Flyer workers" },
 ] as const
 
-/** Crew / Flyer workers switch at the top of the Employees pages. */
+/** Crew / Sales reps / Flyer workers switch at the top of the Employees pages. */
 export function EmployeesTabs({ active }: { active: (typeof TABS)[number]["key"] }) {
   return (
     <nav aria-label="Employee type" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">

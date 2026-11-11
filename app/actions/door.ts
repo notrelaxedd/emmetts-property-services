@@ -31,7 +31,8 @@ const errorState = (message: string, values: DoorFormValues, fieldErrors = {}): 
 });
 
 /**
- * A rep books a homeowner at the door (their name goes on the lead as `door_rep`). Same path as the public quote form, so the job comes out the
+ * A rep books a homeowner at the door. They pick themselves from the sales rep dropdown: the lead gets
+ * `sales_rep_id` (for their commission) and their name as `door_rep`. Same path as the public quote form, so the job comes out the
  * same way: customer → lead (`source: door`, the picked weekday as the preferred day) → the quotes
  * worker prices it and puts the job on the "Needs a day" rail. The day the homeowner asked for goes
  * in the customer's notes (shown on the lead and customer pages) and the lead's utm. Nothing is sent
@@ -55,6 +56,11 @@ export async function submitDoorBooking(_prev: DoorFormState, formData: FormData
   }
 
   try {
+    // The rep must be on the list and not removed.
+    const { data: rep, error: repError } = await db.from("sales_reps").select("id, name").eq("id", data.rep).is("removed_at", null).maybeSingle();
+    if (repError) throw new Error(`rep lookup: ${repError.message}`);
+    if (!rep) return errorState("Fix the highlighted fields.", values, { rep: "Pick your name. Not on the list? Ask Caden or Emmett to add you." });
+
     let picked: { id: string; slug: string; name: string }[] = [];
     if (data.services.length > 0) {
       const { data: rows, error } = await db.from("services").select("id, slug, name").eq("active", true).in("slug", data.services);
@@ -70,7 +76,7 @@ export async function submitDoorBooking(_prev: DoorFormState, formData: FormData
     const names = picked.map((s) => s.name);
 
     const address = doorAddress(data);
-    const note = doorNote(data, names);
+    const note = doorNote(rep.name, data, names);
     const customer = await upsertCustomer(db, { name: data.name, phone: data.phone, address });
     // upsertCustomer never overwrites existing notes, so add the booking line on top of what's there.
     const notes = customer.notes?.trim() ? `${note}\n${customer.notes.trim()}` : note;
@@ -88,7 +94,8 @@ export async function submitDoorBooking(_prev: DoorFormState, formData: FormData
       photo_paths: [],
       status: "new",
       flyer_worker_id: null,
-      door_rep: data.rep,
+      door_rep: rep.name,
+      sales_rep_id: rep.id,
     };
     const { data: lead, error: leadError } = await db.from("leads").insert(leadRow).select("id").single();
     if (leadError || !lead) throw new Error(`lead insert: ${leadError?.message ?? "no row returned"}`);

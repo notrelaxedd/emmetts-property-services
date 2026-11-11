@@ -3,7 +3,7 @@ import { doorAddress, doorDayLabel, doorFieldErrors, doorNote, doorPreferredDays
 
 const TODAY = "2026-11-09"; // a Monday
 const valid = {
-  rep: " Addy ",
+  rep: " 0b7c2f1e-4a5d-4c3b-9e8f-1a2b3c4d5e6f ",
   name: "  Pat Neighbor ",
   phone: "(440) 823-5545",
   street: "123 Wooster Rd",
@@ -16,7 +16,7 @@ describe("doorSchema", () => {
   it("accepts a booking and cleans it up", () => {
     const r = doorSchema(TODAY).parse(valid);
     expect(r).toEqual({
-      rep: "Addy",
+      rep: "0b7c2f1e-4a5d-4c3b-9e8f-1a2b3c4d5e6f",
       name: "Pat Neighbor",
       phone: "4408235545",
       street: "123 Wooster Rd",
@@ -46,10 +46,12 @@ describe("doorSchema", () => {
     expect(doorSchema(TODAY).safeParse({ ...valid, date: "" }).success).toBe(false);
   });
 
-  it("needs the rep's name", () => {
-    const r = doorSchema(TODAY).safeParse({ ...valid, rep: "  " });
-    expect(r.success).toBe(false);
-    if (!r.success) expect(doorFieldErrors(r.error).rep).toMatch(/your name/);
+  it("needs the rep picked from the list", () => {
+    for (const rep of ["  ", "Addy"]) {
+      const r = doorSchema(TODAY).safeParse({ ...valid, rep });
+      expect(r.success).toBe(false);
+      if (!r.success) expect(doorFieldErrors(r.error).rep).toMatch(/your name/);
+    }
   });
 
   it("needs a 10-digit phone and at least one service", () => {
@@ -73,7 +75,7 @@ describe("door helpers", () => {
   it("labels the day and keeps its weekday", () => {
     expect(doorDayLabel("2026-11-14")).toBe("Sat, Nov 14");
     expect(doorPreferredDays("2026-11-14")).toEqual([6]);
-    expect(doorNote({ rep: "Addy", date: "2026-11-14", street: "123 Wooster Rd", city: "Rocky River", other: "" }, ["Fall Cleanup", "Edging"])).toBe(
+    expect(doorNote("Addy", { date: "2026-11-14", street: "123 Wooster Rd", city: "Rocky River", other: "" }, ["Fall Cleanup", "Edging"])).toBe(
       "Door booking by Addy: wants Sat, Nov 14 (2026-11-14) for Fall Cleanup, Edging at 123 Wooster Rd, Rocky River, OH 44116.",
     );
     expect(doorWants(["Edging"], "Junk removal")).toBe("Edging, Other: Junk removal");

@@ -30,6 +30,22 @@ export async function loadDoorServices(): Promise<QuoteServiceOption[]> {
   }
 }
 
+/** Sales reps for the /door "Your name" dropdown: everyone not removed, by name. Names only. */
+export async function loadDoorReps(): Promise<{ id: string; name: string }[]> {
+  const db = getSupabaseAdmin();
+  if (!db) return [];
+  try {
+    const { data, error } = await db.from("sales_reps").select("id, name").is("removed_at", null).order("name");
+    if (error) {
+      console.error("[door] sales reps:", error.message);
+      return [];
+    }
+    return data ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function loadQuoteServices(): Promise<QuoteServiceOption[]> {
   const db = getSupabaseAdmin();
   if (!db) {

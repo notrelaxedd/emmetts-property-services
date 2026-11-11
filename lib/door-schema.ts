@@ -1,6 +1,6 @@
 /**
  * The hidden door-to-door booking page (`/door`): what a rep types at the door, and its checks.
- * Only what the rep needs: their own name, homeowner name, phone, address, the day they want, and the services.
+ * Only what the rep needs: who they are (picked from the sales rep list), homeowner name, phone, address, the day they want, and the services.
  * Pure: no I/O, no next/* or server-only imports (unit-tested in door-schema.test.ts).
  */
 import { z } from "zod";
@@ -10,6 +10,7 @@ import { addDays, weekdayOf } from "./scheduler/time";
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** How far ahead a rep can book. */
 export const DOOR_MAX_DAYS_AHEAD = 120;
@@ -21,8 +22,8 @@ export function doorSchema(today: string) {
   const last = addDays(today, DOOR_MAX_DAYS_AHEAD);
   return z
     .object({
-    /** The rep's own name, so the owner can see who got the lead. */
-    rep: z.string().trim().min(2, "Enter your name.").max(60, "Keep your name under 60 characters."),
+    /** The rep's id from the dropdown (sales_reps), so the owner sees who got the lead and owes them commission. */
+    rep: z.string().trim().regex(UUID_RE, "Pick your name."),
     name: z.string().trim().min(2, "Enter the homeowner's name.").max(100, "Keep the name under 100 characters."),
     phone: z
       .string()
@@ -126,6 +127,6 @@ export function doorWants(serviceNames: string[], other: string): string {
 }
 
 /** The line added to the customer's notes, so the day they asked for shows on the lead and customer pages. */
-export function doorNote(d: Pick<DoorData, "rep" | "date" | "street" | "city" | "other">, serviceNames: string[]): string {
-  return `Door booking by ${d.rep}: wants ${doorDayLabel(d.date)} (${d.date}) for ${doorWants(serviceNames, d.other)} at ${doorAddress(d)}.`;
+export function doorNote(repName: string, d: Pick<DoorData, "date" | "street" | "city" | "other">, serviceNames: string[]): string {
+  return `Door booking by ${repName}: wants ${doorDayLabel(d.date)} (${d.date}) for ${doorWants(serviceNames, d.other)} at ${doorAddress(d)}.`;
 }

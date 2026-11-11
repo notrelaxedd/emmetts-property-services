@@ -223,7 +223,7 @@ begin
     'jobs', 'job_assignments', 'owner_windows', 'owner_exceptions', 'crew_availability',
     'crew_exceptions', 'approvals', 'ads', 'messages', 'payouts', 'expenses', 'ai_usage',
     'fleet_workers', 'fleet_tasks', 'stripe_events', 'flyer_workers', 'flyer_batches', 'flyer_scans',
-    'customer_interactions', 'crew_jobs'
+    'customer_interactions', 'crew_jobs', 'sales_reps', 'commission_payouts'
   ] loop
     n := tests.count_rows(format('select * from public.%I', t));
     perform tests.check(n <= 0, format('anon reads nothing from %s', t),
@@ -288,7 +288,8 @@ begin
   foreach t in array array[
     'quotes', 'quote_items', 'customers', 'leads', 'settings', 'jobs', 'approvals', 'ads',
     'messages', 'expenses', 'ai_usage', 'fleet_workers', 'fleet_tasks', 'stripe_events',
-    'owner_windows', 'owner_exceptions', 'flyer_workers', 'flyer_batches', 'flyer_scans', 'customer_interactions'
+    'owner_windows', 'owner_exceptions', 'flyer_workers', 'flyer_batches', 'flyer_scans', 'customer_interactions',
+    'sales_reps', 'commission_payouts'
   ] loop
     n := tests.count_rows(format('select * from public.%I', t));
     perform tests.check(n <= 0, format('crew reads nothing from %s', t),
