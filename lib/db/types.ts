@@ -229,6 +229,8 @@ export type Lead = Base & {
   flyer_worker_id: string | null;
   /** Sales rep who booked this lead on /door, as typed (null for other sources). */
   door_rep: string | null;
+  /** Sales rep (sales_reps) who booked this lead on /door. */
+  sales_rep_id: string | null;
 };
 
 export type Quote = Base & {
@@ -440,6 +442,30 @@ export type FlyerBatch = Base & {
 };
 
 /** One QR scan. `visitor` is a truncated hash of ip + user agent. */
+/** Door-to-door sales rep. No sign-in; picked from the dropdown on /door. */
+export type SalesRep = Base & {
+  name: string;
+  phone: string | null;
+  /** 0.20 = 20% of each job they sell. */
+  commission_rate: number;
+  removed_at: string | null;
+};
+
+export type CommissionMethod = "cash" | "venmo" | "zelle" | "check" | "other";
+
+/** Commission paid to a rep for one job. No row for a job = not paid yet. */
+export type CommissionPayout = Base & {
+  sales_rep_id: string;
+  job_id: string | null;
+  customer_label: string;
+  rate: number;
+  job_amount: number;
+  amount: number;
+  method: CommissionMethod;
+  note: string | null;
+  paid_at: string;
+};
+
 export type FlyerScan = Base & {
   flyer_worker_id: string;
   visitor: string;
@@ -870,6 +896,8 @@ export type Database = {
       flyer_workers: Table<FlyerWorker>;
       flyer_batches: Table<FlyerBatch>;
       flyer_scans: Table<FlyerScan>;
+      sales_reps: Table<SalesRep>;
+      commission_payouts: Table<CommissionPayout>;
       expenses: Table<Expense>;
       ai_usage: Table<AiUsage>;
       settings: Table<Settings>;

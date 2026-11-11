@@ -261,7 +261,7 @@ export async function QuoteDetailBody({ id, variant = "page" }: { id: string; va
   const [itemsRes, customerRes, leadRes, servicesRes, approvalsRes, jobRes, settings] = await Promise.all([
     db.from("quote_items").select("*").eq("quote_id", quote.id).order("sort_order", { ascending: true }),
     db.from("customers").select("*").eq("id", quote.customer_id).maybeSingle(),
-    db.from("leads").select("id,custom_request,photo_paths,status").eq("id", quote.lead_id).maybeSingle(),
+    db.from("leads").select("id,custom_request,photo_paths,status,door_rep,sales_rep_id").eq("id", quote.lead_id).maybeSingle(),
     db.from("services").select("id,name,minutes_rule").order("sort_order", { ascending: true }),
     db
       .from("approvals")
@@ -311,6 +311,22 @@ export async function QuoteDetailBody({ id, variant = "page" }: { id: string; va
             <Link className="underline" href={leadHref} scroll={panel ? false : undefined}>
               View lead
             </Link>
+            {lead?.door_rep ? (
+              <>
+                {" · "}
+                <span className="font-medium text-ink">
+                  Sold by{" "}
+                  {lead.sales_rep_id ? (
+                    <Link className="underline" href={`/admin/employees/sales/${lead.sales_rep_id}`}>
+                      {lead.door_rep}
+                    </Link>
+                  ) : (
+                    lead.door_rep
+                  )}{" "}
+                  (door to door)
+                </span>
+              </>
+            ) : null}
           </>
         }
         actions={

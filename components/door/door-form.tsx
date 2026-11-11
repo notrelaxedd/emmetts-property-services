@@ -7,15 +7,17 @@ import { submitDoorBooking } from "@/app/actions/door";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { DOOR_DEFAULT_CITY, initialDoorState, type DoorField, type DoorFormValues } from "@/lib/door-schema";
 
 type Option = { slug: string; name: string };
+type Rep = { id: string; name: string };
 
 const TOWNS = ["Rocky River", "Westlake", "Bay Village", "Lakewood"];
 
-/** The rep's name is kept on their phone so they only type it once. */
-const REP_KEY = "eod-door-rep";
+/** The rep's pick is kept on their phone so they only choose it once. */
+const REP_KEY = "eod-door-rep-id";
 function readRep(): string {
   try {
     return window.localStorage.getItem(REP_KEY) ?? "";
@@ -23,11 +25,11 @@ function readRep(): string {
     return "";
   }
 }
-function saveRep(name: string) {
+function saveRep(id: string) {
   try {
-    window.localStorage.setItem(REP_KEY, name.trim());
+    window.localStorage.setItem(REP_KEY, id);
   } catch {
-    // Private mode etc.: they'll just type it again next time.
+    // Private mode etc.: they'll just pick it again next time.
   }
 }
 
@@ -51,7 +53,19 @@ function FieldError({ id, message }: { id: string; message?: string }) {
 }
 
 /** One form per booking; "Book another" remounts it empty. */
-function Booking({ services, today, lastDay, onDone }: { services: Option[]; today: string; lastDay: string; onDone: (summary: string) => void }) {
+function Booking({
+  services,
+  reps,
+  today,
+  lastDay,
+  onDone,
+}: {
+  services: Option[];
+  reps: Rep[];
+  today: string;
+  lastDay: string;
+  onDone: (summary: string) => void;
+}) {
   const [state, action] = useFormState(submitDoorBooking, initialDoorState);
   const values: Partial<DoorFormValues> = state.status === "error" ? state.values : {};
   const errors: Partial<Record<DoorField, string>> = state.status === "error" ? state.fieldErrors : {};
@@ -65,11 +79,12 @@ function Booking({ services, today, lastDay, onDone }: { services: Option[]; tod
     if (state.status === "ok") onDone(state.summary);
   }, [state, onDone]);
 
-  // Fill in the saved name after mount (localStorage isn't there during server render).
-  const repRef = React.useRef<HTMLInputElement>(null);
+  // Pick the saved name after mount (localStorage isn't there during server render), if they're still on the list.
+  const repRef = React.useRef<HTMLSelectElement>(null);
   React.useEffect(() => {
-    if (repRef.current && !repRef.current.value) repRef.current.value = readRep();
-  }, [state]);
+    const saved = readRep();
+    if (repRef.current && !repRef.current.value && reps.some((r) => r.id === saved)) repRef.current.value = saved;
+  }, [state, reps]);
 
   const field = (name: DoorField) => ({
     name,
@@ -104,7 +119,19 @@ function Booking({ services, today, lastDay, onDone }: { services: Option[]; tod
 
       <div>
         <Label htmlFor="door-rep">Your name</Label>
-        <Input {...field("rep")} ref={repRef} className="mt-1 h-11 text-base" autoComplete="off" placeholder="So we know who got the job" defaultValue={values.rep} required />
+        <div className="mt-1">
+          <NativeSelect {...field("rep")} ref={repRef} className="h-11 text-base" defaultValue={values.rep ?? ""} required>
+            <option value="" disabled>
+              {reps.length ? "Pick your name" : "No reps added yet"}
+            </option>
+            {reps.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+        <p className="mt-1 text-xs text-ink-muted">Not on the list? Ask Caden or Emmett to add you.</p>
         <FieldError id="door-rep-error" message={errors.rep} />
       </div>
 
@@ -184,7 +211,7 @@ function Booking({ services, today, lastDay, onDone }: { services: Option[]; tod
   );
 }
 
-export function DoorForm({ services, today, lastDay }: { services: Option[]; today: string; lastDay: string }) {
+export function DoorForm({ services, reps, today, lastDay }: { services: Option[]; reps: Rep[]; today: string; lastDay: string }) {
   const [done, setDone] = React.useState<string | null>(null);
   const [round, setRound] = React.useState(0);
 
@@ -209,5 +236,5 @@ export function DoorForm({ services, today, lastDay }: { services: Option[]; tod
     );
   }
 
-  return <Booking key={round} services={services} today={today} lastDay={lastDay} onDone={setDone} />;
+  return <Booking key={round} services={services} reps={reps} today={today} lastDay={lastDay} onDone={setDone} />;
 }
