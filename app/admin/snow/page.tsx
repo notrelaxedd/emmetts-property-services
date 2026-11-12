@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { PageHeader } from "@/components/ui/page-header"
 import { requireOwner } from "@/lib/auth/session"
 import { check } from "@/lib/ops/types"
-import { planPriceLabel } from "@/lib/snow/billing"
+import { planPriceLabel, pushPrice } from "@/lib/snow/billing"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 import { cn } from "@/lib/utils"
 
@@ -42,6 +42,8 @@ export default async function SnowPage() {
   const active = rows.filter((r) => r.sc.active)
   const monthTotal = active.reduce((a, r) => a + r.monthCharge, 0)
   const pushesMonth = rows.reduce((a, r) => a + r.monthPushes, 0)
+  // Sum of each active customer's current per-push price: what one push for everyone costs right now.
+  const perPushTotal = data ? active.reduce((a, r) => a + pushPrice(r.sc, data.settings), 0) : 0
 
   return (
     <div className="space-y-4">
@@ -49,6 +51,12 @@ export default async function SnowPage() {
         title="Snow removal"
         description={`${active.length} active · ${pushesMonth} push${pushesMonth === 1 ? "" : "es"} this month · ${usd(monthTotal)} billed this month`}
       />
+      <Card className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-3">
+        <p className="text-sm font-medium text-ink">Per-push total</p>
+        <p className="text-sm text-ink-body">
+          <span className="text-lg font-semibold text-ink">{usd(perPushTotal)}</span> per push across {active.length} active customer{active.length === 1 ? "" : "s"}
+        </p>
+      </Card>
       <SnowTabs active="customers" />
       {error ? (
         <Alert variant="destructive">
