@@ -194,7 +194,8 @@ export type Customer = Base & {
   /** Token used in unsubscribe links. */
   unsubscribe_token: string;
   /** Stripe Customer (`cus_…`) used for invoices; found by email or created on the first invoice. */
-  stripe_customer_id: string | null;
+  stripe_customer_id: string | null;  /** Team member (profiles.id) who talks to this customer. Null = nobody assigned yet. */
+  communicator_id: string | null;
 };
 
 /** Price log: where a hand-logged conversation stands. */

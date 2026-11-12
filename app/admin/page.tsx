@@ -20,7 +20,7 @@ import { requireOwner } from "@/lib/auth/session"
 export const dynamic = "force-dynamic"
 export const metadata = { title: "Home" }
 
-type Params = { stage?: string; id?: string; add?: string; adStatus?: string; q?: string }
+type Params = { stage?: string; id?: string; add?: string; adStatus?: string; q?: string; who?: string }
 
 function PanelBody({ stage, params }: { stage: StageKey; params: Params }) {
   const id = typeof params.id === "string" && params.id ? params.id : null
@@ -32,7 +32,13 @@ function PanelBody({ stage, params }: { stage: StageKey; params: Params }) {
     case "customers":
       if (id) return <CustomerDetailBody variant="panel" id={id} />
       if (params.add === "1") return <AddCustomerCard variant="panel" />
-      return <CustomersBody variant="panel" q={typeof params.q === "string" ? params.q.slice(0, 100) : ""} />
+      return (
+        <CustomersBody
+          variant="panel"
+          q={typeof params.q === "string" ? params.q.slice(0, 100) : ""}
+          who={typeof params.who === "string" ? params.who : undefined}
+        />
+      )
     case "quotes":
       return id ? <QuoteDetailBody variant="panel" id={id} /> : <SchedulePanel />
     case "schedule":

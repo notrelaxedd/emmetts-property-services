@@ -76,10 +76,10 @@ export type NewCustomer = z.input<typeof newCustomerSchema>
 /**
  * "Add a customer": just put someone on file (work done or planned), no conversation or job needed.
  * Only the name is required. A phone or email already on file is refused with that customer's id, so
- * the same person isn't added twice.
+ * the same person isn't added twice. Whoever adds them becomes their communicator.
  */
 export async function addCustomer(input: NewCustomer): Promise<{ ok: true; id: string; message: string } | { ok: false; reason: string; existingId?: string }> {
-  await requireOwner()
+  const session = await requireOwner()
   const parsed = newCustomerSchema.safeParse(input)
   if (!parsed.success) return { ok: false, reason: parsed.error.issues[0]?.message ?? "Invalid values." }
   const v = parsed.data
@@ -115,6 +115,7 @@ export async function addCustomer(input: NewCustomer): Promise<{ ok: true; id: s
       lng: coords?.lng ?? null,
       parcel_id: v.parcel_id || null,
       notes: v.notes || null,
+      communicator_id: session.profile.id,
     }
     const created = one(await db.from("customers").insert(row).select("id").single(), "add customer")
     revalidatePath("/admin/customers")
@@ -159,6 +160,38 @@ export async function updateCustomerContact(id: string, input: CustomerContact):
     revalidatePath(`/admin/customers/${id}`)
     revalidatePath("/admin/customers")
     return { ok: true, message: "Contact info saved." }
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/**
+ * Who on the team talks to this customer (`null` = nobody). Only an active team member can be picked;
+ * someone already assigned who was later removed can stay until they're changed.
+ */
+export async function setCustomerCommunicator(id: string, profileId: string | null): Promise<ActionResult & { name?: string | null }> {
+  await requireOwner()
+  if (!idSchema.safeParse(id).success) return { ok: false, reason: "Invalid customer." }
+  if (profileId !== null && !idSchema.safeParse(profileId).success) return { ok: false, reason: "Pick someone from the list." }
+  try {
+    const db = requireSupabaseAdmin()
+    let name: string | null = null
+    if (profileId) {
+      const person = check(await db.from("profiles").select("id,name,removed_at").eq("id", profileId).maybeSingle(), "load team member")
+      if (!person) return { ok: false, reason: "That team member isn't on file any more." }
+      const current = check(await db.from("customers").select("communicator_id").eq("id", id).maybeSingle(), "load customer")
+      if (!current) return { ok: false, reason: "Customer not found." }
+      if (person.removed_at && current.communicator_id !== person.id) {
+        return { ok: false, reason: `${person.name || "That team member"} has been removed from the team.` }
+      }
+      name = person.name.trim() || "them"
+    }
+    const rows = check(await db.from("customers").update({ communicator_id: profileId }).eq("id", id).select("id"), "set communicator")
+    if (!rows?.length) return { ok: false, reason: "Customer not found." }
+    revalidatePath(`/admin/customers/${id}`)
+    revalidatePath("/admin/customers")
+    revalidatePath("/admin")
+    return { ok: true, name, message: name ? `${name} is talking to this customer.` : "Nobody is assigned now." }
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : String(e) }
   }
@@ -273,9 +306,10 @@ function revalidateLog(customerId?: string) {
 /**
  * Log a conversation: what it was about and the price given. With no `customerId`, the customer
  * is found by phone number (or created from the name + phone), so repeat callers stay one customer.
+ * A customer with no communicator yet gets whoever logged it.
  */
 export async function logInteraction(input: InteractionInput): Promise<ActionResult & { customerId?: string }> {
-  await requireOwner()
+  const session = await requireOwner()
   const parsed = interactionSchema.safeParse(input)
   if (!parsed.success) return { ok: false, reason: parsed.error.issues[0]?.message ?? "Invalid entry." }
   const v = parsed.data
@@ -297,6 +331,11 @@ export async function logInteraction(input: InteractionInput): Promise<ActionRes
         follow_up_on: v.followUpOn,
       }),
       "log interaction",
+    )
+    // Nobody talking to them yet: whoever logged this conversation is. Never takes over someone else's.
+    check(
+      await db.from("customers").update({ communicator_id: session.profile.id }).eq("id", customerId).is("communicator_id", null),
+      "claim customer",
     )
     revalidateLog(customerId)
     return { ok: true, customerId, message: "Saved to the price log." }
