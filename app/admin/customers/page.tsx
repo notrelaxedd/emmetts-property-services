@@ -4,8 +4,8 @@ import { requireOwner } from "@/lib/auth/session"
 export const dynamic = "force-dynamic"
 export const metadata = { title: "Customers" }
 
-export default async function CustomersPage({ searchParams }: { searchParams: { q?: string } }) {
+export default async function CustomersPage({ searchParams }: { searchParams: { q?: string; who?: string } }) {
   await requireOwner()
   const q = typeof searchParams.q === "string" ? searchParams.q.slice(0, 100) : ""
-  return <CustomersBody q={q} />
+  return <CustomersBody q={q} who={typeof searchParams.who === "string" ? searchParams.who : undefined} />
 }

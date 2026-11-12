@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 import { ArrowLeft, ChevronRight, NotebookPen, Search, UserPlus, UserRound } from "lucide-react"
 import { usd } from "@/app/admin/money/math"
 import { AddCustomerForm } from "@/components/admin/customers/add-customer-form"
+import { CommunicatorPicker } from "@/components/admin/customers/communicator-picker"
 import { CustomerContactCard } from "@/components/admin/customers/customer-contact-card"
 import { CustomerEditForm } from "@/components/admin/customers/customer-edit-form"
 import { CustomersTabs } from "@/components/admin/customers/customers-tabs"
@@ -20,18 +21,23 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/ui/page-header"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { getSession } from "@/lib/auth/session"
 import type { Customer, CustomerInteraction, Job, JobStatus, Lead, Message, Quote } from "@/lib/db/types"
+import { loadTeam, parseWho, pickable, whoParam, type TeamMember, type WhoFilter } from "@/lib/ops/communicators"
 import { MANUAL_SOURCE } from "@/lib/ops/manual-jobs"
 import { formatDayLabel, formatTimeRange, localDate } from "@/lib/scheduler/time"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
+import { cn } from "@/lib/utils"
 import { MissingRecord } from "./missing-record"
 import { stageHref } from "./stages"
 
 const LIMIT = 200
 
-async function loadList(q: string) {
+async function loadList(q: string, who: WhoFilter) {
   const db = requireSupabaseAdmin()
   let query = db.from("customers").select("*").order("created_at", { ascending: false }).limit(LIMIT)
+  if (who.kind === "none") query = query.is("communicator_id", null)
+  if (who.kind === "person") query = query.eq("communicator_id", who.id)
   // PostgREST `or` syntax: strip characters that would break the filter list.
   const term = q.replace(/[,()*%\\:"']/g, " ").trim()
   if (term) {
@@ -58,7 +64,67 @@ async function loadList(q: string) {
     const prev = last.get(j.customer_id)
     if (!prev || when > prev.when) last.set(j.customer_id, { when, status: j.status })
   }
-  return { rows, last }
+
+  // The "Talking to" filter: everyone who has customers or can be given some, with how many each has.
+  const team = await loadTeam(db)
+  const countFor = async (id: string | null) => {
+    const base = db.from("customers").select("id", { count: "exact", head: true })
+    const res = await (id ? base.eq("communicator_id", id) : base.is("communicator_id", null))
+    if (res.error) throw new Error(res.error.message)
+    return res.count ?? 0
+  }
+  const [unassigned, ...perPerson] = await Promise.all([countFor(null), ...team.map((m) => countFor(m.id))])
+  const counts = new Map(team.map((m, i) => [m.id, perPerson[i]]))
+  return { rows, last, team, counts, unassigned }
+}
+
+/** Pills to see one person's customers: Everyone, Mine, each teammate with customers, Nobody yet. */
+function WhoFilters({
+  who,
+  meId,
+  team,
+  counts,
+  unassigned,
+  href,
+}: {
+  who: WhoFilter
+  meId: string | null
+  team: TeamMember[]
+  counts: Map<string, number>
+  unassigned: number
+  href: (who: string | null) => string
+}) {
+  const others = team.filter((m) => m.id !== meId && ((counts.get(m.id) ?? 0) > 0 || (who.kind === "person" && who.id === m.id)))
+  const pills: { key: string; label: string; count?: number; active: boolean; who: string | null }[] = [
+    { key: "all", label: "Everyone", active: who.kind === "all", who: null },
+    ...(meId ? [{ key: "me", label: "Mine", count: counts.get(meId) ?? 0, active: who.kind === "person" && who.id === meId, who: "me" }] : []),
+    ...others.map((m) => ({ key: m.id, label: m.name, count: counts.get(m.id) ?? 0, active: who.kind === "person" && who.id === m.id, who: m.id })),
+    { key: "none", label: "Nobody yet", count: unassigned, active: who.kind === "none", who: "none" },
+  ]
+  return (
+    <nav aria-label="Who's talking to them" className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-1">
+      <span className="shrink-0 pr-1 text-xs font-medium uppercase tracking-wide text-ink-muted">Talking to</span>
+      {pills.map((p) => (
+        <Link
+          key={p.key}
+          href={href(p.who)}
+          scroll={false}
+          aria-current={p.active ? "true" : undefined}
+          className={cn(
+            "inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-sm font-medium transition-colors",
+            p.active ? "border-ink bg-ink text-white" : "border-ink/25 bg-white text-ink hover:bg-accent",
+          )}
+        >
+          {p.label}
+          {typeof p.count === "number" ? (
+            <span className={cn("rounded-full px-1.5 text-xs font-semibold tabular-nums", p.active ? "bg-brand-green text-ink" : "bg-gray-light text-ink")}>
+              {p.count}
+            </span>
+          ) : null}
+        </Link>
+      ))}
+    </nav>
+  )
 }
 
 function OptIns({ c }: { c: Customer }) {
@@ -77,14 +143,26 @@ function OptIns({ c }: { c: Customer }) {
  * `variant="panel"` is the front page's Customers stage: the same, with rows opening the customer on the
  * front page and "+ Add customer" opening the add form inline.
  */
-export async function CustomersBody({ q, variant = "page" }: { q: string; variant?: "page" | "panel" }) {
+export async function CustomersBody({ q, who: whoRaw, variant = "page" }: { q: string; who?: string; variant?: "page" | "panel" }) {
   const panel = variant === "panel"
+  const meId = (await getSession())?.profile.id ?? null
+  const who = parseWho(whoRaw, meId)
   let data: Awaited<ReturnType<typeof loadList>> | null = null
   let error: string | null = null
   try {
-    data = await loadList(q)
+    data = await loadList(q, who)
   } catch (e) {
     error = e instanceof Error ? e.message : String(e)
+  }
+  const nameOf = new Map((data?.team ?? []).map((m) => [m.id, m.id === meId ? `${m.name} (you)` : m.name]))
+  const listHref = (next: { q?: string; who?: string | null }) => {
+    const params = { q: next.q ?? q, who: next.who === undefined ? whoParam(who) : next.who }
+    if (panel) return stageHref("customers", params)
+    const sp = new URLSearchParams()
+    if (params.q) sp.set("q", params.q)
+    if (params.who) sp.set("who", params.who)
+    const qs = sp.toString()
+    return qs ? `/admin/customers?${qs}` : "/admin/customers"
   }
 
   const addButton = (
@@ -101,7 +179,7 @@ export async function CustomersBody({ q, variant = "page" }: { q: string; varian
       </Link>
     </Button>
   )
-  const clearHref = panel ? stageHref("customers") : "/admin/customers"
+  const clearHref = listHref({ q: "" })
 
   return (
     <div className="space-y-4">
@@ -125,6 +203,7 @@ export async function CustomersBody({ q, variant = "page" }: { q: string; varian
       <CustomersTabs active="all" />
       <form method="get" action={panel ? "/admin" : undefined} className="flex max-w-xl gap-2" role="search">
         {panel ? <input type="hidden" name="stage" value="customers" /> : null}
+        {whoParam(who) ? <input type="hidden" name="who" value={whoParam(who)!} /> : null}
         <Input name="q" defaultValue={q} placeholder="Search name, address, phone or email" aria-label="Search customers" />
         <Button type="submit" variant="outline">
           <Search /> Search
@@ -136,13 +215,25 @@ export async function CustomersBody({ q, variant = "page" }: { q: string; varian
         ) : null}
       </form>
 
+      {data ? (
+        <WhoFilters who={who} meId={meId} team={data.team} counts={data.counts} unassigned={data.unassigned} href={(w) => listHref({ who: w })} />
+      ) : null}
+
       {error || !data ? (
         <EmptyState icon={UserRound} title="Couldn't load customers" description={error ?? undefined} />
       ) : data.rows.length === 0 ? (
         <EmptyState
           icon={UserRound}
-          title={q ? "No matches" : "No customers yet"}
-          description={q ? `Nothing matches "${q}".` : "Customers are added when someone fills in the quote form, you log a conversation in the price log, or you add them yourself."}
+          title={q ? "No matches" : who.kind !== "all" ? "Nobody here" : "No customers yet"}
+          description={
+            q
+              ? `Nothing matches "${q}"${who.kind !== "all" ? " for this person" : ""}.`
+              : who.kind === "none"
+                ? "Every customer has someone talking to them."
+                : who.kind === "person"
+                  ? `${who.me ? "You aren't" : `${nameOf.get(who.id) ?? "This person"} isn't`} talking to any customers yet. Pick who's talking to a customer at the top of their page.`
+                  : "Customers are added when someone fills in the quote form, you log a conversation in the price log, or you add them yourself."
+          }
         />
       ) : panel ? (
         <Card className="overflow-hidden">
@@ -164,7 +255,11 @@ export async function CustomersBody({ q, variant = "page" }: { q: string; varian
                       <span className="min-w-0 text-sm">
                         <span className="block truncate text-ink-body">{c.address ?? "No address"}</span>
                         <span className="block text-xs text-ink-muted">
-                          {[c.phone ? formatPhone(c.phone) : null, last ? `Last job ${day(last.when)} · ${titleCase(last.status)}` : "No jobs yet"]
+                          {[
+                            c.phone ? formatPhone(c.phone) : null,
+                            last ? `Last job ${day(last.when)} · ${titleCase(last.status)}` : "No jobs yet",
+                            c.communicator_id ? `Talking to: ${nameOf.get(c.communicator_id) ?? "Someone"}` : null,
+                          ]
                             .filter(Boolean)
                             .join(" · ")}
                         </span>
@@ -189,7 +284,8 @@ export async function CustomersBody({ q, variant = "page" }: { q: string; varian
                 <TableHead>Name</TableHead>
                 <TableHead className="hidden md:table-cell">Address</TableHead>
                 <TableHead className="hidden sm:table-cell">Phone</TableHead>
-                <TableHead>Opt-ins</TableHead>
+                <TableHead>Talking to</TableHead>
+                <TableHead className="hidden sm:table-cell">Opt-ins</TableHead>
                 <TableHead className="hidden lg:table-cell">Last job</TableHead>
               </TableRow>
             </TableHeader>
@@ -206,7 +302,14 @@ export async function CustomersBody({ q, variant = "page" }: { q: string; varian
                     </TableCell>
                     <TableCell className="hidden max-w-[18rem] truncate md:table-cell">{c.address ?? "—"}</TableCell>
                     <TableCell className="hidden whitespace-nowrap sm:table-cell">{c.phone ? formatPhone(c.phone) : "—"}</TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {c.communicator_id ? (
+                        nameOf.get(c.communicator_id) ?? "Someone"
+                      ) : (
+                        <span className="text-xs text-ink-muted">Nobody yet</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell">
                       <OptIns c={c} />
                     </TableCell>
                     <TableCell className="hidden whitespace-nowrap lg:table-cell">
@@ -258,7 +361,7 @@ async function loadCustomer(id: string) {
   if (customer.error) throw new Error(customer.error.message)
   if (!customer.data) return null
 
-  const [leads, quotes, jobs, messages, services, interactions] = await Promise.all([
+  const [leads, quotes, jobs, messages, services, interactions, team] = await Promise.all([
     db.from("leads").select("*").eq("customer_id", id).order("created_at", { ascending: false }),
     db.from("quotes").select("*").eq("customer_id", id).order("created_at", { ascending: false }),
     db.from("jobs").select("*").eq("customer_id", id).order("created_at", { ascending: false }),
@@ -270,6 +373,7 @@ async function loadCustomer(id: string) {
       .eq("customer_id", id)
       .order("talked_on", { ascending: false })
       .order("created_at", { ascending: false }),
+    loadTeam(db),
   ])
   for (const r of [leads, quotes, jobs, messages, services, interactions]) if (r.error) throw new Error(r.error.message)
 
@@ -304,6 +408,7 @@ async function loadCustomer(id: string) {
     })),
     serviceName: new Map((services.data ?? []).map((s) => [s.id, s.name])),
     crewByJob,
+    team: pickable(team, customer.data.communicator_id),
   }
 }
 
@@ -348,6 +453,7 @@ export async function CustomerDetailBody({ id, variant = "page" }: { id: string;
   }
   if (!error && !data) return panel ? <MissingRecord stage="customers" what="customer" /> : notFound()
   const today = localDate(new Date())
+  const meId = (await getSession())?.profile.id ?? null
 
   return (
     <div className="space-y-5">
@@ -364,7 +470,12 @@ export async function CustomerDetailBody({ id, variant = "page" }: { id: string;
             as={panel ? "h3" : "h1"}
             title={data.customer.name}
             description={data.customer.address ?? "No address on file"}
-            actions={panel ? <RebookButton customerId={data.customer.id} leadHref="/admin?stage=leads&id=" /> : undefined}
+            actions={
+              <>
+                <CommunicatorPicker customerId={data.customer.id} initial={data.customer.communicator_id} team={data.team} meId={meId} />
+                {panel ? <RebookButton customerId={data.customer.id} leadHref="/admin?stage=leads&id=" /> : null}
+              </>
+            }
           />
           <div className="grid gap-5 lg:grid-cols-[20rem_1fr]">
             <CustomerContactCard

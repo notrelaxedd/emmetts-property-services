@@ -257,7 +257,7 @@ export function customerRow(over: Partial<Customer> = {}): Customer {
     id: randomUUID(), created_at: T0, updated_at: T0, name: "Test Customer", email: null, phone: null,
     address: null, lat: null, lng: null, parcel_id: null, lot_acres: null, tree_cover: null,
     email_opt_in: false, sms_opt_in: false, snow_list: false, notes: null, unsubscribe_token: randomUUID(),
-    stripe_customer_id: null,
+    stripe_customer_id: null, communicator_id: null,
     ...over,
   };
 }
