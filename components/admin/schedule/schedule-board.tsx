@@ -66,6 +66,27 @@ const LEGEND: { label: string; className: string; hatch?: boolean }[] = [
 
 const money = (n: number) => (Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`)
 
+type DayMoney = { scheduled: number; done: number }
+
+/**
+ * Money on each day: every job on the calendar that day (cancelled ones left out), and the part of
+ * that the crew has finished. A job's money is its quote total.
+ */
+function moneyByDay(jobs: ScheduleJob[], dateOf: (j: ScheduleJob) => string | null): Map<string, DayMoney> {
+  const out = new Map<string, DayMoney>()
+  for (const j of jobs) {
+    const date = dateOf(j)
+    if (!date || !j.quote || j.status === "cancelled") continue
+    const m = out.get(date) ?? { scheduled: 0, done: 0 }
+    m.scheduled += j.quote.priceTotal
+    if (j.status === "done") m.done += j.quote.priceTotal
+    out.set(date, m)
+  }
+  return out
+}
+
+const roundCents = (n: number) => Math.round(n * 100) / 100
+
 /** How many crew said yes / were asked, for a block or rail tile. */
 function crewSummary(job: ScheduleJob): string | null {
   const asked = job.crew.filter((c) => c.status === "offered" || c.status === "accepted")
@@ -163,6 +184,22 @@ export function ScheduleBoard({
     return map
   }, [days, jobs, unscheduled, moved])
 
+  const dayMoney = React.useMemo(
+    () => moneyByDay([...jobs, ...unscheduled], (j) => moved[j.id]?.date ?? j.date),
+    [jobs, unscheduled, moved],
+  )
+  const weekMoney = React.useMemo(() => {
+    const t = { scheduled: 0, done: 0 }
+    for (const d of days) {
+      const m = dayMoney.get(d.date)
+      if (m) {
+        t.scheduled += m.scheduled
+        t.done += m.done
+      }
+    }
+    return { scheduled: roundCents(t.scheduled), done: roundCents(t.done) }
+  }, [days, dayMoney])
+
   const release = (job: ScheduleJob) =>
     startTransition(async () => {
       const r = await releaseJob(job.id)
@@ -225,6 +262,7 @@ export function ScheduleBoard({
                   >
                     <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{d.weekday}</p>
                     <p className="text-sm font-semibold text-ink">{d.label}</p>
+                    <DayMoneyLine money={dayMoney.get(d.date)} />
                     {d.routes.map((r) => (
                       <Link
                         key={r.href}
@@ -503,6 +541,11 @@ export function ScheduleBoard({
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">This week</CardTitle>
+          {weekMoney.scheduled > 0 ? (
+            <CardDescription className="tabular-nums">
+              {money(weekMoney.scheduled)} scheduled · {money(weekMoney.done)} done
+            </CardDescription>
+          ) : null}
         </CardHeader>
         <CardContent className="p-0 pb-2">
           {jobs.length === 0 ? (
@@ -562,5 +605,21 @@ export function ScheduleBoard({
         onMove={(date, startMin) => selected && setDrop({ job: selected, date, startMin })}
       />
     </div>
+  )
+}
+
+/** Under a day's date: what's on the calendar that day, and how much of it is done. */
+function DayMoneyLine({ money: m }: { money: DayMoney | undefined }) {
+  if (!m || m.scheduled <= 0) return null
+  const scheduled = roundCents(m.scheduled)
+  const done = roundCents(m.done)
+  return (
+    <p
+      className="mt-0.5 text-[11px] leading-tight tabular-nums text-ink-muted"
+      title={`${money(scheduled)} of jobs scheduled this day (cancelled jobs not counted), ${money(done)} of it done`}
+    >
+      <span className="block font-semibold text-ink">{money(scheduled)} sched.</span>
+      <span className={cn("block", done > 0 && "font-semibold text-brand-green-dark")}>{money(done)} done</span>
+    </p>
   )
 }
