@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { CalendarClock, MapPinned, Inbox } from "lucide-react"
+import { CalendarClock, Flame, MapPinned, Inbox } from "lucide-react"
 import { AdminBrand } from "@/components/admin/brand"
 import { AdsBody, parseAdStatus } from "@/components/admin/stages/ads-body"
 import { AutopilotBody } from "@/components/admin/stages/autopilot-body"
@@ -16,6 +16,9 @@ import { StageRow } from "@/components/admin/stages/stage-row"
 import { isStage, type StageKey } from "@/components/admin/stages/stages"
 import { Button } from "@/components/ui/button"
 import { requireOwner } from "@/lib/auth/session"
+import { localDate } from "@/lib/scheduler/time"
+import { requireSupabaseAdmin } from "@/lib/supabase/admin"
+import { loadFollowUps } from "./customers/follow-ups/load"
 
 export const dynamic = "force-dynamic"
 export const metadata = { title: "Home" }
@@ -54,6 +57,17 @@ function PanelBody({ stage, params }: { stage: StageKey; params: Params }) {
   }
 }
 
+/** How many customers are due a message today. Null when it can't be counted: the page still loads. */
+async function followUpsDue(): Promise<number | null> {
+  try {
+    const rows = await loadFollowUps(requireSupabaseAdmin(), localDate(new Date()))
+    return rows.filter((r) => r.overdue >= 0).length
+  } catch (e) {
+    console.error("[home] follow-ups count failed:", e instanceof Error ? e.message : e)
+    return null
+  }
+}
+
 /**
  * The console's front page: one row of stages showing where every customer is, from first ad to money
  * in the bank. Tapping a box opens that stage's menu under the row (`?stage=`, plus `&id=` for one record).
@@ -61,13 +75,26 @@ function PanelBody({ stage, params }: { stage: StageKey; params: Params }) {
 export default async function AdminHomePage({ searchParams }: { searchParams: Params }) {
   await requireOwner()
   const stage = isStage(searchParams.stage) ? searchParams.stage : null
-  const { counts, pendingApprovals } = await loadFrontPage()
+  const [{ counts, pendingApprovals }, due] = await Promise.all([loadFrontPage(), followUpsDue()])
 
   return (
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <AdminBrand />
         <div className="ml-auto flex flex-wrap items-center gap-1">
+          <Button asChild variant={due ? "outline" : "ghost"} className={due ? "h-11 px-3" : "h-11 px-3 text-ink-muted hover:text-ink"}>
+            <Link href="/admin/customers/follow-ups">
+              <Flame aria-hidden="true" /> Follow-ups
+              {due ? (
+                <span
+                  className="min-w-5 rounded-full bg-amber-200 px-1.5 text-center text-xs font-bold leading-5 tabular-nums text-amber-950"
+                  aria-label={`${due} to message today`}
+                >
+                  {due > 99 ? "99+" : due}
+                </span>
+              ) : null}
+            </Link>
+          </Button>
           <Button asChild variant="ghost" className="h-11 px-3 text-ink-muted hover:text-ink">
             <Link href="/admin/map">
               <MapPinned aria-hidden="true" /> Map
