@@ -62,20 +62,33 @@ export type MoneyJob = {
   status: string
   start_at: string | null
   completed_at: string | null
+  /** Owner-set profit for a done job; null / missing = price − fee − labor. */
+  profit_override?: number | null
 }
 export type MoneyPayout = { job_id: string; amount: number }
 export type MoneyExpense = { date: string; amount: number }
 /** A batch of flyers handed out (`date` = handed_out_on); its pay counts in that month, paid or not. */
 export type MoneyFlyerBatch = { date: string; amount: number }
 
-export type JobLabor = { amount: number; estimated: boolean }
+export type JobLabor = { amount: number; estimated: boolean; /** The owner set this job's profit; labor is what's left. */ edited?: boolean }
 
-/** Labor for a job: real payouts when any exist, else the quote's estimated labor. */
+type LaborQuote = Pick<MoneyQuote, "labor_total"> & Partial<Pick<MoneyQuote, "price_total" | "fee_total">>
+
+/**
+ * Labor (costs) for a job. When the owner set the job's profit, it's whatever makes the profit come out
+ * to that: price − fee − profit. Otherwise real payouts when any exist, else the quote's estimated labor.
+ */
 export function laborForJob(
-  job: Pick<MoneyJob, "id" | "quote_id">,
+  job: Pick<MoneyJob, "id" | "quote_id"> & Partial<Pick<MoneyJob, "profit_override">>,
   payouts: readonly MoneyPayout[],
-  quotesById: ReadonlyMap<string, Pick<MoneyQuote, "labor_total">>,
+  quotesById: ReadonlyMap<string, LaborQuote>,
 ): JobLabor {
+  if (job.profit_override !== null && job.profit_override !== undefined) {
+    const q = job.quote_id ? quotesById.get(job.quote_id) : undefined
+    const price = Number(q?.price_total ?? 0) || 0
+    const fee = Number(q?.fee_total ?? 0) || 0
+    return { amount: round2(price - fee - Number(job.profit_override)), estimated: false, edited: true }
+  }
   const mine = payouts.filter((p) => p.job_id === job.id)
   if (mine.length) return { amount: sum(mine, (p) => p.amount), estimated: false }
   const q = job.quote_id ? quotesById.get(job.quote_id) : undefined
@@ -104,7 +117,7 @@ export function summarizeMonth(input: {
   acceptedQuotes: readonly MoneyQuote[]
   completedJobs: readonly MoneyJob[]
   payouts: readonly MoneyPayout[]
-  quotesById: ReadonlyMap<string, Pick<MoneyQuote, "labor_total">>
+  quotesById: ReadonlyMap<string, LaborQuote>
   expenses: readonly MoneyExpense[]
   flyerBatches?: readonly MoneyFlyerBatch[]
   aiSpend: number
@@ -138,6 +151,8 @@ export type JobProfitRow = {
   labor: number
   laborEstimated: boolean
   profit: number
+  /** The owner set this job's profit by hand. */
+  profitEdited: boolean
 }
 
 /** Per-job profit: price − card fee − labor (payouts, or estimate). Newest first. */
@@ -163,6 +178,7 @@ export function profitPerJob(
         labor: l.amount,
         laborEstimated: l.estimated,
         profit: round2(price - fee - l.amount),
+        profitEdited: !!l.edited,
       }
     })
     .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
@@ -187,7 +203,7 @@ export function profitPerWeek(input: {
   acceptedQuotes: readonly MoneyQuote[]
   completedJobs: readonly MoneyJob[]
   payouts: readonly MoneyPayout[]
-  quotesById: ReadonlyMap<string, Pick<MoneyQuote, "labor_total">>
+  quotesById: ReadonlyMap<string, LaborQuote>
   expenses: readonly MoneyExpense[]
   flyerBatches?: readonly MoneyFlyerBatch[]
 }): WeekRow[] {

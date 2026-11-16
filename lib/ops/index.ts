@@ -8,3 +8,4 @@ export * from "./jobs";
 export * from "./payment-methods";
 export * from "./crew-offers";
 export * from "./booking";
+export * from "./job-crew";

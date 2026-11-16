@@ -2,8 +2,8 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Banknote, Mail, Phone, RotateCcw, Send, UserPlus } from "lucide-react"
-import { askMoreCrew, cancelJob, confirmBooking, releaseJob, remindCrew, setWeatherHold, unplaceJob } from "@/app/admin/actions/schedule"
+import { Banknote, Mail, Pencil, Phone, RotateCcw, Send, UserPlus } from "lucide-react"
+import { askMoreCrew, cancelJob, confirmBooking, editJobCrew, releaseJob, remindCrew, setWeatherHold, unplaceJob } from "@/app/admin/actions/schedule"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -48,6 +48,7 @@ export function JobDialog({
   const [pending, startTransition] = React.useTransition()
   const [confirmCancel, setConfirmCancel] = React.useState(false)
   const [asking, setAsking] = React.useState(false)
+  const [editingCrew, setEditingCrew] = React.useState(false)
   const [date, setDate] = React.useState("")
   const [start, setStart] = React.useState(9 * 60)
   const [method, setMethod] = React.useState<PaymentMethod>("check")
@@ -69,6 +70,8 @@ export function JobDialog({
   const locked = LOCKED_STATUSES.includes(job.status)
   const terminal = job.status === "done" || job.status === "cancelled"
   const onCalendar = job.status === "proposed" || job.status === "crew_confirmed"
+  const crewEditable = job.status === "booked" || job.status === "in_progress"
+  const onJob = job.crew.filter((c) => c.status === "accepted" || c.status === "drop_requested" || c.status === "swap_offered").map((c) => c.id)
   const awaitingCall = onCalendar
   const unpaid = !!job.quote && !job.quote.paidAt
   const ids = { method: `pay-${job.id}`, note: `note-${job.id}`, date: `move-date-${job.id}`, time: `move-time-${job.id}` }
@@ -171,10 +174,15 @@ export function JobDialog({
           </dl>
 
           {/* Crew answers */}
-          {job.status !== "unscheduled" && !terminal ? (
+          {job.status !== "unscheduled" && job.status !== "cancelled" && job.status !== "done" ? (
             <div className="space-y-2 rounded-md border border-ink/10 p-3">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium text-ink">{job.status === "booked" ? "Crew on the job" : "Who's free"}</p>
+                <p className="text-sm font-medium text-ink">{crewEditable ? "Crew on the job" : "Who's free"}</p>
+                {crewEditable ? (
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={pending} onClick={() => setEditingCrew(true)}>
+                    <Pencil aria-hidden="true" /> Edit crew
+                  </Button>
+                ) : null}
                 {onCalendar ? (
                   <span className="flex gap-1">
                     <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={pending} onClick={() => setAsking(true)}>
@@ -190,7 +198,9 @@ export function JobDialog({
               </div>
               {job.crew.length === 0 ? (
                 <p className="text-xs text-ink-muted">
-                  Nobody was emailed about this job. Use Ask crew to email the people you want, or book it with just you.
+                  {crewEditable
+                    ? "Just you on this one. Use Edit crew to put people on it."
+                    : "Nobody was asked about this job. Use Ask crew to pick people, or book it with just you."}
                 </p>
               ) : (
                 <ul className="space-y-1.5">
@@ -204,7 +214,7 @@ export function JobDialog({
                       <label htmlFor={`crew-${job.id}-${c.id}`} className="flex-1 text-ink">
                         {c.name}
                       </label>
-                      <Badge variant={CREW_ANSWER[c.status].variant}>{job.status === "booked" && c.status === "accepted" ? "On it" : CREW_ANSWER[c.status].label}</Badge>
+                      <Badge variant={CREW_ANSWER[c.status].variant}>{crewEditable && c.status === "accepted" ? "On it" : CREW_ANSWER[c.status].label}</Badge>
                       {!c.notified && c.status === "offered" ? <span className="text-xs text-ink-muted">no email</span> : null}
                     </li>
                   ))}
@@ -394,16 +404,35 @@ export function JobDialog({
           startISO={job.date !== null && job.startMin !== null ? zonedToUtc(job.date, hhmm(job.startMin)).toISOString() : null}
           minutes={Math.max(30, (job.endMin ?? 0) - (job.startMin ?? 0) || job.estMinutes)}
           title={`Ask crew about ${job.customerName}`}
-          description="Tick who should get the “job available” email."
-          confirmLabel="Send"
+          description="Tick who to ask."
+          emailHint="Sends the “are you free?” email. Off: they only see the offer in the crew app."
+          confirmLabel="Ask"
           allowNone={false}
           onCancel={() => setAsking(false)}
-          onConfirm={(ids) => {
+          onConfirm={(ids, notify) => {
             setAsking(false)
-            run(() => askMoreCrew(job.id, ids), "Couldn't email the crew")
+            run(() => askMoreCrew(job.id, ids, notify), "Couldn't ask the crew")
           }}
         />
       )}
+      {crewEditable ? (
+        <CrewPicker
+          open={editingCrew}
+          jobId={job.id}
+          startISO={job.date !== null && job.startMin !== null ? zonedToUtc(job.date, hhmm(job.startMin)).toISOString() : null}
+          minutes={Math.max(30, (job.endMin ?? 0) - (job.startMin ?? 0) || job.estMinutes)}
+          title={`Crew for ${job.customerName}`}
+          description="Tick everyone who's going. Untick someone to take them off. Leave everyone unticked if it's just you."
+          emailHint="Emails only the people you add or take off. Off: no emails, it just updates the crew app."
+          confirmLabel="Save crew"
+          initialTicked={onJob}
+          onCancel={() => setEditingCrew(false)}
+          onConfirm={(ids, notify) => {
+            setEditingCrew(false)
+            run(() => editJobCrew(job.id, ids, notify), "Couldn't change the crew")
+          }}
+        />
+      ) : null}
     </>
   )
 }

@@ -100,6 +100,7 @@ export function job(id: string, over: Partial<Job> = {}): Job {
     completed_at: null,
     completion_photo_paths: [],
     notes: null,
+    profit_override: null,
     ...over,
   };
 }

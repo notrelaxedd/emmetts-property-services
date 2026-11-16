@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { ChevronLeft, ChevronRight, Megaphone, Receipt, Wallet } from "lucide-react"
 import { DeleteJobButton } from "@/components/admin/money/delete-job-button"
+import { ProfitEditor } from "@/components/admin/money/profit-editor"
 import { ExpenseForm, ExpensesTable } from "@/components/admin/money/expenses"
 import { PaidJobForm, type PaidJobCustomer } from "@/components/admin/money/paid-job-form"
 import { Badge } from "@/components/ui/badge"
@@ -46,7 +47,7 @@ async function load(month: string) {
 
   // Revenue counts when the money arrives (`paid_at`): customers confirm by phone and pay after the job.
   const quoteCols = "id,customer_id,price_total,fee_total,labor_total,paid_at"
-  const jobCols = "id,quote_id,customer_id,status,start_at,completed_at"
+  const jobCols = "id,quote_id,customer_id,status,start_at,completed_at,profit_override"
   const [accepted, completed, expenses, ai, flyerBatches, customerList] = await Promise.all([
     db.from("quotes").select(quoteCols).gte("paid_at", fromIso).lt("paid_at", toIso),
     db.from("jobs").select(jobCols).eq("status", "done").gte("completed_at", fromIso).lt("completed_at", toIso),
@@ -65,7 +66,7 @@ async function load(month: string) {
   const paidJobs = acceptedIds.length ? await db.from("jobs").select(jobCols).in("quote_id", acceptedIds) : { data: [], error: null }
   if (paidJobs.error) throw new Error(paidJobs.error.message)
 
-  type JobRow = { id: string; quote_id: string | null; customer_id: string; status: string; start_at: string | null; completed_at: string | null }
+  type JobRow = { id: string; quote_id: string | null; customer_id: string; status: string; start_at: string | null; completed_at: string | null; profit_override: number | null }
   const completedRows = (completed.data ?? []) as JobRow[]
   const allJobs = new Map<string, JobRow>()
   for (const j of [...completedRows, ...((paidJobs.data ?? []) as JobRow[])]) allJobs.set(j.id, j)
@@ -87,7 +88,11 @@ async function load(month: string) {
   if (payouts.error) throw new Error(payouts.error.message)
   if (customers.error) throw new Error(customers.error.message)
   const custName = new Map(((customers.data ?? []) as { id: string; name: string }[]).map((c) => [c.id, c.name]))
-  const toMoneyJob = (j: JobRow): MoneyJob => ({ ...j, customer_name: custName.get(j.customer_id) ?? "Customer" })
+  const toMoneyJob = (j: JobRow): MoneyJob => ({
+    ...j,
+    profit_override: j.profit_override === null || j.profit_override === undefined ? null : Number(j.profit_override),
+    customer_name: custName.get(j.customer_id) ?? "Customer",
+  })
   const payoutRows = ((payouts.data ?? []) as { job_id: string; amount: number }[]).map((p) => ({ job_id: p.job_id, amount: Number(p.amount) }))
 
   let aiSpend = 0
@@ -255,7 +260,13 @@ export default async function MoneyPage({ searchParams }: { searchParams: { mont
                           <Money n={j.labor} />
                           {j.laborEstimated && j.labor > 0 ? <span className="ml-1 text-xs text-ink-muted">est.</span> : null}
                         </TableCell>
-                        <TableCell className="text-right font-semibold"><Money n={j.profit} /></TableCell>
+                        <TableCell className="text-right font-semibold">
+                          {j.status === "done" ? (
+                            <ProfitEditor jobId={j.job_id} profit={j.profit} edited={j.profitEdited} customerName={j.customer_name} />
+                          ) : (
+                            <Money n={j.profit} />
+                          )}
+                        </TableCell>
                         <TableCell className="text-right">
                           <DeleteJobButton jobId={j.job_id} label={`${j.customer_name}'s ${usd(j.price)} job${j.date ? ` on ${j.date}` : ""}`} />
                         </TableCell>

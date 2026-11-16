@@ -142,7 +142,13 @@ export type PollResult = {
 export async function pollCrewForJob(
   db: Db,
   job: Job,
-  opts: { siteUrl: string; reset: boolean; onlyCrewIds?: string[] },
+  opts: {
+    siteUrl: string;
+    reset: boolean;
+    onlyCrewIds?: string[];
+    /** false = put the offers in (they show in the crew app) but send no email. Default true. */
+    notify?: boolean;
+  },
 ): Promise<PollResult> {
   if (!job.start_at || !job.end_at) throw new Error("pollCrewForJob: the job is not on the calendar");
   const input = await loadEligibilityInput(db, job);
@@ -171,7 +177,7 @@ export async function pollCrewForJob(
     check(await db.from("job_assignments").insert({ job_id: job.id, crew_id: c.id, respond_token: newRespondToken(), ...fresh }), "poll(offer)");
   }
 
-  const emailed = await notifyOffers(db, job, { siteUrl: opts.siteUrl });
+  const emailed = opts.notify === false ? 0 : await notifyOffers(db, job, { siteUrl: opts.siteUrl, onlyCrewIds: opts.onlyCrewIds });
   const asked = (check(await db.from("job_assignments").select("*").eq("job_id", job.id), "poll(after)") ?? [])
     .filter((a) => a.status === "offered" || a.status === "accepted")
     .map((a) => a.crew_id);
@@ -189,9 +195,10 @@ export async function remindOffers(db: Db, job: Job, opts: { siteUrl: string }):
  * A crew member without an email address is skipped (they still see the offer in the crew app). Provider
  * failures are logged, never thrown: the job is on the calendar either way.
  */
-export async function notifyOffers(db: Db, job: Job, opts: { siteUrl: string }): Promise<number> {
+export async function notifyOffers(db: Db, job: Job, opts: { siteUrl: string; /** Only these crew (the ones just ticked). */ onlyCrewIds?: string[] }): Promise<number> {
+  const only = opts.onlyCrewIds ? new Set(opts.onlyCrewIds) : null;
   const rows = (check(await db.from("job_assignments").select("*").eq("job_id", job.id), "notify(rows)") ?? []).filter(
-    (a) => a.status === "offered" && !a.notified_at,
+    (a) => a.status === "offered" && !a.notified_at && (!only || only.has(a.crew_id)),
   );
   if (!rows.length) return 0;
   const [profiles, customer, services] = await Promise.all([

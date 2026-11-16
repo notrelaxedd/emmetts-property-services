@@ -130,13 +130,13 @@ export function ScheduleBoard({
   const [drop, setDrop] = React.useState<{ job: ScheduleJob; date: string; startMin: number } | null>(null)
 
   const move = React.useCallback(
-    (job: ScheduleJob, date: string, startMin: number, crewIds: string[]) => {
+    (job: ScheduleJob, date: string, startMin: number, crewIds: string[], notify: boolean) => {
       const duration = durationOf(job)
       if (job.date === date && job.startMin === startMin) return
       setMoved((m) => ({ ...m, [job.id]: { date, startMin, endMin: startMin + duration } }))
       startTransition(async () => {
         const iso = zonedToUtc(date, hhmm(startMin)).toISOString()
-        const res = await moveJob(job.id, iso, crewIds)
+        const res = await moveJob(job.id, iso, crewIds, notify)
         setMoved((m) => {
           const next = { ...m }
           delete next[job.id]
@@ -220,11 +220,12 @@ export function ScheduleBoard({
         startISO={drop ? zonedToUtc(drop.date, hhmm(drop.startMin)).toISOString() : null}
         minutes={drop ? durationOf(drop.job) : 60}
         title={drop ? `${drop.job.customerName}: ${drop.job.date ? "move" : "put on the calendar"}` : ""}
-        description="Tick who should get the “job available” email. Leave everyone unticked to email nobody."
+        description="Tick who to ask. Leave everyone unticked if it's just you."
+        emailHint="Sends the “are you free?” email. Off: they only see the offer in the crew app."
         confirmLabel={drop?.job.date ? "Move" : "Put on calendar"}
         onCancel={() => setDrop(null)}
-        onConfirm={(crewIds) => {
-          if (drop) move(drop.job, drop.date, drop.startMin, crewIds)
+        onConfirm={(crewIds, notify) => {
+          if (drop) move(drop.job, drop.date, drop.startMin, crewIds, notify)
           setDrop(null)
         }}
       />

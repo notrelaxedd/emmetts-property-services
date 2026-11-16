@@ -268,6 +268,6 @@ export function jobRow(over: Partial<Job> = {}): Job {
     status: "unscheduled", start_at: null, end_at: null, est_minutes: 60, crew_size: 1, paid: true,
     weather_hold: false, paid_at: T0, deadline: null, schedule_reason: null, resolve_reason: null, owner_hold: false,
     weather_hold_date: null, actual_minutes: null,
-    started_at: null, completed_at: null, completion_photo_paths: [], notes: null, ...over,
+    started_at: null, completed_at: null, completion_photo_paths: [], notes: null, profit_override: null, ...over,
   };
 }

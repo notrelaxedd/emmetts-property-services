@@ -31,6 +31,7 @@ import {
   withdrawCallToConfirm,
 } from "@/lib/ops"
 import type { CrewChoice, Db } from "@/lib/ops"
+import { setJobCrew } from "@/lib/ops/job-crew"
 import { createOwnerJob } from "@/lib/ops/owner-jobs"
 import { localDate, zonedToUtc } from "@/lib/scheduler/time"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
@@ -70,11 +71,11 @@ async function retireLegacyBookingApprovals(db: Db, jobId: string, actor: string
  * hours. Only the crew you ticked (`crewIds`) are asked and emailed; none ticked = nobody is emailed. A job the customer already confirmed goes back to "call to confirm" for the
  * new day.
  */
-export async function moveJob(jobId: string, newStartISO: string, crewIds: string[] = []): Promise<ActionResult> {
+export async function moveJob(jobId: string, newStartISO: string, crewIds: string[] = [], notify = true): Promise<ActionResult> {
   const session = await requireOwner()
   const parsed = z
-    .object({ jobId: idSchema, start: z.string().datetime({ offset: true }), crewIds: z.array(idSchema).max(30) })
-    .safeParse({ jobId, start: newStartISO, crewIds })
+    .object({ jobId: idSchema, start: z.string().datetime({ offset: true }), crewIds: z.array(idSchema).max(30), notify: z.boolean() })
+    .safeParse({ jobId, start: newStartISO, crewIds, notify })
   if (!parsed.success) return { ok: false, reason: "Invalid move." }
   try {
     const db = requireSupabaseAdmin()
@@ -110,14 +111,14 @@ export async function moveJob(jobId: string, newStartISO: string, crewIds: strin
 
     const actor = actorOf(session)
     const wasPlaced = job.status !== "unscheduled"
-    const res = await scheduleJobAt(db, jobId, start, end, { actor, siteUrl: siteUrl(), crewIds: parsed.data.crewIds })
+    const res = await scheduleJobAt(db, jobId, start, end, { actor, siteUrl: siteUrl(), crewIds: parsed.data.crewIds, notify: parsed.data.notify })
     await retireLegacyBookingApprovals(db, jobId, actor, "Job moved on the schedule; crew re-asked.")
     revalidate()
 
     const crewLine =
       res.asked === 0
-        ? "No crew emailed."
-        : `${res.asked} crew member${res.asked === 1 ? "" : "s"} asked${res.emailed ? ` (${res.emailed} emailed)` : ""}.`
+        ? "No crew asked."
+        : `${res.asked} crew member${res.asked === 1 ? "" : "s"} asked${res.emailed ? ` (${res.emailed} emailed)` : " (no emails)"}.`
     const next = res.reconfirm
       ? " The customer had confirmed the old day: call them to re-confirm."
       : " Call the customer to confirm the quote and the day."
@@ -320,7 +321,7 @@ export async function crewForSlot(
 }
 
 /** Ask (and email) more crew about a job already on the calendar. Existing answers stand. */
-export async function askMoreCrew(jobId: string, crewIds: string[]): Promise<ActionResult> {
+export async function askMoreCrew(jobId: string, crewIds: string[], notify = true): Promise<ActionResult> {
   await requireOwner()
   const parsed = z.object({ jobId: idSchema, crewIds: z.array(idSchema).min(1, "Tick someone first.").max(30) }).safeParse({ jobId, crewIds })
   if (!parsed.success) return { ok: false, reason: parsed.error.issues[0]?.message ?? "Invalid request." }
@@ -328,8 +329,9 @@ export async function askMoreCrew(jobId: string, crewIds: string[]): Promise<Act
     const db = requireSupabaseAdmin()
     const job = await loadJob(db, jobId)
     if (!job.start_at || !job.end_at) return { ok: false, reason: "Put the job on the calendar first." }
-    const res = await pollCrewForJob(db, job, { siteUrl: siteUrl(), reset: false, onlyCrewIds: parsed.data.crewIds })
+    const res = await pollCrewForJob(db, job, { siteUrl: siteUrl(), reset: false, onlyCrewIds: parsed.data.crewIds, notify: notify !== false })
     revalidate()
+    if (notify === false) return { ok: true, message: "Asked in the crew app (no emails)." }
     return { ok: true, message: res.emailed ? `${res.emailed} email${res.emailed === 1 ? "" : "s"} sent.` : "Asked (nobody new to email)." }
   } catch (e) {
     return fail(e)
@@ -371,6 +373,8 @@ const OwnerJobSchema = z
     date: z.union([z.literal(""), z.string().regex(dayRe, "Bad date")]),
     time: z.union([z.literal(""), z.string().regex(timeRe, "Pick a start time")]),
     crewIds: z.array(idSchema).max(20),
+    /** Email the ticked crew. Default true. */
+    notify: z.boolean().optional(),
   })
   .refine((v) => !v.date || v.time, { message: "Pick a start time.", path: ["time"] })
 export type OwnerJobInput = z.infer<typeof OwnerJobSchema>
@@ -439,7 +443,7 @@ export async function scheduleForCustomer(input: OwnerJobInput): Promise<ActionR
       otherAssignments: [],
     })
     if (reason) return onRail(reason)
-    await scheduleJobAt(db, jobId, start, end, { actor, siteUrl: siteUrl(), crewIds: v.crewIds })
+    await scheduleJobAt(db, jobId, start, end, { actor, siteUrl: siteUrl(), crewIds: v.crewIds, notify: v.notify !== false })
     const offered = check(await db.from("job_assignments").select("crew_id,status").eq("job_id", jobId), "job offers") ?? []
     const crewIds = offered.filter((a) => a.status === "offered" || a.status === "accepted").map((a) => a.crew_id)
     const res = await bookJob(db, jobId, { paymentMethod: v.paymentMethod, crewIds, actor, siteUrl: siteUrl(), note: null })
@@ -451,5 +455,27 @@ export async function scheduleForCustomer(input: OwnerJobInput): Promise<ActionR
     }
   } catch (e) {
     return onRail(e instanceof Error ? e.message : String(e))
+  }
+}
+
+/**
+ * Change who's on a confirmed (booked / in progress) job. Anyone active can be put on; the ones you
+ * add or take off are emailed only when `notify` is on.
+ */
+export async function editJobCrew(jobId: string, crewIds: string[], notify: boolean): Promise<ActionResult> {
+  const session = await requireOwner()
+  const parsed = z.object({ jobId: idSchema, crewIds: z.array(idSchema).max(30), notify: z.boolean() }).safeParse({ jobId, crewIds, notify })
+  if (!parsed.success) return { ok: false, reason: "Invalid crew." }
+  try {
+    const db = requireSupabaseAdmin()
+    const res = await setJobCrew(db, jobId, parsed.data.crewIds, { notify: parsed.data.notify, actor: actorOf(session), siteUrl: siteUrl() })
+    revalidate()
+    revalidatePath("/crew", "layout")
+    revalidatePath("/parent")
+    if (!res.added.length && !res.removed.length) return { ok: true, message: "No change to the crew." }
+    const parts = [res.added.length ? `${res.added.length} added` : null, res.removed.length ? `${res.removed.length} taken off` : null].filter(Boolean).join(", ")
+    return { ok: true, message: `Crew updated: ${parts}. ${parsed.data.notify ? (res.emailed ? `${res.emailed} email${res.emailed === 1 ? "" : "s"} sent.` : "Nobody had an email on file.") : "No emails sent."}` }
+  } catch (e) {
+    return fail(e)
   }
 }

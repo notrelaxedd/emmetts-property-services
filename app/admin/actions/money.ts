@@ -121,3 +121,27 @@ export async function deleteMoneyJob(jobId: string): Promise<ActionResult> {
     return { ok: false, reason: e instanceof Error ? e.message : String(e) }
   }
 }
+
+/**
+ * Set (or clear, with null) a finished job's profit by hand. The Money page then counts the job's
+ * labor as price − fee − profit, so the month and week totals follow.
+ */
+export async function setJobProfit(jobId: string, profit: number | null): Promise<ActionResult> {
+  await requireOwner()
+  const parsed = z
+    .object({ jobId: z.string().uuid(), profit: z.number().min(-100_000).max(100_000).nullable() })
+    .safeParse({ jobId, profit })
+  if (!parsed.success) return { ok: false, reason: "Enter a dollar amount." }
+  try {
+    const db = requireSupabaseAdmin()
+    const job = check(await db.from("jobs").select("id,status").eq("id", jobId).maybeSingle(), "job")
+    if (!job) return { ok: false, reason: "Job not found." }
+    if (job.status !== "done") return { ok: false, reason: "Only finished jobs can have their profit edited." }
+    const value = parsed.data.profit === null ? null : Math.round(parsed.data.profit * 100) / 100
+    check(await db.from("jobs").update({ profit_override: value }).eq("id", jobId), "set profit")
+    revalidatePath("/admin/money")
+    return { ok: true, message: value === null ? "Profit back to the worked-out number." : "Profit updated." }
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
