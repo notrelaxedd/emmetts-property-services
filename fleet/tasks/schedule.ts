@@ -143,11 +143,7 @@ export async function gatherSchedulerInput(
     : [];
 
   const crew = check(await db.from("profiles").select("*").eq("role", "crew").is("removed_at", null), "schedule(crew)") ?? [];
-  const ownerWindows = check(await db.from("owner_windows").select("*"), "schedule(owner windows)") ?? [];
   const today = localDate(now);
-  const ownerExceptions = (check(await db.from("owner_exceptions").select("*"), "schedule(owner exceptions)") ?? []).filter(
-    (e) => e.date >= today,
-  );
   const crewAvailability = check(await db.from("crew_availability").select("*"), "schedule(crew availability)") ?? [];
   const crewExceptions = (
     check(await db.from("crew_exceptions").select("*").eq("status", "approved"), "schedule(crew exceptions)") ?? []
@@ -169,8 +165,6 @@ export async function gatherSchedulerInput(
     input: {
       jobs: toSolve,
       crew,
-      ownerWindows,
-      ownerExceptions,
       crewAvailability,
       crewExceptions,
       existingAssignments: withTimes(assignments, scheduledJobs),
@@ -330,8 +324,6 @@ async function coverPass(ctx: TaskContext, g: Gathered, now: Date, out: Schedule
     for (let k = 0; k < missing; k++) {
       const cover = findCover({
         crew: g.input.crew,
-        ownerWindows: g.input.ownerWindows,
-        ownerExceptions: g.input.ownerExceptions,
         crewAvailability: g.input.crewAvailability,
         crewExceptions: g.input.crewExceptions,
         existingAssignments: existing,

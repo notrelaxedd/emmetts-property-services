@@ -26,8 +26,8 @@ It shows on `/admin/schedule` in the **Needs a day** rail. A custom request stil
 
 ## 3. The owner drags the quote onto the calendar
 
-Drop it on a day and time (or use "Put on calendar" in the job dialog). Your open hours are checked;
-the crew are not, they answer for themselves:
+Drop it on a day and time (or use "Put on calendar" in the job dialog). Any day and time works:
+there are no owner open hours. The crew answer for themselves:
 
 - the job becomes `proposed` with that slot;
 - **every crew member who could work it is emailed** (`lib/ops/crew-offers.ts`): not paused or

@@ -57,7 +57,7 @@ export function JobDialog({
 
   React.useEffect(() => {
     if (!job) return
-    setDate(job.date ?? days.find((d) => !d.closed && !d.isToday && d.date > (days[0]?.date ?? ""))?.date ?? days[0]?.date ?? "")
+    setDate(job.date ?? days.find((d) => !d.isToday && d.date > (days[0]?.date ?? ""))?.date ?? days[0]?.date ?? "")
     setStart(job.startMin !== null ? Math.min(19 * 60 + 30, Math.max(7 * 60, job.startMin - (job.startMin % 30))) : 9 * 60)
     setMethod(job.quote?.paymentMethod ?? "check")
     // Default crew: whoever said yes, up to the crew the estimate asks for.

@@ -4,8 +4,6 @@ import type {
   CrewAvailability,
   CrewException,
   Job,
-  OwnerException,
-  OwnerWindow,
   Profile,
   Weekday,
 } from "../db/types";
@@ -46,16 +44,6 @@ export function block(crewId: string, weekday: Weekday, start_time: string, end_
 /** Same block on Mon–Fri. */
 export function weekdays(crewId: string, start = "08:00", end = "17:00"): CrewAvailability[] {
   return ([1, 2, 3, 4, 5] as Weekday[]).map((d) => block(crewId, d, start, end));
-}
-
-export function ownerWindow(weekday: Weekday, start_time = "08:00", end_time = "17:00"): OwnerWindow {
-  return { ...base(`w-${weekday}-${start_time}`), weekday, start_time, end_time };
-}
-
-export const OWNER_MON_FRI: OwnerWindow[] = ([1, 2, 3, 4, 5] as Weekday[]).map((d) => ownerWindow(d));
-
-export function ownerException(date: string, over: Partial<OwnerException> = {}): OwnerException {
-  return { ...base(`oe-${date}`), date, closed: true, start_time: null, end_time: null, note: null, ...over };
 }
 
 export function crewException(
@@ -132,8 +120,6 @@ export function input(over: Partial<SchedulerInput> = {}): SchedulerInput {
   return {
     jobs: [],
     crew: [],
-    ownerWindows: OWNER_MON_FRI,
-    ownerExceptions: [],
     crewAvailability: [],
     crewExceptions: [],
     existingAssignments: [],

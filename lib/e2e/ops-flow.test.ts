@@ -64,7 +64,6 @@ import type {
   FleetTask,
   FleetTaskType,
   MinutesRule,
-  OwnerWindow,
   Profile,
   Row,
   Service,
@@ -94,7 +93,7 @@ import { handleStripeEvent } from "../stripe/webhook";
 
 const SITE = "https://emmetts.test";
 const OWNER = "owner-user";
-/** Sunday Oct 18 2026, 8:00am EDT. The scheduler must skip Sunday (no owner window) → Monday. */
+/** Sunday Oct 18 2026, 8:00am EDT. The scheduler must skip Sunday (no crew hours) → Monday. */
 const SUNDAY = new Date("2026-10-18T12:00:00.000Z");
 const T0 = "2026-01-01T00:00:00.000Z";
 const id = () => crypto.randomUUID();
@@ -125,9 +124,6 @@ const BO = profile({ name: "Bo Diaz", hourly_rate: 20, email: "bo@example.test" 
 const MONDAY_9 = zonedToUtc("2026-10-19", "09:00");
 const MONDAY_14 = zonedToUtc("2026-10-19", "14:00");
 
-const ownerWindows: OwnerWindow[] = ([1, 2, 3, 4, 5, 6] as Weekday[]).map((weekday) => ({
-  id: id(), created_at: T0, updated_at: T0, weekday, start_time: "09:00", end_time: "18:00",
-}));
 const crewAvailability = [ANN, BO].flatMap((c) =>
   ([1, 2, 3, 4, 5] as Weekday[]).map((weekday) => ({
     id: id(), created_at: T0, updated_at: T0, crew_id: c.id, weekday, start_time: "08:00", end_time: "17:00",
@@ -269,7 +265,6 @@ describe("ops flow: form → estimate → drag onto calendar → crew answer →
       settings: [settingsRow({ default_wage: 15, margin: 0.5, min_job_price: null })],
       services: [MOWING, FALL],
       profiles: [OWNER_PROFILE, ANN, BO],
-      owner_windows: ownerWindows,
       crew_availability: crewAvailability,
     });
   });

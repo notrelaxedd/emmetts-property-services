@@ -7,10 +7,9 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { PageHeader } from "@/components/ui/page-header"
 import { requireOwner } from "@/lib/auth/session"
 import type { Job } from "@/lib/db/types"
-import { ownerOpenForDay } from "@/lib/scheduler/capacity"
 import { addDays, localDate, weekStart, zonedToUtc } from "@/lib/scheduler/time"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
-import { loadIncoming, loadScheduleJobs, minutesOfDay } from "./load"
+import { loadIncoming, loadScheduleJobs } from "./load"
 
 export const dynamic = "force-dynamic"
 export const metadata = { title: "Jobs" }
@@ -30,17 +29,15 @@ async function loadWeek(monday: string, focusJobId: string | null) {
   const from = zonedToUtc(monday, "00:00").toISOString()
   const to = zonedToUtc(addDays(monday, 7), "00:00").toISOString()
 
-  const [weekJobs, railJobs, windows, exceptions, focus, incoming, snowRoutes, mowRoutes] = await Promise.all([
+  const [weekJobs, railJobs, focus, incoming, snowRoutes, mowRoutes] = await Promise.all([
     db.from("jobs").select("*").gte("start_at", from).lt("start_at", to).order("start_at"),
     db.from("jobs").select("*").is("start_at", null).not("status", "in", "(cancelled,done)").order("created_at", { ascending: true }).limit(100),
-    db.from("owner_windows").select("*"),
-    db.from("owner_exceptions").select("*").gte("date", dates[0]).lte("date", dates[6]),
     focusJobId ? db.from("jobs").select("*").eq("id", focusJobId).maybeSingle() : Promise.resolve({ data: null, error: null }),
     loadIncoming(db),
     db.from("snow_routes").select("run_date,start_at,finish_at,stops,trucks").gte("run_date", dates[0]).lte("run_date", dates[6]),
     db.from("mow_routes").select("run_date,start_at,finish_at,stops,trucks").gte("run_date", dates[0]).lte("run_date", dates[6]),
   ])
-  for (const r of [weekJobs, railJobs, windows, exceptions, focus]) if (r.error) throw new Error(r.error.message)
+  for (const r of [weekJobs, railJobs, focus]) if (r.error) throw new Error(r.error.message)
 
   const week = [...(weekJobs.data ?? [])]
   const rail = [...(railJobs.data ?? [])]
@@ -63,29 +60,19 @@ async function loadWeek(monday: string, focusJobId: string | null) {
     ...(snowRoutes.error ? [] : ((snowRoutes.data ?? []) as RouteRow[])).map((r) => chip("snow", r)),
     ...(mowRoutes.error ? [] : ((mowRoutes.data ?? []) as RouteRow[])).map((r) => chip("mow", r)),
   ]
-  const days: ScheduleDay[] = dates.map((date) => {
-    const exs = (exceptions.data ?? []).filter((e) => e.date.slice(0, 10) === date)
-    return {
-      date,
-      weekday: WEEKDAY[new Date(`${date}T12:00:00Z`).getUTCDay()],
-      label: shortDate(date),
-      isToday: date === today,
-      open: ownerOpenForDay(date, windows.data ?? [], exceptions.data ?? []).map((iv) => ({
-        startMin: minutesOfDay(iv.start, date),
-        endMin: minutesOfDay(iv.end, date),
-      })),
-      note: exs.map((e) => e.note).filter(Boolean).join("; ") || null,
-      closed: exs.some((e) => e.closed),
-      routes: routeChips.filter((c) => c.date === date).map(({ kind, label, href }) => ({ kind, label, href })),
-    }
-  })
+  const days: ScheduleDay[] = dates.map((date) => ({
+    date,
+    weekday: WEEKDAY[new Date(`${date}T12:00:00Z`).getUTCDay()],
+    label: shortDate(date),
+    isToday: date === today,
+    routes: routeChips.filter((c) => c.date === date).map(({ kind, label, href }) => ({ kind, label, href })),
+  }))
 
   return {
     days,
     jobs: week.map(toScheduleJob),
     unscheduled: rail.map(toScheduleJob),
     extra: extra.map(toScheduleJob),
-    hasWindows: (windows.data ?? []).length > 0,
     incoming,
   }
 }
@@ -148,7 +135,6 @@ export default async function SchedulePage({ searchParams }: { searchParams: { w
           jobs={data.jobs}
           unscheduled={data.unscheduled}
           extra={data.extra}
-          hasWindows={data.hasWindows}
           focusJobId={focusJobId}
           incoming={data.incoming}
         />

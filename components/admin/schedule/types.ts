@@ -52,11 +52,6 @@ export type ScheduleDay = {
   /** "Oct 13" */
   label: string
   isToday: boolean
-  /** Owner open hours, minutes after local midnight. */
-  open: { startMin: number; endMin: number }[]
-  /** Owner exception note for the day, if any. */
-  note: string | null
-  closed: boolean
   /** Saved snow / mowing routes that day ("4:52–6:30am · 12 drives"), linking to their route page. */
   routes: { kind: "snow" | "mow"; label: string; href: string }[]
 }

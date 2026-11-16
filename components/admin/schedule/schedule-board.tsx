@@ -100,7 +100,6 @@ export function ScheduleBoard({
   jobs,
   unscheduled,
   extra = [],
-  hasWindows,
   focusJobId = null,
   incoming = { estimating: [], needsPrice: [] },
 }: {
@@ -109,7 +108,6 @@ export function ScheduleBoard({
   unscheduled: ScheduleJob[]
   /** A job linked from elsewhere that is in neither list (another week); only for the dialog. */
   extra?: ScheduleJob[]
-  hasWindows: boolean
   focusJobId?: string | null
   /** Requests still being estimated / waiting on your price, shown above the draggable jobs. */
   incoming?: Incoming
@@ -236,18 +234,8 @@ export function ScheduleBoard({
             {l.label}
           </span>
         ))}
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-3 w-5 rounded-sm border border-ink/10 bg-brand-green/15" />
-          Your open hours
-        </span>
         {pending ? <span className="font-semibold text-ink">Saving…</span> : null}
       </div>
-
-      {!hasWindows ? (
-        <p className="rounded-md border border-amber-400 bg-amber-100 px-3 py-2 text-sm text-amber-950">
-          You haven&apos;t set any open hours yet, so jobs can&apos;t be placed or moved. Add them on the Availability page.
-        </p>
-      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[1fr_17rem]">
         <Card className="min-w-0 overflow-hidden">
@@ -277,13 +265,6 @@ export function ScheduleBoard({
                         {r.kind === "snow" ? "❄" : "🌱"} {r.label}
                       </Link>
                     ))}
-                    {d.closed ? (
-                      <p className="text-[11px] font-medium text-destructive">Closed</p>
-                    ) : d.note ? (
-                      <p className="truncate text-[11px] text-ink-muted" title={d.note}>
-                        {d.note}
-                      </p>
-                    ) : null}
                   </div>
                 ))}
               </div>
@@ -306,7 +287,7 @@ export function ScheduleBoard({
                   return (
                     <div
                       key={d.date}
-                      className="relative border-l border-ink/10 bg-gray-light/60"
+                      className="relative border-l border-ink/10 bg-white"
                       style={{ height: GRID_H }}
                       onDragOver={(e) => {
                         const startMin = slotFromEvent(e)
@@ -327,22 +308,6 @@ export function ScheduleBoard({
                         if (job && startMin !== null && !(job.date === d.date && job.startMin === startMin)) setDrop({ job, date: d.date, startMin })
                       }}
                     >
-                      {/* Owner open hours */}
-                      {d.open.map((o, i) => {
-                        const s = Math.max(DAY_START, o.startMin)
-                        const e = Math.min(DAY_END, o.endMin)
-                        if (e <= s) return null
-                        return (
-                          <div
-                            key={i}
-                            aria-hidden="true"
-                            className="absolute inset-x-0 bg-white"
-                            style={{ top: ((s - DAY_START) / SLOT) * SLOT_H, height: ((e - s) / SLOT) * SLOT_H }}
-                          >
-                            <div className="size-full bg-brand-green/10" />
-                          </div>
-                        )
-                      })}
                       {/* Grid lines */}
                       <div
                         aria-hidden="true"
@@ -459,7 +424,7 @@ export function ScheduleBoard({
                   <div
                     role="button"
                     tabIndex={0}
-                    draggable={!pending && hasWindows}
+                    draggable={!pending}
                     onDragStart={(e) => startDrag(e, j, 0)}
                     onDragEnd={() => {
                       drag.current = null
@@ -475,7 +440,7 @@ export function ScheduleBoard({
                     className={cn(
                       "flex w-full items-start gap-1.5 rounded-md px-2 py-2 text-left text-sm",
                       STATUS_STYLE.unscheduled,
-                      hasWindows && !pending && "cursor-grab active:cursor-grabbing",
+                      !pending && "cursor-grab active:cursor-grabbing",
                     )}
                     style={j.weatherHold ? HATCH_STYLE : undefined}
                   >

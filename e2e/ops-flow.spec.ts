@@ -67,7 +67,6 @@ test.describe("ops flow (real Supabase + Stripe test mode)", () => {
     extraQuoteIds: [] as string[],
     extraJobIds: [] as string[],
     stripeEventIds: [] as string[],
-    ownerWindowIds: [] as string[],
     crewAvailabilityIds: [] as string[],
     crewProfileId: null as string | null,
     crewUserId: null as string | null,
@@ -174,23 +173,13 @@ test.describe("ops flow (real Supabase + Stripe test mode)", () => {
     const crew = await ensureProfile(crewUser.id, "crew", `E2E Crew ${RUN}`, CREW_EMAIL);
     crewId = crew.id;
     if (crew.created) created.crewProfileId = crew.id;
-    // Available every day, all day, so the job can land in whatever owner window comes first.
+    // Available every day, all day, so the job can land on the first free slot.
     const { data: avail, error: availErr } = await db
       .from("crew_availability")
       .insert(([0, 1, 2, 3, 4, 5, 6] as Weekday[]).map((weekday) => ({ crew_id: crew.id, weekday, start_time: "00:00", end_time: "24:00" })))
       .select("id");
     if (availErr) throw availErr;
     created.crewAvailabilityIds = (avail ?? []).map((r) => r.id);
-
-    const { data: windows } = await db.from("owner_windows").select("id").limit(1);
-    if (!windows?.length) {
-      const { data: inserted, error } = await db
-        .from("owner_windows")
-        .insert(([1, 2, 3, 4, 5, 6] as Weekday[]).map((weekday) => ({ weekday, start_time: "09:00", end_time: "18:00" })))
-        .select("id");
-      if (error) throw error;
-      created.ownerWindowIds = (inserted ?? []).map((r) => r.id);
-    }
   });
 
   test.afterAll(async () => {
@@ -223,7 +212,6 @@ test.describe("ops flow (real Supabase + Stripe test mode)", () => {
     if (customerId) await del("customers", () => db.from("customers").delete().eq("id", customerId));
     if (created.stripeEventIds.length) await del("stripe_events", () => db.from("stripe_events").delete().in("stripe_event_id", created.stripeEventIds));
     if (created.crewAvailabilityIds.length) await del("crew_availability", () => db.from("crew_availability").delete().in("id", created.crewAvailabilityIds));
-    if (created.ownerWindowIds.length) await del("owner_windows", () => db.from("owner_windows").delete().in("id", created.ownerWindowIds));
     if (created.crewProfileId) await del("crew profile", () => db.from("profiles").delete().eq("id", created.crewProfileId!));
     if (created.crewUserId) {
       const { error } = await db.auth.admin.deleteUser(created.crewUserId);

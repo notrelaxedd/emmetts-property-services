@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { at, block, crewException, ownerException, OWNER_MON_FRI } from "@/lib/scheduler/fixtures";
+import { at, block, crewException } from "@/lib/scheduler/fixtures";
 import { checkMove, type MoveCheckInput } from "./conflicts";
 
 // 2026-10-13 is a Tuesday.
@@ -12,8 +12,6 @@ function input(over: Partial<MoveCheckInput> = {}): MoveCheckInput {
     start: new Date(at(DAY, "09:00")),
     end: new Date(at(DAY, "10:30")),
     crew: [kevin],
-    ownerWindows: OWNER_MON_FRI,
-    ownerExceptions: [],
     crewAvailability: [block("c1", 2, "08:00", "12:00")],
     crewExceptions: [],
     otherAssignments: [],
@@ -22,15 +20,15 @@ function input(over: Partial<MoveCheckInput> = {}): MoveCheckInput {
 }
 
 describe("checkMove", () => {
-  it("allows a slot inside owner hours where the crew is free", () => {
+  it("allows a slot where the crew is free", () => {
     expect(checkMove(input())).toBeNull();
   });
 
-  it("rejects slots outside owner windows and on closed days", () => {
-    expect(checkMove(input({ start: new Date(at(DAY, "16:30")), end: new Date(at(DAY, "18:00")) }))).toMatch(
-      /outside your open hours/,
-    );
-    expect(checkMove(input({ ownerExceptions: [ownerException(DAY, { closed: true })] }))).toMatch(/outside/);
+  it("allows any time of day when no crew is picked (no owner open hours)", () => {
+    const late = { start: new Date(at(DAY, "19:00")), end: new Date(at(DAY, "21:00")), crew: [] };
+    expect(checkMove(input(late))).toBeNull();
+    const sunday = { start: new Date(at("2026-10-18", "06:00")), end: new Date(at("2026-10-18", "07:00")), crew: [] };
+    expect(checkMove(input(sunday))).toBeNull();
   });
 
   it("rejects when the crew member is not available that weekday", () => {

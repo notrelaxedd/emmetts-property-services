@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ACTIVE_ASSIGNMENT_STATUSES, buildCapacity, canTake, covers, crewAvailableForDay, intersect, merge, ownerOpenForDay, subtract } from "./capacity";
-import { NOW, OWNER_MON_FRI, assignment, at, block, crew, crewException, input, ownerException, weekdays } from "./fixtures";
+import { ACTIVE_ASSIGNMENT_STATUSES, buildCapacity, canTake, covers, crewAvailableForDay, intersect, merge, openForDay, subtract } from "./capacity";
+import { NOW, assignment, at, block, crew, crewException, input, weekdays } from "./fixtures";
 import { zonedToUtc } from "./time";
 
 const t = (date: string, hhmm: string) => zonedToUtc(date, hhmm).getTime();
@@ -75,15 +75,11 @@ describe("crew availability", () => {
   });
 });
 
-describe("owner windows", () => {
-  it("uses weekday windows, closes on a closed exception, replaces on a timed exception", () => {
-    expect(ownerOpenForDay(D, OWNER_MON_FRI, [])).toEqual([iv(D, "08:00", "17:00")]);
-    expect(ownerOpenForDay(D, OWNER_MON_FRI, [ownerException(D)])).toEqual([]);
-    expect(
-      ownerOpenForDay(D, OWNER_MON_FRI, [ownerException(D, { closed: false, start_time: "12:00", end_time: "15:00" })]),
-    ).toEqual([iv(D, "12:00", "15:00")]);
-    expect(ownerOpenForDay("2026-10-17", OWNER_MON_FRI, [])).toEqual([]); // Saturday
-    expect(ownerOpenForDay(D, OWNER_MON_FRI, [], new Set([D]))).toEqual([]);
+describe("open days", () => {
+  it("every day is open all day unless it's a closed date", () => {
+    expect(openForDay(D)).toEqual([{ start: t(D, "00:00"), end: t("2026-10-13", "00:00") }]);
+    expect(openForDay("2026-10-17")).toEqual([{ start: t("2026-10-17", "00:00"), end: t("2026-10-18", "00:00") }]); // Saturday
+    expect(openForDay(D, new Set([D]))).toEqual([]);
   });
 });
 

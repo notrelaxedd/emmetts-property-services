@@ -142,8 +142,8 @@ Sidebar: Approval inbox (home, with pending count), Ads, Leads, Quotes, Schedule
 - **Approval inbox:** one feed from `approvals`, filter chips (All/Ads/Quotes/Custom/Appointments/Follow-ups/Crew changes). Every card: **Approve / Edit / Reject**. Edit opens the underlying record inline.
 - **Custom request card:** customer note, photos, the auto-quoted standard part, inputs for **your price, hours on site, crew needed**, buttons **Add my price to quote / Refer to partner / Decline**. Refer and decline email the customer (after approval).
 - **Quotes:** property panel (map/parcel placeholder until data source is set), line items, steppers for crew/hours/wage/margin with live labor/fee/profit/price, **Send via Stripe**.
-- **Schedule:** week view, owner windows, jobs colored by status, drag to move (re-check crew availability on drop), weather holds.
-- **Availability:** edit owner windows + exceptions; view every crew member's blocks and pending time-off requests (approve/decline).
+- **Schedule:** week view, jobs colored by status, drag to move (re-check crew availability on drop), weather holds.
+- **Availability:** view every crew member's blocks and pending time-off requests (approve/decline).
 - **Employees:** invite crew (magic link), rate, max hours, hours this week, cash payout log ("mark paid").
 - **Customer log:** history, jobs, messages, opt-ins, snow list.
 - **Money:** Stripe revenue (from webhook), payouts, expenses → profit per job / week / month.
@@ -165,11 +165,11 @@ Sidebar: Approval inbox (home, with pending count), Ads, Leads, Quotes, Schedule
 
 ## Phase 6 — Scheduler (`lib/scheduler/`, pure + unit tested)
 
-**Inputs:** owner windows minus owner exceptions; each crew member's weekly blocks minus approved time off, plus approved extra days; existing assignments; `max_hours_week`; `paused`; job duration + crew size; customer preferred days; weather holds.
+**Inputs:** every day is open (no owner hours; weather-hold days are closed); each crew member's weekly blocks minus approved time off, plus approved extra days; existing assignments; `max_hours_week`; `paused`; job duration + crew size; customer preferred days; weather holds.
 
 **Algorithm v1 (greedy, explainable):**
 1. Order unscheduled jobs by paid date, then deadline.
-2. For each job, find the earliest slot inside an owner window where ≥ `crew_size` crew are free for the whole duration and under their max hours.
+2. For each job, find the earliest slot where ≥ `crew_size` crew are free for the whole duration and under their max hours.
 3. Prefer slots next to jobs nearby (lat/lng distance) to cut drive time; spread hours fairly across crew.
 4. Output: job → `proposed`, assignments → `offered`. Save a short "why" string for the inbox card.
 
