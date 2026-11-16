@@ -74,6 +74,25 @@ deploy with "Edge Function size is 1.48 MB". The site's own pages always use the
 The flyer template has the logo baked in, so run `npm run flyer:template` after a logo change too (its HTML
 uses those Montserrat subsets plus `assets/fonts/WorkSans-*-Subset.ttf`, and the code under each QR is set in the 600 cut).
 
+## Map (houses and day routes)
+
+The **Map** tab (`/admin/map`) shows every customer's house and plans the day's driving. Pick a day and the jobs on the
+calendar for it become a route in the shortest order (every order is tried up to 9 stops, nearest-neighbour + 2-opt above
+that; straight-line miles × 1.35). Choose where you leave from (School, My house, Emmett's house: addresses are saved in
+`settings.route_starts` and geocoded), tap any house to add it or take it off, and open the result in Google Maps. Houses
+with no map location are listed with a button that looks their addresses up. The Map tab took the Canvass tab's place in
+the menu; the Canvass pages still open at `/admin/canvass`.
+
+## Follow-ups (keep every lead warm)
+
+**Customers → Follow-ups** (`/admin/customers/follow-ups`) lists who to message today, why, and what to offer. Every
+customer without a job on the calendar gets a next date from the first rule that fits (`lib/followups/plan.ts`): asked
+for a price and has none (today), a follow-up date you set in the price log, a sent quote with no answer (2 days, then
+every 4), a price given in conversation (3 days), a past customer (21 days after the last job, then every 30), never
+booked (a week after they came in, then every 30). "What to sell" is by season, minus what they already have or just
+bought, with last year's repeat on top (`lib/followups/sell.ts`). Each card has a message ready to text or email. "I sent
+it" writes a price-log entry with the check-back date; "Not interested" rests them for 90 days. No AI calls.
+
 ## Canvass (door-to-door)
 
 The **Canvass** tab plans door knocking on foot: county parcels, a hot / good / low score and one lot-size price per house,

@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { CalendarClock, DoorOpen, Inbox } from "lucide-react"
+import { CalendarClock, MapPinned, Inbox } from "lucide-react"
 import { AdminBrand } from "@/components/admin/brand"
 import { AdsBody, parseAdStatus } from "@/components/admin/stages/ads-body"
 import { AutopilotBody } from "@/components/admin/stages/autopilot-body"
@@ -69,8 +69,8 @@ export default async function AdminHomePage({ searchParams }: { searchParams: Pa
         <AdminBrand />
         <div className="ml-auto flex flex-wrap items-center gap-1">
           <Button asChild variant="ghost" className="h-11 px-3 text-ink-muted hover:text-ink">
-            <Link href="/admin/canvass">
-              <DoorOpen aria-hidden="true" /> Canvass
+            <Link href="/admin/map">
+              <MapPinned aria-hidden="true" /> Map
             </Link>
           </Button>
           <Button asChild variant="ghost" className="h-11 px-3 text-ink-muted hover:text-ink">

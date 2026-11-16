@@ -508,9 +508,15 @@ export type Settings = Base & {
   /** Service-area centre for weather + distance. */
   base_lat: number | null;
   base_lng: number | null;
+  /** Map tab: where a day's route can start from. */
+  route_starts: RouteStart[];
   partner_tree_service_name: string | null;
   partner_tree_service_email: string | null;
 };
+
+export type RouteStartKey = "school" | "home" | "emmett";
+/** A saved start point for the Map tab's routes. */
+export type RouteStart = { key: RouteStartKey; address: string; lat: number; lng: number };
 
 export const SETTINGS_ID = "00000000-0000-0000-0000-000000000001";
 
