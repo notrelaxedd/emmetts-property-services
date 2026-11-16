@@ -83,6 +83,16 @@ that; straight-line miles × 1.35). Choose where you leave from (School, My hous
 with no map location are listed with a button that looks their addresses up. The Map tab took the Canvass tab's place in
 the menu; the Canvass pages still open at `/admin/canvass`.
 
+## Follow-ups (keep every lead warm)
+
+**Customers → Follow-ups** (`/admin/customers/follow-ups`) lists who to message today, why, and what to offer. Every
+customer without a job on the calendar gets a next date from the first rule that fits (`lib/followups/plan.ts`): asked
+for a price and has none (today), a follow-up date you set in the price log, a sent quote with no answer (2 days, then
+every 4), a price given in conversation (3 days), a past customer (21 days after the last job, then every 30), never
+booked (a week after they came in, then every 30). "What to sell" is by season, minus what they already have or just
+bought, with last year's repeat on top (`lib/followups/sell.ts`). Each card has a message ready to text or email. "I sent
+it" writes a price-log entry with the check-back date; "Not interested" rests them for 90 days. No AI calls.
+
 ## Canvass (door-to-door)
 
 The **Canvass** tab plans door knocking on foot: county parcels, a hot / good / low score and one lot-size price per house,

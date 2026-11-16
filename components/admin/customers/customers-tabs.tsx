@@ -3,10 +3,11 @@ import { cn } from "@/lib/utils"
 
 const TABS = [
   { key: "all", href: "/admin/customers", label: "All customers" },
+  { key: "follow", href: "/admin/customers/follow-ups", label: "Follow-ups" },
   { key: "log", href: "/admin/customers/log", label: "Price log" },
 ] as const
 
-/** All customers / Price log switch at the top of the Customers pages. */
+/** All customers / Follow-ups / Price log switch at the top of the Customers pages. */
 export function CustomersTabs({ active }: { active: (typeof TABS)[number]["key"] }) {
   return (
     <nav aria-label="Customer views" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
