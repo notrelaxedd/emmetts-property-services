@@ -147,7 +147,14 @@ export async function scheduleJobAt(
   jobId: string,
   start: Date,
   end: Date,
-  opts: { actor: string; siteUrl: string; /** Only these crew are asked / emailed (the owner ticked them). Omit = everyone eligible. */ crewIds?: string[] },
+  opts: {
+    actor: string;
+    siteUrl: string;
+    /** Only these crew are asked / emailed (the owner ticked them). Omit = everyone eligible. */
+    crewIds?: string[];
+    /** false = ask them (crew app) without emailing. Default true. */
+    notify?: boolean;
+  },
 ): Promise<ScheduleJobResult> {
   if (!(end > start)) throw new Error("scheduleJobAt: the slot has no length");
   const job = await loadJob(db, jobId);
@@ -184,7 +191,7 @@ export async function scheduleJobAt(
   }
   if (!placed) throw new Error("The job changed while you were moving it. Refresh and try again.");
 
-  const poll = await pollCrewForJob(db, placed, { siteUrl: opts.siteUrl, reset: true, onlyCrewIds: opts.crewIds });
+  const poll = await pollCrewForJob(db, placed, { siteUrl: opts.siteUrl, reset: true, onlyCrewIds: opts.crewIds, notify: opts.notify });
   await clearQueuedReminder(db, jobId);
   await raiseCallToConfirm(db, jobId, { actor: opts.actor, reconfirm });
   return { job: placed, asked: poll.asked.length, emailed: poll.emailed, reconfirm, skipped: poll.skipped.map((s) => ({ name: s.name, why: s.why })) };

@@ -317,6 +317,8 @@ export type Job = Base & {
   completed_at: string | null;
   completion_photo_paths: string[];
   notes: string | null;
+  /** Owner-set profit for a done job (Money page); null = price − card fee − labor. */
+  profit_override: number | null;
 };
 
 export type JobAssignment = Base & {

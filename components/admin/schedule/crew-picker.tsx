@@ -16,8 +16,9 @@ const WHY: Record<string, string> = {
 }
 
 /**
- * "Who should we email?" Opens when a job is dropped on the calendar (or from a job to ask more crew).
- * Nobody is ticked to start: only the names you tick get the "job available" email.
+ * "Who's on it?" Opens when a job is dropped on the calendar, from a job to ask more crew, or to change
+ * the crew on a confirmed job. Tick the names; "Email them" decides whether the ticked people get an email
+ * (off = they only see it in the crew app).
  */
 export function CrewPicker({
   open,
@@ -28,6 +29,8 @@ export function CrewPicker({
   description,
   confirmLabel,
   allowNone = true,
+  initialTicked,
+  emailHint,
   onConfirm,
   onCancel,
 }: {
@@ -40,19 +43,26 @@ export function CrewPicker({
   confirmLabel: string
   /** Placing a job with nobody ticked is fine (no emails); asking more crew needs someone. */
   allowNone?: boolean
-  onConfirm: (crewIds: string[]) => void
+  /** Names ticked when it opens (the crew already on a job). */
+  initialTicked?: string[]
+  /** What "Email them" sends, shown under the checkbox. */
+  emailHint?: string
+  onConfirm: (crewIds: string[], notify: boolean) => void
   onCancel: () => void
 }) {
   const [crew, setCrew] = React.useState<CrewChoice[] | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [ticked, setTicked] = React.useState<Set<string>>(new Set())
+  const [notify, setNotify] = React.useState(true)
+  const initialKey = (initialTicked ?? []).join(",")
 
   React.useEffect(() => {
     if (!open || !jobId || !startISO) return
     let live = true
     setCrew(null)
     setError(null)
-    setTicked(new Set())
+    setTicked(new Set(initialKey ? initialKey.split(",") : []))
+    setNotify(true)
     void crewForSlot(jobId, startISO, Math.max(1, Math.round(minutes))).then((r) => {
       if (!live) return
       if (r.ok) setCrew(r.crew)
@@ -61,7 +71,7 @@ export function CrewPicker({
     return () => {
       live = false
     }
-  }, [open, jobId, startISO, minutes])
+  }, [open, jobId, startISO, minutes, initialKey])
 
   const toggle = (id: string, on: boolean) =>
     setTicked((t) => {
@@ -100,12 +110,19 @@ export function CrewPicker({
             })}
           </ul>
         ) : null}
+        <div className="flex items-start gap-3 rounded-md bg-paper px-3 py-2.5">
+          <Checkbox id="pick-notify" checked={notify} onCheckedChange={(v) => setNotify(v === true)} />
+          <label htmlFor="pick-notify" className="cursor-pointer text-sm">
+            <span className="font-medium text-ink">Email them</span>
+            <span className="block text-xs text-ink-muted">{emailHint ?? "Off: they only see it in the crew app."}</span>
+          </label>
+        </div>
         <DialogFooter className="gap-2">
           <Button variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
-          <Button disabled={!allowNone && ticked.size === 0} onClick={() => onConfirm(Array.from(ticked))}>
-            {ticked.size ? `${confirmLabel} · email ${ticked.size}` : allowNone ? `${confirmLabel} · no emails` : confirmLabel}
+          <Button disabled={!allowNone && ticked.size === 0} onClick={() => onConfirm(Array.from(ticked), notify)}>
+            {ticked.size ? `${confirmLabel} · ${ticked.size} crew${notify ? ", email" : ", no email"}` : allowNone ? `${confirmLabel} · nobody` : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

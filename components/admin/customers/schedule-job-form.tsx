@@ -43,6 +43,7 @@ export function ScheduleJobForm({ today, customer }: { today: string; customer: 
   const [crew, setCrew] = React.useState<CrewChoice[] | null>(null)
   const [crewError, setCrewError] = React.useState<string | null>(null)
   const [ticked, setTicked] = React.useState<Set<string>>(new Set())
+  const [notify, setNotify] = React.useState(true)
   const id = (k: string) => `sj-${k}`
   const minutes = Math.round(Number(hours) * 60)
 
@@ -89,6 +90,7 @@ export function ScheduleJobForm({ today, customer }: { today: string; customer: 
         date,
         time: date ? time : "",
         crewIds: date ? crewIds : [],
+        notify,
       })
       if (r.ok) {
         toast({ title: r.message ?? "Saved", description: `${customer.name}: ${description.trim()}`, variant: "success" })
@@ -153,7 +155,7 @@ export function ScheduleJobForm({ today, customer }: { today: string; customer: 
 
       {date ? (
         <fieldset className="space-y-1.5">
-          <legend className="text-sm font-medium text-ink">Crew (only the ones you tick are emailed)</legend>
+          <legend className="text-sm font-medium text-ink">Crew (tick who&apos;s going)</legend>
           {crewError ? <p className="text-sm text-destructive">{crewError}</p> : null}
           {!crew && !crewError ? <p className="text-sm text-ink-muted">Checking who&apos;s free…</p> : null}
           {crew && !crew.length ? <p className="text-sm text-ink-muted">No active crew yet.</p> : null}
@@ -176,6 +178,12 @@ export function ScheduleJobForm({ today, customer }: { today: string; customer: 
               })}
             </ul>
           ) : null}
+          <div className="flex items-center gap-2 pt-1">
+            <Checkbox id={id("notify")} checked={notify} onCheckedChange={(v) => setNotify(v === true)} />
+            <label htmlFor={id("notify")} className="cursor-pointer text-sm text-ink">
+              Email the ticked crew <span className="text-xs text-ink-muted">(off: they only see it in the crew app)</span>
+            </label>
+          </div>
         </fieldset>
       ) : (
         <p className="text-xs text-ink-muted">No day yet? Leave it blank and the job waits on the schedule&apos;s &quot;Needs a day&quot; list.</p>

@@ -67,12 +67,13 @@ export function ScheduleNextStep({ job, quoteHref }: { job: ScheduleJob; quoteHr
           startISO={/^\d{4}-\d{2}-\d{2}$/.test(date) ? zonedToUtc(date, hhmm(start)).toISOString() : null}
           minutes={Math.max(30, job.estMinutes)}
           title={`${job.customerName}: put on the calendar`}
-          description="Tick who should get the “job available” email. Leave everyone unticked to email nobody."
+          description="Tick who to ask. Leave everyone unticked if it's just you."
+          emailHint="Sends the “are you free?” email. Off: they only see the offer in the crew app."
           confirmLabel="Put on calendar"
           onCancel={() => setPicking(false)}
-          onConfirm={(crewIds) => {
+          onConfirm={(crewIds, notify) => {
             setPicking(false)
-            run(() => moveJob(job.id, zonedToUtc(date, hhmm(start)).toISOString(), crewIds), "Can't put the job there")
+            run(() => moveJob(job.id, zonedToUtc(date, hhmm(start)).toISOString(), crewIds, notify), "Can't put the job there")
           }}
         />
         <div className="grid gap-1">

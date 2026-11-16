@@ -97,3 +97,33 @@ describe("per job / per week", () => {
     expect(weeks[3]).toMatchObject({ revenue: 200, labor: 80, profit: 113.9 })
   })
 })
+
+describe("edited profit on a finished job", () => {
+  const quotes = new Map([["q1", { id: "q1", price_total: 100, fee_total: 3, labor_total: 40, accepted_at: "2026-11-10T15:00:00Z" }]])
+  const job = { id: "j1", quote_id: "q1", customer_name: "A", status: "done", start_at: null, completed_at: "2026-11-10T18:00:00Z" }
+
+  it("uses the edited profit and backs labor out of it", () => {
+    const [row] = profitPerJob([{ ...job, profit_override: 80 }], quotes, [{ job_id: "j1", amount: 30 }])
+    expect(row.profit).toBe(80)
+    expect(row.labor).toBe(17)
+    expect(row.profitEdited).toBe(true)
+  })
+
+  it("falls back to payouts when not edited", () => {
+    const [row] = profitPerJob([{ ...job, profit_override: null }], quotes, [{ job_id: "j1", amount: 30 }])
+    expect(row.profit).toBe(67)
+    expect(row.profitEdited).toBe(false)
+  })
+
+  it("month totals follow the edit", () => {
+    const s = summarizeMonth({
+      acceptedQuotes: Array.from(quotes.values()),
+      completedJobs: [{ ...job, profit_override: 80 }],
+      payouts: [{ job_id: "j1", amount: 30 }],
+      quotesById: quotes,
+      expenses: [],
+      aiSpend: 0,
+    })
+    expect(s.profit).toBe(80)
+  })
+})
