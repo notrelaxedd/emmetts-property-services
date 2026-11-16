@@ -239,7 +239,7 @@ export function settingsRow(over: Partial<Settings> = {}): Settings {
     ai_monthly_cap: null, default_wage: 15, margin: 0.5, min_job_price: null,
     card_fee_pct: 0.029, card_fee_fixed: 0.3, drop_notice_hours: 24,
     autopilot: structuredClone(DEFAULT_AUTOPILOT), quote_valid_days: 14, invoice_days_until_due: 7, auto_schedule: false,
-    base_lat: null, base_lng: null, partner_tree_service_name: null, partner_tree_service_email: null,
+    base_lat: null, base_lng: null, route_starts: [], partner_tree_service_name: null, partner_tree_service_email: null,
     ...over,
   };
 }

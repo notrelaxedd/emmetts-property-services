@@ -74,6 +74,15 @@ deploy with "Edge Function size is 1.48 MB". The site's own pages always use the
 The flyer template has the logo baked in, so run `npm run flyer:template` after a logo change too (its HTML
 uses those Montserrat subsets plus `assets/fonts/WorkSans-*-Subset.ttf`, and the code under each QR is set in the 600 cut).
 
+## Map (houses and day routes)
+
+The **Map** tab (`/admin/map`) shows every customer's house and plans the day's driving. Pick a day and the jobs on the
+calendar for it become a route in the shortest order (every order is tried up to 9 stops, nearest-neighbour + 2-opt above
+that; straight-line miles × 1.35). Choose where you leave from (School, My house, Emmett's house: addresses are saved in
+`settings.route_starts` and geocoded), tap any house to add it or take it off, and open the result in Google Maps. Houses
+with no map location are listed with a button that looks their addresses up. The Map tab took the Canvass tab's place in
+the menu; the Canvass pages still open at `/admin/canvass`.
+
 ## Canvass (door-to-door)
 
 The **Canvass** tab plans door knocking on foot: county parcels, a hot / good / low score and one lot-size price per house,
