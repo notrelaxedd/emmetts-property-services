@@ -4,6 +4,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeDb, type FakeDb } from "./ops/test-utils";
+import { processQuote } from "./quote-submit";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({
@@ -14,8 +15,6 @@ vi.mock("@/lib/canvass/hanger-events", () => ({ recordHangerBooking: async () =>
 
 const state = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock("@/lib/supabase/admin", () => ({ getSupabaseAdmin: () => state.db }));
-
-const { processQuote } = await import("./quote-submit");
 
 const SID = "6f1d2c3b-4a59-4e6f-8a7b-9c0d1e2f3a4b";
 
@@ -59,6 +58,7 @@ describe("processQuote", () => {
       address: "123 Main St, Bay Village, OH 44140",
       lead_id: db.tables.leads[0].id,
     });
+    expect(sub.ip).toMatch(/^203\.0\.113\.\d+$/);
     expect(db.rpcCalls.some((c) => c.fn === "enqueue_task")).toBe(true);
   });
 
@@ -73,12 +73,12 @@ describe("processQuote", () => {
   });
 
   it("records a server failure with what they typed", async () => {
-    const insert = db.from.bind(db);
+    const original = db.from.bind(db) as unknown as (t: string) => Record<string, unknown>;
     db.from = ((t: string) => {
-      const q = insert(t as never);
+      const q = original(t);
       if (t === "leads") (q as { insert: unknown }).insert = () => ({ select: () => ({ single: async () => ({ data: null, error: { message: "boom" } }) }) });
       return q;
-    }) as typeof db.from;
+    }) as unknown as typeof db.from;
     const r = await processQuote(form(), "action");
     expect(r.status).toBe("error");
     const [sub] = db.tables.quote_submissions;
