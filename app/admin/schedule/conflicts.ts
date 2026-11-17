@@ -2,13 +2,12 @@
  * Pure checks for moving a job on the schedule (drag & drop). No I/O, no framework imports.
  * Reuses the scheduler's interval helpers so "free" means the same thing here and in the solver.
  */
-import type { CrewAvailability, CrewException, OwnerException, OwnerWindow } from "@/lib/db/types";
+import type { CrewAvailability, CrewException } from "@/lib/db/types";
 import {
   ACTIVE_ASSIGNMENT_STATUSES,
   covers,
   crewAvailableForDay,
   overlaps,
-  ownerOpenForDay,
 } from "@/lib/scheduler/capacity";
 import { formatDayLabel, formatTimeRange, localDate } from "@/lib/scheduler/time";
 import type { AssignmentStatus } from "@/lib/db/types";
@@ -29,8 +28,6 @@ export type MoveCheckInput = {
   start: Date;
   end: Date;
   crew: MoveCrew[];
-  ownerWindows: OwnerWindow[];
-  ownerExceptions: OwnerException[];
   crewAvailability: CrewAvailability[];
   /** Any status; only `approved` ones count. */
   crewExceptions: CrewException[];
@@ -50,9 +47,6 @@ export function checkMove(input: MoveCheckInput): string | null {
   const date = localDate(input.start);
   if (localDate(new Date(e - 1)) !== date) return "A job can't run past midnight.";
   const slot = `${formatDayLabel(input.start)} ${formatTimeRange(input.start, input.end)}`;
-
-  const open = ownerOpenForDay(date, input.ownerWindows, input.ownerExceptions);
-  if (!covers(open, s, e)) return `${slot} is outside your open hours.`;
 
   for (const c of input.crew) {
     const who = firstName(c.name);

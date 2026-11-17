@@ -91,18 +91,11 @@ export async function moveJob(jobId: string, newStartISO: string, crewIds: strin
     const end = new Date(start.getTime() + minutes * 60_000)
     if (job.start_at && Date.parse(job.start_at) === start.getTime()) return { ok: true, message: "No change." }
 
-    const date = localDate(start)
-    const [windows, ownerExceptions] = await Promise.all([
-      db.from("owner_windows").select("*"),
-      db.from("owner_exceptions").select("*").eq("date", date),
-    ])
     const reason = checkMove({
       jobId,
       start,
       end,
       crew: [],
-      ownerWindows: check(windows, "owner windows") ?? [],
-      ownerExceptions: check(ownerExceptions, "owner exceptions") ?? [],
       crewAvailability: [],
       crewExceptions: [],
       otherAssignments: [],
@@ -427,17 +420,11 @@ export async function scheduleForCustomer(input: OwnerJobInput): Promise<ActionR
   try {
     const start = zonedToUtc(v.date, v.time)
     const end = new Date(start.getTime() + slotMinutes(Math.round(v.hours * 60)) * 60_000)
-    const [windows, ownerExceptions] = await Promise.all([
-      db.from("owner_windows").select("*"),
-      db.from("owner_exceptions").select("*").eq("date", v.date),
-    ])
     const reason = checkMove({
       jobId,
       start,
       end,
       crew: [],
-      ownerWindows: check(windows, "owner windows") ?? [],
-      ownerExceptions: check(ownerExceptions, "owner exceptions") ?? [],
       crewAvailability: [],
       crewExceptions: [],
       otherAssignments: [],

@@ -8,10 +8,7 @@ import {
   crewException,
   input,
   job,
-  ownerException,
-  ownerWindow,
   weekdays,
-  OWNER_MON_FRI,
 } from "./fixtures";
 import { findCover, isInsideNoticeWindow, orderJobs, solve } from "./solve";
 
@@ -189,23 +186,24 @@ describe("solve: crew rules", () => {
   });
 
   it("an extra day adds capacity on a normally-off day", () => {
-    const owner = [...OWNER_MON_FRI, ownerWindow(6, "08:00", "14:00")]; // owner works Saturdays
-    const base = { jobs: [job("j")], crew: [kevin], ownerWindows: owner, crewAvailability: [block("k", 3, "08:00", "17:00")] };
+    const base = { jobs: [job("j")], crew: [kevin], crewAvailability: [block("k", 3, "08:00", "17:00")] };
     expect(solve(input(base)).proposals[0].start_at).toBe(at("2026-10-14", "08:00")); // Wednesday
     const extraMon = crewException("k", MON, { kind: "extra", start_time: "09:00", end_time: "13:00" });
     expect(solve(input({ ...base, crewExceptions: [extraMon] })).proposals[0].start_at).toBe(at(MON, "09:00"));
-    // Whole-day extra on a Saturday is bounded by the owner's hours.
+    // A timed extra on a Saturday works too: there are no owner open hours to get in the way.
     const now = new Date(at(THU, "08:00"));
-    const extraSat = crewException("k", "2026-10-17", { kind: "extra" });
-    expect(solve(input({ ...base, now, crewExceptions: [extraSat] })).proposals[0].start_at).toBe(at("2026-10-17", "08:00"));
+    const extraSat = crewException("k", "2026-10-17", { kind: "extra", start_time: "07:00", end_time: "12:00" });
+    expect(solve(input({ ...base, now, crewExceptions: [extraSat] })).proposals[0].start_at).toBe(at("2026-10-17", "07:00"));
   });
 
-  it("an owner exception closes a day (or narrows it)", () => {
+  it("a closed date (weather hold) is skipped", () => {
     const base = { jobs: [job("j")], crew: [kevin], crewAvailability: weekdays("k") };
-    expect(solve(input({ ...base, ownerExceptions: [ownerException(MON)] })).proposals[0].start_at).toBe(at(TUE, "08:00"));
-    const narrow = ownerException(MON, { closed: false, start_time: "13:00", end_time: "15:00" });
-    expect(solve(input({ ...base, ownerExceptions: [narrow] })).proposals[0].start_at).toBe(at(MON, "13:00"));
     expect(solve(input({ ...base, closedDates: [MON] })).proposals[0].start_at).toBe(at(TUE, "08:00"));
+  });
+
+  it("crew hours alone bound the slot: no owner open hours", () => {
+    const base = { jobs: [job("j")], crew: [kevin], crewAvailability: [block("k", 1, "18:00", "21:00")] };
+    expect(solve(input(base)).proposals[0].start_at).toBe(at(MON, "18:00"));
   });
 
   it("fairness: the crew member with the fewest hours that week gets the job", () => {
@@ -299,7 +297,7 @@ describe("solve: preferences", () => {
   });
 
   it("respects a deadline, and says so when nothing fits before it", () => {
-    const base = { crew: [kevin], crewAvailability: weekdays("k"), ownerExceptions: [ownerException(MON)] };
+    const base = { crew: [kevin], crewAvailability: weekdays("k"), closedDates: [MON] };
     const res = solve(input({ ...base, jobs: [job("j", { deadline: MON })] }));
     expect(res.proposals[0].start_at).toBe(at(TUE, "08:00"));
     expect(res.proposals[0].reason).toContain("After the deadline");
@@ -308,7 +306,7 @@ describe("solve: preferences", () => {
   it("reports jobs with no slot in the horizon", () => {
     const res = solve(input({ jobs: [job("j", { est_minutes: 600 })], crew: [kevin], crewAvailability: weekdays("k") }));
     expect(res.unschedulable).toEqual([
-      { job_id: "j", reason: "No 10h slot in the next 21 days where a crew member is free inside open hours." },
+      { job_id: "j", reason: "No 10h slot in the next 21 days where a crew member is free." },
     ]);
   });
 });

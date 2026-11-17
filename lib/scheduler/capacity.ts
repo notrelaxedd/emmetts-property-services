@@ -2,8 +2,6 @@ import type {
   AssignmentStatus,
   CrewAvailability,
   CrewException,
-  OwnerException,
-  OwnerWindow,
   Profile,
 } from "../db/types";
 import { addDays, dateRange, localDate, weekKeyOf, weekdayOf, zonedToUtc } from "./time";
@@ -93,29 +91,14 @@ function nonNull<T>(x: T | null | undefined): x is T {
 export const HOLDING_ASSIGNMENT_STATUSES: readonly AssignmentStatus[] = ["offered", "accepted", "drop_requested"];
 export const ACTIVE_ASSIGNMENT_STATUSES: ReadonlySet<AssignmentStatus> = new Set<AssignmentStatus>(HOLDING_ASSIGNMENT_STATUSES);
 
-// ---------- Owner ----------
+// ---------- Day ----------
 
 /**
- * Owner open intervals for one local date: that weekday's windows, unless an exception for the
- * date says closed (→ nothing) or gives start/end times (→ replaces the windows).
+ * Hours the scheduler may use on one local date: the whole day, unless it's a closed date (e.g. a
+ * weather hold). There are no owner open hours any more; crew availability is the only limit.
  */
-export function ownerOpenForDay(
-  date: string,
-  windows: OwnerWindow[],
-  exceptions: OwnerException[],
-  closedDates: ReadonlySet<string> = new Set(),
-): Interval[] {
-  if (closedDates.has(date)) return [];
-  const todays = exceptions.filter((e) => e.date.slice(0, 10) === date);
-  if (todays.some((e) => e.closed)) return [];
-  const replacements = todays.filter((e) => e.start_time && e.end_time);
-  if (replacements.length) {
-    return merge(replacements.map((e) => localInterval(date, e.start_time!, e.end_time!)).filter(nonNull));
-  }
-  const wd = weekdayOf(date);
-  return merge(
-    windows.filter((w) => w.weekday === wd).map((w) => localInterval(date, w.start_time, w.end_time)).filter(nonNull),
-  );
+export function openForDay(date: string, closedDates: ReadonlySet<string> = new Set()): Interval[] {
+  return closedDates.has(date) ? [] : [wholeDay(date)];
 }
 
 // ---------- Crew ----------
@@ -161,7 +144,7 @@ export function horizonDates(now: Date, horizonDays: number): string[] {
 
 export type CapacityInput = Pick<
   SchedulerInput,
-  "crew" | "ownerWindows" | "ownerExceptions" | "crewAvailability" | "crewExceptions" | "existingAssignments" | "now"
+  "crew" | "crewAvailability" | "crewExceptions" | "existingAssignments" | "now"
 > & {
   horizonDays?: number;
   closedDates?: string[];
@@ -184,15 +167,15 @@ function emptyCrew(p: Profile): CrewCapacity {
   };
 }
 
-/** Build owner + per-crew capacity for the horizon. Pure: same input → same output. */
+/** Build open days + per-crew capacity for the horizon. Pure: same input → same output. */
 export function buildCapacity(input: CapacityInput): Capacity {
   const days = input.days ?? horizonDates(input.now, input.horizonDays ?? 21);
   const closed = new Set(input.closedDates ?? []);
   const ignore = new Set(input.ignoreJobIds ?? []);
 
-  const owner_by_day: Record<string, Interval[]> = {};
-  for (const d of days) owner_by_day[d] = ownerOpenForDay(d, input.ownerWindows, input.ownerExceptions, closed);
-  const owner_open = merge(days.flatMap((d) => owner_by_day[d]));
+  const open_by_day: Record<string, Interval[]> = {};
+  for (const d of days) open_by_day[d] = openForDay(d, closed);
+  const open_slots = merge(days.flatMap((d) => open_by_day[d]));
 
   const crew: Record<string, CrewCapacity> = {};
   for (const p of input.crew) {
@@ -214,7 +197,7 @@ export function buildCapacity(input: CapacityInput): Capacity {
   }
   for (const c of Object.values(crew)) c.free = subtract(c.available, c.busy);
 
-  return { days, owner_by_day, owner_open, crew };
+  return { days, open_by_day, open_slots, crew };
 }
 
 export function assignmentInterval(a: Pick<ExistingAssignment, "start_at" | "end_at">): Interval {

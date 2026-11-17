@@ -3,8 +3,6 @@ import type {
   CrewException,
   Job,
   JobAssignment,
-  OwnerException,
-  OwnerWindow,
   Profile,
   Settings,
   Weekday,
@@ -38,8 +36,6 @@ export type SchedulerInput = {
   /** Jobs to place: `unscheduled`, or the re-solve set. Any existing assignments on these jobs are ignored. */
   jobs: Job[];
   crew: Profile[];
-  ownerWindows: OwnerWindow[];
-  ownerExceptions: OwnerException[];
   crewAvailability: CrewAvailability[];
   /** Only `approved` rows matter. */
   crewExceptions: CrewException[];
@@ -89,10 +85,10 @@ export type CrewCapacity = {
 export type Capacity = {
   /** Local dates covered, in order. */
   days: string[];
-  /** Owner open intervals per local date. */
-  owner_by_day: Record<string, Interval[]>;
-  /** All owner open intervals, merged and sorted. */
-  owner_open: Interval[];
+  /** Schedulable intervals per local date (whole day unless closed). */
+  open_by_day: Record<string, Interval[]>;
+  /** All schedulable intervals, merged and sorted. */
+  open_slots: Interval[];
   crew: Record<string, CrewCapacity>;
 };
 

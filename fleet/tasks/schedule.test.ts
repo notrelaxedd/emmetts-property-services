@@ -8,7 +8,7 @@ vi.mock("../../lib/scheduler", async (importOriginal) => {
 import type { AssignmentStatus } from "../../lib/db/types";
 import type { SchedulerInput } from "../../lib/scheduler";
 import { solve } from "../../lib/scheduler";
-import { at, crew, job, NOW, OWNER_MON_FRI, weekdays } from "../../lib/scheduler/fixtures";
+import { at, crew, job, NOW, weekdays } from "../../lib/scheduler/fixtures";
 import { customerRow, settingsRow } from "../../lib/ops/test-utils";
 import { fleetDb, makeCtx } from "../test-helpers";
 import { runSchedule } from "./schedule";
@@ -23,11 +23,6 @@ function seed() {
   return fleetDb({
     settings: [settingsRow({ drop_notice_hours: 24, auto_schedule: true })],
     profiles: [crew("A", "Ann Lee"), crew("B", "Bo Diaz"), crew("C", "Cy Park")],
-    owner_windows: OWNER_MON_FRI,
-    owner_exceptions: [
-      { id: "oe-old", created_at: T0, updated_at: T0, date: "2026-01-05", closed: true, start_time: null, end_time: null, note: null },
-      { id: "oe-new", created_at: T0, updated_at: T0, date: "2026-10-16", closed: true, start_time: null, end_time: null, note: null },
-    ],
     crew_availability: [...weekdays("A"), ...weekdays("B"), ...weekdays("C")],
     crew_exceptions: [
       { id: "x1", created_at: T0, updated_at: T0, crew_id: "B", date_from: "2026-10-13", date_to: "2026-10-13", start_time: null, end_time: null, kind: "off", status: "approved", note: null },
@@ -85,7 +80,6 @@ describe("schedule task", () => {
     expect(input.closedDates).toEqual(["2026-10-14"]); // the weather-held job's day
     expect(input.now).toBe(NOW);
     expect(input.crew.map((c) => c.id)).toEqual(["A", "B", "C"]);
-    expect(input.ownerExceptions.map((e) => e.id)).toEqual(["oe-new"]);
     expect(input.crewExceptions.map((e) => e.id)).toEqual(["x1"]); // approved only
     expect(input.crewAvailability).toHaveLength(15);
     expect(input.settings).toEqual({ drop_notice_hours: 24 });

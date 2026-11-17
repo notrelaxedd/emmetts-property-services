@@ -276,7 +276,7 @@ function scanSlots(
   const crew = Object.values(cap.crew);
   const feasible: Feasible[] = [];
   let hourCapped = false;
-  for (const iv of cap.owner_open) {
+  for (const iv of cap.open_slots) {
     if (iv.end - dur < earliest) continue;
     // Slots sit on a grid anchored at the window's opening time.
     let s = iv.start;
@@ -298,19 +298,19 @@ function scanSlots(
 }
 
 function noSlotReason(cap: Capacity, horizonDays: number, minutes: number, crewSize: number, hourCapped: boolean): string {
-  if (!cap.owner_open.length) return `No open hours in the next ${horizonDays} days.`;
+  if (!cap.open_slots.length) return `Every day in the next ${horizonDays} days is closed.`;
   if (hourCapped) {
     return `No slot in the next ${horizonDays} days: the crew who are free are at their weekly hour caps.`;
   }
   const who = crewSize === 1 ? "a crew member is" : `${crewSize} crew are`;
-  return `No ${formatDuration(minutes)} slot in the next ${horizonDays} days where ${who} free inside open hours.`;
+  return `No ${formatDuration(minutes)} slot in the next ${horizonDays} days where ${who} free.`;
 }
 
 // ---------- Cover ----------
 
 export type FindCoverInput = Pick<
   SchedulerInput,
-  "crew" | "ownerWindows" | "ownerExceptions" | "crewAvailability" | "crewExceptions" | "existingAssignments" | "now"
+  "crew" | "crewAvailability" | "crewExceptions" | "existingAssignments" | "now"
 > & {
   /** The already-scheduled job (start_at/end_at set). */
   job: Pick<Job, "id" | "start_at" | "end_at" | "est_minutes">;
@@ -321,7 +321,7 @@ export type FindCoverInput = Pick<
 
 /**
  * Find one replacement crew member for the same time window of an already-scheduled job.
- * The slot was already agreed, so owner windows are not re-checked; the replacement must be
+ * The slot was already agreed; the replacement must be
  * available, not paused, not busy, not already on the job, and under their weekly hour cap.
  * Returns the fairest pick (fewest hours that week) or null.
  */
