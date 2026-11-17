@@ -60,9 +60,13 @@ async function recordSubmission(
     .map((s) => s.trim())
     .filter(Boolean)
     .join(", ");
+  const h = headers();
+  const ip = clientIpFrom(h);
   const row = {
     via,
     client_key: clientKey,
+    ip: ip === "unknown" ? null : ip.slice(0, 64),
+    user_agent: h.get("user-agent")?.slice(0, 400) ?? null,
     outcome: "received" as const,
     name: values.name.trim().slice(0, 200),
     email: values.email.trim().slice(0, 254),

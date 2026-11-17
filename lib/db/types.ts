@@ -425,11 +425,25 @@ export type Payout = Base & {
 };
 
 /** Someone paid per flyer handed out. No sign-in; `code` is their QR link (/f/<code>). */
+/** A server-action POST to a public page, logged by middleware (see migration 20261117000200). */
+export type ActionRequest = Base & {
+  path: string;
+  action_id: string;
+  ip: string | null;
+  user_agent: string | null;
+  referer: string | null;
+  country: string | null;
+  region: string | null;
+  city: string | null;
+};
+
 /** One press of Submit on /quote, written before anything else can fail (see migration 20261117000100). */
 export type QuoteSubmissionOutcome = "received" | "saved" | "rejected" | "failed";
 export type QuoteSubmission = Base & {
   via: "action" | "api";
   client_key: string | null;
+  ip: string | null;
+  user_agent: string | null;
   outcome: QuoteSubmissionOutcome;
   reason: string | null;
   name: string;
@@ -919,6 +933,7 @@ export type Database = {
       messages: Table<Message>;
       payouts: Table<Payout>;
       quote_submissions: Table<QuoteSubmission>;
+      action_requests: Table<ActionRequest>;
       flyer_workers: Table<FlyerWorker>;
       flyer_batches: Table<FlyerBatch>;
       flyer_scans: Table<FlyerScan>;
