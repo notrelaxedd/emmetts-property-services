@@ -8,6 +8,7 @@ import { PhotoGallery } from "@/components/admin/inbox/photo-gallery"
 import { FlyerCredit } from "@/components/admin/leads/flyer-credit"
 import { LeadActions } from "@/components/admin/leads/lead-actions"
 import { LeadStatusBadge, QuoteStatusBadge } from "@/components/admin/leads/status-badges"
+import { UnsavedSubmissions } from "@/components/admin/leads/unsaved-submissions"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -84,6 +85,7 @@ export async function LeadsBody({ status, variant = "page" }: { status: LeadStat
   if (panel) {
     return (
       <div className="space-y-3">
+        <UnsavedSubmissions />
         {error ? (
           <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>
@@ -139,6 +141,7 @@ export async function LeadsBody({ status, variant = "page" }: { status: LeadStat
   return (
     <div className="space-y-4">
       <PageHeader title="Leads" description={`Quote-form submissions, newest first (last ${LIMIT}).`} />
+      <UnsavedSubmissions />
       {error ? (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>

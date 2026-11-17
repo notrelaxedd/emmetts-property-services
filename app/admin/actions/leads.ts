@@ -47,3 +47,17 @@ export async function setLeadStatus(leadId: string, status: "spam" | "lost" | "n
     return { ok: false, error: errorMessage(e) }
   }
 }
+
+/** Hide a quote-form submission that didn't become a lead (called back, or junk) from the Leads list. */
+export async function dismissQuoteSubmission(submissionId: string): Promise<ActionResult> {
+  await requireOwner()
+  try {
+    const id = Id.parse(submissionId)
+    const db = requireSupabaseAdmin()
+    check(await db.from("quote_submissions").update({ dismissed_at: new Date().toISOString() }).eq("id", id), "dismissQuoteSubmission")
+    revalidatePath("/admin", "layout")
+    return { ok: true, message: "Taken off the list." }
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) }
+  }
+}

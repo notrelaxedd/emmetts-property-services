@@ -425,6 +425,22 @@ export type Payout = Base & {
 };
 
 /** Someone paid per flyer handed out. No sign-in; `code` is their QR link (/f/<code>). */
+/** One press of Submit on /quote, written before anything else can fail (see migration 20261117000100). */
+export type QuoteSubmissionOutcome = "received" | "saved" | "rejected" | "failed";
+export type QuoteSubmission = Base & {
+  via: "action" | "api";
+  client_key: string | null;
+  outcome: QuoteSubmissionOutcome;
+  reason: string | null;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  form: Record<string, unknown>;
+  lead_id: string | null;
+  dismissed_at: string | null;
+};
+
 export type FlyerWorker = Base & {
   name: string;
   phone: string | null;
@@ -902,6 +918,7 @@ export type Database = {
       ads: Table<Ad>;
       messages: Table<Message>;
       payouts: Table<Payout>;
+      quote_submissions: Table<QuoteSubmission>;
       flyer_workers: Table<FlyerWorker>;
       flyer_batches: Table<FlyerBatch>;
       flyer_scans: Table<FlyerScan>;

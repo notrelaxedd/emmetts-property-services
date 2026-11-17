@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { AlertCircle, ArrowLeft, ArrowRight, Check, Loader2, Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import { submitQuote } from "@/app/actions/quote";
 import { CallLink } from "@/components/site/call-link";
@@ -23,6 +24,7 @@ import {
   type PhotoType,
   type QuoteField,
   type QuoteFieldErrors,
+  type QuoteFormState,
   type QuoteFormValues,
 } from "@/lib/quote-schema";
 import type { ServiceIcon } from "@/lib/services";
@@ -273,10 +275,43 @@ function SubmitButton({ busy, hidden }: { busy: boolean; hidden: boolean }) {
   );
 }
 
+/* ---------- sending ---------- */
+
+function newSubmissionId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  // Older browsers: a v4-shaped id from Math.random (only used to spot a retry of the same press).
+  return "xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx".replace(/x/g, () => Math.floor(Math.random() * 16).toString(16));
+}
+
+/** The first try failed: log it server-side (app/api/client-error) so it never goes unnoticed. */
+function reportSendFailure(detail: string, recovered: boolean) {
+  try {
+    void fetch("/api/client-error", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: `[quote] ${recovered ? "action failed, fallback route saved it" : "action AND fallback failed"}: ${detail}`,
+        url: window.location.href,
+        digest: "",
+        stack: "",
+      }),
+      keepalive: true,
+    });
+  } catch {
+    /* nothing else to do */
+  }
+}
+
 /* ---------- the form ---------- */
 
 export function QuoteForm({ services, defaultService, defaultSnow = false, verifyAddress, turnstileSiteKey }: Props) {
-  const [state, formAction] = useFormState(submitQuote, initialQuoteState);
+  // The form's native action (no-JS posts). With JavaScript, onSubmit sends it itself (see `send`)
+  // so a failed request can be retried instead of crashing the page; its answer lands in `sentState`.
+  const [actionState, formAction] = useFormState(submitQuote, initialQuoteState);
+  const [sentState, setSentState] = useState<QuoteFormState | null>(null);
+  const [sending, setSending] = useState(false);
+  const router = useRouter();
+  const state: QuoteFormState = sentState ?? (actionState?.status === "error" ? actionState : initialQuoteState);
   const [clientErrors, setClientErrors] = useState<QuoteFieldErrors | null>(null);
   const [photoMsg, setPhotoMsg] = useState<string | null>(null);
   const [photos, setPhotos] = useState<PhotoRow[]>([]);
@@ -396,7 +431,7 @@ export function QuoteForm({ services, defaultService, defaultSnow = false, verif
       goNext();
       return;
     }
-    if (processing) {
+    if (processing || sending) {
       e.preventDefault();
       return;
     }
@@ -421,6 +456,64 @@ export function QuoteForm({ services, defaultService, defaultSnow = false, verif
       return;
     }
     setClientErrors(null);
+    e.preventDefault();
+    void send(new FormData(e.currentTarget));
+  }
+
+  /**
+   * Sends the request: the server action first, then (if that request fails: dropped connection,
+   * server error, a page loaded from an older deployment) the plain `/api/quote` route with the same
+   * fields. `_sid` lets the server spot the retry of a request that did get saved, so it never makes
+   * two leads. If both fail, the customer keeps everything they typed and sees our number.
+   */
+  async function send(fd: FormData) {
+    if (sending) return;
+    setSending(true);
+    fd.set("_js", "1");
+    if (!fd.get("_sid")) fd.set("_sid", newSubmissionId());
+
+    type Answer = QuoteFormState | { status: "ok" } | undefined;
+    const usable = (a: unknown): a is Exclude<Answer, undefined | { status: "idle" }> =>
+      !!a && typeof a === "object" && ((a as { status?: unknown }).status === "ok" || (a as { status?: unknown }).status === "error");
+
+    let answer: Answer;
+    let failure = "";
+    try {
+      answer = await submitQuote(initialQuoteState, fd);
+      if (!usable(answer)) failure = "server action returned no result";
+    } catch (err) {
+      failure = `server action threw: ${err instanceof Error ? err.message : String(err)}`;
+    }
+    if (!usable(answer)) {
+      try {
+        const res = await fetch("/api/quote", { method: "POST", body: fd, cache: "no-store" });
+        const json: unknown = await res.json().catch(() => null);
+        if (usable(json)) answer = json;
+        else failure += `; fallback answered ${res.status}`;
+      } catch (err) {
+        failure += `; fallback failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      reportSendFailure(failure, usable(answer));
+    }
+
+    if (usable(answer) && answer.status === "ok") {
+      router.push("/quote/thanks");
+      return; // keep the button busy while the thanks page loads
+    }
+    setSending(false);
+    if (usable(answer)) {
+      setSentState(answer);
+      return;
+    }
+    const { values } = parseQuoteFormData(fd);
+    setSentState({
+      status: "error",
+      nonce: Date.now(),
+      message: content.quote.errors.network,
+      fieldErrors: {},
+      values,
+      hadPhotos: fd.getAll("photos").some((f) => typeof f !== "string" && f.size > 0),
+    });
   }
 
   /** Uploads these rows straight to storage. `pick` guards against a newer file pick landing meanwhile. */
@@ -899,7 +992,7 @@ export function QuoteForm({ services, defaultService, defaultSnow = false, verif
               <ArrowRight aria-hidden="true" />
             </Button>
           )}
-          <SubmitButton busy={processing} hidden={step < LAST_STEP} />
+          <SubmitButton busy={processing || sending} hidden={step < LAST_STEP} />
         </div>
         <CallLink prompt={copy.callInstead} />
       </div>
