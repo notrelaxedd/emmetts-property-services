@@ -285,7 +285,7 @@ describe("ops flow: form → estimate → drag onto calendar → crew answer →
     const settings = await getSettings(db);
     expect(Object.values(settings.autopilot).every((r) => r.enabled === false)).toBe(true);
 
-    // Mirrors app/actions/quote.ts: upsert customer, insert lead, enqueue quote + custom_summary.
+    // Mirrors lib/quote-submit.ts: upsert customer, insert lead, enqueue quote + custom_summary.
     const customer = await upsertCustomer(db, {
       name: "Dana Whitfield", email: "Dana@Example.com", phone: "(440) 555-0199",
       address: "123 Lake Rd, Rocky River, OH 44116", email_opt_in: true,

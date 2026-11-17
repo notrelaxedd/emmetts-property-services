@@ -270,6 +270,7 @@ export const content = {
       unavailable: `We can't take online quote requests right now. Please call us at ${siteConfig.phone.display} and we'll get you a price.`,
       rateLimited: `You've sent a few requests in a short time. Please wait a few minutes, or call us at ${siteConfig.phone.display}.`,
       turnstile: "We couldn't confirm the security check. Please try again.",
+      network: `We couldn't send your request. Your answers are still here: check your connection and press Send again, or call us at ${siteConfig.phone.display}.`,
     },
     thanks: {
       eyebrow: "Request received",
