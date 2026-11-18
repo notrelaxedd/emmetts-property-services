@@ -53,6 +53,8 @@ export type MoneyQuote = {
   price_total: number
   fee_total: number
   labor_total: number
+  /** Out-of-pocket job costs on the quote (rentals, seed, dump fees). Missing on older databases = 0. */
+  cost_total?: number | null
   accepted_at: string | null
 }
 export type MoneyJob = {
@@ -74,11 +76,12 @@ export type MoneyFlyerBatch = { date: string; amount: number }
 
 export type JobLabor = { amount: number; estimated: boolean; /** The owner set this job's profit; labor is what's left. */ edited?: boolean }
 
-type LaborQuote = Pick<MoneyQuote, "labor_total"> & Partial<Pick<MoneyQuote, "price_total" | "fee_total">>
+type LaborQuote = Pick<MoneyQuote, "labor_total"> & Partial<Pick<MoneyQuote, "price_total" | "fee_total" | "cost_total">>
 
 /**
  * Labor (costs) for a job. When the owner set the job's profit, it's whatever makes the profit come out
- * to that: price − fee − profit. Otherwise real payouts when any exist, else the quote's estimated labor.
+ * to that: price − fee − profit. Otherwise real payouts when any exist, else the quote's estimated labor,
+ * plus the quote's out-of-pocket job costs (rentals, seed, dump fees) either way.
  */
 export function laborForJob(
   job: Pick<MoneyJob, "id" | "quote_id"> & Partial<Pick<MoneyJob, "profit_override" | "owners_working">>,
@@ -91,11 +94,12 @@ export function laborForJob(
     const fee = Number(q?.fee_total ?? 0) || 0
     return { amount: round2(price - fee - Number(job.profit_override)), estimated: false, edited: true }
   }
-  const mine = payouts.filter((p) => p.job_id === job.id)
-  if (mine.length) return { amount: sum(mine, (p) => p.amount), estimated: false }
-  if (job.owners_working) return { amount: 0, estimated: false }
   const q = job.quote_id ? quotesById.get(job.quote_id) : undefined
-  return { amount: round2(Number(q?.labor_total ?? 0)), estimated: true }
+  const costs = Number(q?.cost_total ?? 0) || 0
+  const mine = payouts.filter((p) => p.job_id === job.id)
+  if (mine.length) return { amount: round2(sum(mine, (p) => p.amount) + costs), estimated: false }
+  if (job.owners_working) return { amount: round2(costs), estimated: false }
+  return { amount: round2(Number(q?.labor_total ?? 0) + costs), estimated: true }
 }
 
 export type MonthSummary = {

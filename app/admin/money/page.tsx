@@ -46,7 +46,8 @@ async function load(month: string) {
   const isCurrent = month === localDate(new Date()).slice(0, 7)
 
   // Revenue counts when the money arrives (`paid_at`): customers confirm by phone and pay after the job.
-  const quoteCols = "id,customer_id,price_total,fee_total,labor_total,paid_at"
+  // "*" so the page keeps loading on a database without the newest quote columns (cost_total).
+  const quoteCols = "*"
   // "*" so the page keeps loading on a database without the newest job columns (owners_working).
   const jobCols = "*"
   const [accepted, completed, expenses, ai, flyerBatches, customerList] = await Promise.all([
@@ -124,6 +125,7 @@ async function load(month: string) {
     price_total: Number(q.price_total),
     fee_total: Number(q.fee_total),
     labor_total: Number(q.labor_total),
+    cost_total: Number(q.cost_total ?? 0) || 0,
   })
   const quotesNum = new Map(Array.from(quotesById.values()).map((q) => [q.id, nums(q)]))
   const input = {
@@ -192,7 +194,7 @@ export default async function MoneyPage({ searchParams }: { searchParams: { mont
             <Stat label="Revenue" value={usd(data.summary.revenue)} hint="quotes paid this month (Stripe, cash, check)" />
             <Stat label="Card fees" value={usd(data.summary.fees)} />
             <Stat
-              label="Labor"
+              label="Labor + job costs"
               value={usd(data.summary.labor)}
               hint={data.summary.laborEstimated ? "includes estimates" : "jobs completed"}
             />

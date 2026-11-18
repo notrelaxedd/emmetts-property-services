@@ -10,6 +10,7 @@ import {
   priceItem,
   priceQuote,
   profit,
+  sumCosts,
   type PricingSettings,
 } from "./pricing";
 
@@ -100,7 +101,7 @@ describe("priceQuote", () => {
     expect(t.price_total).toBe(90);
     expect(t.fee_total).toBe(2.91);
     expect(t.profit_total).toBe(42.09);
-    expect(t.items).toEqual([{ labor: 45, price: 90 }]);
+    expect(t.items).toEqual([{ labor: 45, price: 90, cost: 0 }]);
     expect(t.needs_owner).toBe(false);
     expect(t.min_applied).toBe(false);
   });
@@ -146,7 +147,7 @@ describe("priceQuote", () => {
     expect(t.needs_owner).toBe(true);
     expect(t.price_total).toBe(90);
     expect(t.labor_total).toBe(45);
-    expect(t.items[1]).toEqual({ labor: 0, price: 0 });
+    expect(t.items[1]).toEqual({ labor: 0, price: 0, cost: 0 });
   });
 
   it("status needs_owner alone marks an item custom; is_custom alone too", () => {
@@ -163,7 +164,7 @@ describe("priceQuote", () => {
       settings,
     );
     expect(t.needs_owner).toBe(false);
-    expect(t.items[1]).toEqual({ labor: 90, price: 200 });
+    expect(t.items[1]).toEqual({ labor: 90, price: 200, cost: 0 });
     expect(t.labor_total).toBe(135);
     expect(t.price_total).toBe(290);
     expect(t.fee_total).toBe(8.71); // 290 * .029 + .30 = 8.71
@@ -184,8 +185,8 @@ describe("priceQuote", () => {
       settings,
       { margin: 0.25 },
     );
-    expect(t.items[0]).toEqual({ labor: 45, price: 60 });
-    expect(t.items[1]).toEqual({ labor: 30, price: 100 });
+    expect(t.items[0]).toEqual({ labor: 45, price: 60, cost: 0 });
+    expect(t.items[1]).toEqual({ labor: 30, price: 100, cost: 0 });
     expect(t.price_total).toBe(160);
   });
 
@@ -318,5 +319,35 @@ describe("explainPrice", () => {
   });
   it("throws on invalid input", () => {
     expect(() => explainPrice({ crew_size: 1, est_hours: 1, margin: 1 }, settings)).toThrow(RangeError);
+  });
+});
+
+describe("job costs (rentals, seed, dump fees)", () => {
+  it("sumCosts adds valid amounts and ignores junk", () => {
+    expect(sumCosts([{ label: "Aerator rental", amount: 95 }, { label: "Seed", amount: 42.5 }])).toBe(137.5);
+    expect(sumCosts([{ label: "x", amount: -5 }, { label: "y" }, null, "z", { amount: "12" }])).toBe(12);
+    expect(sumCosts(null)).toBe(0);
+    expect(sumCosts({ amount: 5 })).toBe(0);
+  });
+
+  it("hours-priced line: costs are added to the price at cost and come out of profit", () => {
+    // 1 crew × 1.5 h × $15 = $22.50 labor → $45; + $95 aerator rental = $140
+    const t = priceQuote([{ crew_size: 1, est_hours: 1.5, costs: 95 }], settings);
+    expect(t.items[0]).toEqual({ labor: 22.5, price: 140, cost: 95 });
+    expect(t.cost_total).toBe(95);
+    expect(t.price_total).toBe(140);
+    expect(t.profit_total).toBe(moneyRound(140 - 22.5 - 95 - t.fee_total));
+  });
+
+  it("owner-priced line: price stays, costs only come out of profit", () => {
+    const t = priceQuote([{ crew_size: 2, est_hours: 2, price: 250, is_custom: true, costs: 60 }], settings);
+    expect(t.items[0]).toEqual({ labor: 60, price: 250, cost: 60 });
+    expect(t.price_total).toBe(250);
+    expect(t.profit_total).toBe(moneyRound(250 - 60 - 60 - t.fee_total));
+  });
+
+  it("declined / referred lines carry no costs", () => {
+    const t = priceQuote([{ crew_size: 1, est_hours: 1, costs: 40, status: "declined" }], settings);
+    expect(t.cost_total).toBe(0);
   });
 });

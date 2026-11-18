@@ -1,7 +1,7 @@
 import { draftMessage } from "../../ai/claude";
 import type { Customer, Quote, QuoteItem, QuoteItemStatus, Settings } from "../../db/types";
 import { sendMessage } from "../../email";
-import { priceQuote } from "../../pricing";
+import { priceQuote, sumCosts } from "../../pricing";
 import type { QuoteItemInput } from "../../pricing";
 import { siteConfig } from "../../site-config";
 import type { ApprovalHandler, CreateApprovalInput } from "../approvals";
@@ -16,13 +16,16 @@ import type { Db } from "../types";
  * Items as `priceQuote` inputs. An owner-priced item (`priced`) keeps the owner's price even when it
  * is a standard service (e.g. a service with `auto_quote = false`), so it is passed as custom.
  */
-export function quoteItemInputs(items: Pick<QuoteItem, "crew_size" | "est_hours" | "price" | "is_custom" | "status">[]): QuoteItemInput[] {
+export function quoteItemInputs(
+  items: (Pick<QuoteItem, "crew_size" | "est_hours" | "price" | "is_custom" | "status"> & { costs?: unknown })[],
+): QuoteItemInput[] {
   return items.map((i) => ({
     crew_size: i.crew_size,
     est_hours: i.est_hours,
     price: i.price,
     is_custom: i.is_custom || i.status === "priced",
     status: i.status,
+    costs: sumCosts(i.costs),
   }));
 }
 
@@ -90,6 +93,7 @@ export async function recomputeQuoteTotals(
         labor_total: totals.labor_total,
         fee_total: totals.fee_total,
         profit_total: totals.profit_total,
+        cost_total: totals.cost_total,
       })
       .eq("id", quoteId)
       .select("*")

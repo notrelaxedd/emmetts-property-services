@@ -1,4 +1,4 @@
-import { Droplets, Flower2, House, Leaf, Scissors, Shovel, Snowflake, Sprout, Wind, type LucideIcon } from "lucide-react";
+import { Droplets, Flower2, Grip, House, Leaf, Scissors, Shovel, Snowflake, Sprout, Truck, Wind, type LucideIcon } from "lucide-react";
 import type { ServiceIcon } from "@/lib/services";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +12,8 @@ const iconMap: Record<ServiceIcon, LucideIcon> = {
   shovel: Shovel,
   flower: Flower2,
   droplets: Droplets,
+  grip: Grip,
+  truck: Truck,
 };
 
 /** A thin-line icon inside a thin forest ring: the badge's ring at icon scale. */

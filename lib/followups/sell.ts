@@ -42,6 +42,21 @@ export const PITCHES: Record<string, Pitch> = {
     why: "Warm-weather job: driveways, patios, siding.",
     line: "We're booking pressure washing for driveways and patios.",
   },
+  aeration: {
+    name: "Core Aeration",
+    why: "Aerate in fall or spring so the lawn comes back thicker.",
+    line: "We're booking lawn aeration (and overseeding if you want it) in your area.",
+  },
+  overseeding: {
+    name: "Overseeding",
+    why: "Thin lawns fill in best when seeded right after aeration.",
+    line: "We're overseeding lawns to fill in thin spots, best done with aeration.",
+  },
+  "junk-removal": {
+    name: "Junk Removal",
+    why: "Spring and fall cleanouts: garages, basements, yard debris.",
+    line: "We're hauling away junk and yard debris this week if you have anything to get rid of.",
+  },
   edging: { name: "Edging", why: "Easy add-on to any visit.", line: "We can edge the lawn to sharpen everything up." },
 };
 
@@ -50,12 +65,12 @@ export const SEASON: Record<number, string[]> = {
   1: ["snow-removal"],
   2: ["snow-removal", "lawn-mowing", "bed-cleanout"],
   3: ["bed-cleanout", "mulching", "lawn-mowing", "edging"],
-  4: ["lawn-mowing", "mulching", "bed-cleanout", "edging"],
+  4: ["lawn-mowing", "aeration", "mulching", "bed-cleanout", "junk-removal"],
   5: ["lawn-mowing", "mulching", "bush-trimming", "pressure-washing"],
   6: ["lawn-mowing", "bush-trimming", "pressure-washing", "edging"],
   7: ["bush-trimming", "pressure-washing", "lawn-mowing", "edging"],
   8: ["bush-trimming", "pressure-washing", "lawn-mowing", "edging"],
-  9: ["fall-cleanup", "bush-trimming", "gutter-cleaning", "bed-cleanout"],
+  9: ["aeration", "overseeding", "fall-cleanup", "bush-trimming"],
   10: ["fall-cleanup", "leaf-removal", "gutter-cleaning", "snow-removal"],
   11: ["leaf-removal", "gutter-cleaning", "snow-removal", "fall-cleanup"],
   12: ["snow-removal", "gutter-cleaning"],

@@ -32,7 +32,7 @@ async function load(today: string) {
   const monday = weekStart(today)
   const fromIso = zonedToUtc(monday, "00:00").toISOString()
   const toIso = zonedToUtc(addDays(monday, 7), "00:00").toISOString()
-  const quoteCols = "id,customer_id,price_total,fee_total,labor_total,payment_method,paid_at"
+  const quoteCols = "id,customer_id,price_total,fee_total,labor_total,cost_total,payment_method,paid_at"
   const jobCols = "id,quote_id,customer_id,status,start_at,completed_at"
 
   const [paid, doneUnpaid, completed, owed, expenses, customerList] = await Promise.all([
@@ -72,7 +72,13 @@ async function load(today: string) {
   const customer = new Map(customers.map((c) => [c.id, c]))
 
   // Kept this week: what came in minus card fees, crew pay for the jobs done this week and expenses.
-  const nums = (q: QuoteRow) => ({ ...q, price_total: Number(q.price_total), fee_total: Number(q.fee_total), labor_total: Number(q.labor_total) })
+  const nums = (q: QuoteRow) => ({
+    ...q,
+    price_total: Number(q.price_total),
+    fee_total: Number(q.fee_total),
+    labor_total: Number(q.labor_total),
+    cost_total: Number((q as { cost_total?: number | null }).cost_total ?? 0) || 0,
+  })
   const quotesById = new Map([...paidRows, ...quoteRows].map((q) => [q.id, nums(q)]))
   const summary = summarizeMonth({
     acceptedQuotes: paidRows.map((q) => ({ ...nums(q), accepted_at: q.paid_at })),

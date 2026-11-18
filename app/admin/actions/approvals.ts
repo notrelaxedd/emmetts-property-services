@@ -65,7 +65,7 @@ async function applyQuoteTotal(db: Db, approval: Approval, priceTotal: number): 
   check(
     await db
       .from("quotes")
-      .update({ price_total: price, fee_total: feeTotal, profit_total: moneyRound(price - quote.labor_total - feeTotal) })
+      .update({ price_total: price, fee_total: feeTotal, profit_total: moneyRound(price - quote.labor_total - (Number(quote.cost_total) || 0) - feeTotal) })
       .eq("id", quoteId),
     "decide(quote total)",
   )

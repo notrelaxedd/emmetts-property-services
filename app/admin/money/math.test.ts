@@ -33,6 +33,14 @@ describe("labor", () => {
     expect(laborForJob(j2, [], quotes)).toEqual({ amount: 80, estimated: true })
     expect(laborForJob({ id: "x", quote_id: null }, [], quotes)).toEqual({ amount: 0, estimated: true })
   })
+
+  it("adds the quote's job costs (rentals, seed, dump fees) on top of crew pay", () => {
+    const withCosts = new Map([["q3", { id: "q3", price_total: 250, fee_total: 0, labor_total: 40, cost_total: 95, accepted_at: null }]])
+    const j3 = { id: "j3", quote_id: "q3" }
+    expect(laborForJob(j3, [], withCosts)).toEqual({ amount: 135, estimated: true })
+    expect(laborForJob(j3, [{ job_id: "j3", amount: 30 }], withCosts)).toEqual({ amount: 125, estimated: false })
+    expect(laborForJob({ ...j3, owners_working: true }, [], withCosts)).toEqual({ amount: 95, estimated: false })
+  })
 })
 
 describe("summarizeMonth", () => {
