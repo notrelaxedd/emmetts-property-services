@@ -26,8 +26,8 @@ export function IncomingList({ incoming }: { incoming: Incoming }) {
   return (
     <div className="space-y-3 border-b border-ink/10 pb-3">
       {estimating.length ? (
-        <section className="space-y-1.5">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Being estimated</h3>
+        <section className="grid gap-1.5 [grid-template-columns:repeat(auto-fill,minmax(13rem,1fr))]">
+          <h3 className="col-span-full text-xs font-semibold uppercase tracking-wide text-ink-muted">Being estimated</h3>
           {estimating.map((l) => (
             <div key={l.leadId} className="rounded-md border border-dashed border-ink/20 bg-white px-2 py-2 text-sm">
               <p className="flex items-center gap-1.5 font-semibold text-ink">
@@ -65,8 +65,8 @@ export function IncomingList({ incoming }: { incoming: Incoming }) {
         </section>
       ) : null}
       {needsPrice.length ? (
-        <section className="space-y-1.5">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Needs your price</h3>
+        <section className="grid gap-1.5 [grid-template-columns:repeat(auto-fill,minmax(13rem,1fr))]">
+          <h3 className="col-span-full text-xs font-semibold uppercase tracking-wide text-ink-muted">Needs your price</h3>
           {needsPrice.map((q) => (
             <Link
               key={q.quoteId}

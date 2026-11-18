@@ -5,6 +5,7 @@ import { crewForSlot } from "@/app/admin/actions/schedule"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { NativeSelect } from "@/components/ui/native-select"
 import type { CrewChoice } from "@/lib/ops/crew-offers"
 
 const WHY: Record<string, string> = {
@@ -31,6 +32,7 @@ export function CrewPicker({
   allowNone = true,
   initialTicked,
   emailHint,
+  time,
   onConfirm,
   onCancel,
 }: {
@@ -47,6 +49,8 @@ export function CrewPicker({
   initialTicked?: string[]
   /** What "Email them" sends, shown under the checkbox. */
   emailHint?: string
+  /** Start time picker (minutes after midnight), shown when a job is dropped on a day. */
+  time?: { value: number; label: string; options: { value: number; label: string }[]; onChange: (min: number) => void }
   onConfirm: (crewIds: string[], notify: boolean) => void
   onCancel: () => void
 }) {
@@ -88,6 +92,20 @@ export function CrewPicker({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
+        {time ? (
+          <div className="grid gap-1.5">
+            <label htmlFor="pick-time" className="text-sm font-medium text-ink">
+              {time.label}
+            </label>
+            <NativeSelect id="pick-time" value={time.value} onChange={(e) => time.onChange(Number(e.target.value))}>
+              {time.options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+        ) : null}
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         {!crew && !error ? <p className="text-sm text-ink-muted">Checking who&apos;s free…</p> : null}
         {crew && !crew.length ? <p className="text-sm text-ink-muted">No active crew yet.</p> : null}

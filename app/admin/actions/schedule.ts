@@ -212,6 +212,25 @@ export async function setWeatherHold(jobId: string, hold: boolean): Promise<Acti
 }
 
 /**
+ * Mark a job as done by the owners themselves: no crew pay comes out of it, so the calendar and the Money
+ * page count it as pure take-home (minus a card fee when they pay by card).
+ */
+export async function setOwnersWorking(jobId: string, on: boolean): Promise<ActionResult> {
+  await requireOwner()
+  const parsed = z.object({ jobId: idSchema, on: z.boolean() }).safeParse({ jobId, on })
+  if (!parsed.success) return { ok: false, reason: "Invalid request." }
+  try {
+    const db = requireSupabaseAdmin()
+    check(await db.from("jobs").update({ owners_working: on }).eq("id", jobId), "setOwnersWorking")
+    revalidate()
+    revalidatePath("/admin/money")
+    return { ok: true, message: on ? "Owners on it: no crew pay, all take-home." : "Crew pay counts again." }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+/**
  * Release an owner hold (set when you took a job off the calendar or marked a scheduler card handled):
  * the scheduler may place / cover the job again when it runs.
  */

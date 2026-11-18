@@ -47,7 +47,7 @@ async function load(month: string) {
 
   // Revenue counts when the money arrives (`paid_at`): customers confirm by phone and pay after the job.
   const quoteCols = "id,customer_id,price_total,fee_total,labor_total,paid_at"
-  const jobCols = "id,quote_id,customer_id,status,start_at,completed_at,profit_override"
+  const jobCols = "id,quote_id,customer_id,status,start_at,completed_at,profit_override,owners_working"
   const [accepted, completed, expenses, ai, flyerBatches, customerList] = await Promise.all([
     db.from("quotes").select(quoteCols).gte("paid_at", fromIso).lt("paid_at", toIso),
     db.from("jobs").select(jobCols).eq("status", "done").gte("completed_at", fromIso).lt("completed_at", toIso),
@@ -66,7 +66,7 @@ async function load(month: string) {
   const paidJobs = acceptedIds.length ? await db.from("jobs").select(jobCols).in("quote_id", acceptedIds) : { data: [], error: null }
   if (paidJobs.error) throw new Error(paidJobs.error.message)
 
-  type JobRow = { id: string; quote_id: string | null; customer_id: string; status: string; start_at: string | null; completed_at: string | null; profit_override: number | null }
+  type JobRow = { id: string; quote_id: string | null; customer_id: string; status: string; start_at: string | null; completed_at: string | null; profit_override: number | null; owners_working: boolean | null }
   const completedRows = (completed.data ?? []) as JobRow[]
   const allJobs = new Map<string, JobRow>()
   for (const j of [...completedRows, ...((paidJobs.data ?? []) as JobRow[])]) allJobs.set(j.id, j)
