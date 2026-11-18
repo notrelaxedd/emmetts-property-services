@@ -351,6 +351,7 @@ function WeekStrip({ week, fees, calls, toCollect }: { week: DayTotals; fees: nu
   const tiles: { label: string; value: string; hint?: string; tone?: "good" | "bad" | "warn" }[] = [
     { label: "Revenue", value: usd(week.price), hint: `${week.jobs} job${week.jobs === 1 ? "" : "s"}` },
     { label: "Crew pay", value: usd(week.labor), hint: week.crew.length ? `${week.crew.length} on the crew` : "owners only" },
+    ...(week.costs > 0 ? [{ label: "Job costs", value: usd(week.costs), hint: "rentals, materials, fees" }] : []),
     ...(fees > 0 ? [{ label: "Card fees", value: usd(fees) }] : []),
     { label: "Take-home", value: usd(week.profit), hint: week.price > 0 ? `${Math.round((week.profit / week.price) * 100)}% of revenue` : undefined, tone: week.profit < 0 ? "bad" : "good" },
     { label: "Hours on site", value: hrs(week.hours), hint: week.hours > 0 ? `${usd(Math.round(week.profit / week.hours))}/h take-home` : undefined },
@@ -413,6 +414,7 @@ function DayHeader({ day, totals: t, shrunk }: { day: ScheduleDay; totals: DayTo
           <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-xs tabular-nums" title="Revenue · crew pay · take-home">
             <span className="font-semibold text-ink">{usd(t.price)}</span>
             <span className="text-ink-muted">−{usd(t.labor)} crew</span>
+            {t.costs > 0 ? <span className="text-ink-muted">−{usd(t.costs)} costs</span> : null}
             <span className={cn("font-bold", t.profit < 0 ? "text-destructive" : "text-brand-green-dark")}>={usd(t.profit)}</span>
           </p>
           {t.crew.length ? (
@@ -514,6 +516,7 @@ function JobCard({
         <span className="mt-1 flex items-end justify-between gap-1 border-t border-ink/10 pt-1 tabular-nums">
           <span className="min-w-0 text-ink-muted">
             <span className="whitespace-nowrap">{m.labor > 0 ? `crew ${usd(m.labor)}${m.basis === "estimate" ? "*" : ""}` : job.ownersWorking ? "no crew pay" : "crew $0"}</span>
+            {m.costs > 0 ? <span className="whitespace-nowrap"> · costs {usd(m.costs)}</span> : null}
             {m.fee > 0 ? <span className="whitespace-nowrap"> · card {usd(m.fee)}</span> : null}
           </span>
           <span className={cn("shrink-0 font-bold", m.profit < 0 ? "text-destructive" : "text-brand-green-dark")} title="Take-home">

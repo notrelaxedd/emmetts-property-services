@@ -4,7 +4,8 @@
  *
  *   labor     = paid payouts (done jobs) | Σ crew hourly rate × job hours (crew on it) | quote estimate
  *   card fee  = only when the customer pays (or paid) by card
- *   take-home = price − card fee − labor
+ *   costs     = out-of-pocket job costs on the quote (rentals, seed, dump fees)
+ *   take-home = price − card fee − costs − labor
  */
 import type { JobStatus, PaymentMethod } from "@/lib/db/types"
 
@@ -15,6 +16,8 @@ export type JobMoney = {
   price: number
   /** Card fee: 0 unless the customer pays by card. */
   fee: number
+  /** Out-of-pocket job costs from the quote: rentals, seed, dump fees. */
+  costs: number
   labor: number
   profit: number
   basis: LaborBasis
@@ -50,7 +53,7 @@ export function jobMoney(input: {
   crew: { status: string; rate: number }[]
   /** The owners do it themselves: no crew pay unless some was recorded. */
   ownersWorking?: boolean
-  quote: { priceTotal: number; feeTotal: number; laborTotal: number; paymentMethod: PaymentMethod | null; paidAt: string | null } | null
+  quote: { priceTotal: number; feeTotal: number; laborTotal: number; costTotal?: number; paymentMethod: PaymentMethod | null; paidAt: string | null } | null
   /** Sum of payouts written for the job, or null when none. */
   payouts: number | null
   profitOverride: number | null
@@ -58,9 +61,12 @@ export function jobMoney(input: {
 }): JobMoney {
   const price = r2(input.quote?.priceTotal ?? 0)
   const fee = cardFee(input.quote)
-  const done = (labor: number, basis: LaborBasis): JobMoney => ({ price, fee, labor: r2(labor), profit: r2(price - fee - labor), basis })
+  const costs = r2(Math.max(0, input.quote?.costTotal ?? 0))
+  const done = (labor: number, basis: LaborBasis): JobMoney => ({ price, fee, costs, labor: r2(labor), profit: r2(price - fee - costs - labor), basis })
 
-  if (input.profitOverride !== null) return { price, fee, labor: r2(price - fee - input.profitOverride), profit: r2(input.profitOverride), basis: "set" }
+  if (input.profitOverride !== null) {
+    return { price, fee, costs, labor: r2(price - fee - costs - input.profitOverride), profit: r2(input.profitOverride), basis: "set" }
+  }
   if (input.ownersWorking) return done(input.payouts ?? 0, "owner")
   if (input.payouts !== null) return done(input.payouts, "paid")
   const going = input.crew.filter((c) => isGoing(c.status))
@@ -79,6 +85,8 @@ export function jobMoney(input: {
 export type DayTotals = {
   jobs: number
   price: number
+  /** Out-of-pocket job costs (rentals, seed, dump fees). */
+  costs: number
   labor: number
   profit: number
   /** Job hours on site (wall clock). */
@@ -91,12 +99,13 @@ export type DayTotals = {
 export function totals(
   jobs: readonly { status: JobStatus; hours: number; money: JobMoney; crew: { id: string; name: string; status: string }[] }[],
 ): DayTotals {
-  const t: DayTotals = { jobs: 0, price: 0, labor: 0, profit: 0, hours: 0, crew: [] }
+  const t: DayTotals = { jobs: 0, price: 0, costs: 0, labor: 0, profit: 0, hours: 0, crew: [] }
   const crew = new Map<string, { id: string; name: string; hours: number }>()
   for (const j of jobs) {
     if (j.status === "cancelled") continue
     t.jobs++
     t.price += j.money.price
+    t.costs += j.money.costs
     t.labor += j.money.labor
     t.profit += j.money.profit
     t.hours += j.hours
@@ -110,6 +119,7 @@ export function totals(
   return {
     ...t,
     price: r2(t.price),
+    costs: r2(t.costs),
     labor: r2(t.labor),
     profit: r2(t.profit),
     hours: r2(t.hours),

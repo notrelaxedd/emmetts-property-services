@@ -17,13 +17,19 @@ import { PAYMENT_METHOD_LABEL, PAYMENT_METHODS } from "@/lib/ops/payment-methods
 import { OFFLINE_METHODS, recordOfflinePayment } from "@/lib/ops/payments"
 import { getSettings } from "@/lib/ops/settings"
 import { check } from "@/lib/ops/types"
-import { fee, moneyRound, priceQuote } from "@/lib/pricing"
+import { fee, moneyRound, priceQuote, sumCosts } from "@/lib/pricing"
 import { formatTimeRange } from "@/lib/scheduler/time"
 import { expireOpenCheckout, refundQuote } from "@/lib/stripe/checkout"
 import { MAX_DAYS_UNTIL_DUE, voidInvoiceForQuote } from "@/lib/stripe/invoice"
 import { requireSupabaseAdmin } from "@/lib/supabase/admin"
 
 const Id = z.string().uuid()
+
+/** One out-of-pocket cost on a line: aerator rental, seed, dump fee… */
+const CostSchema = z.object({
+  label: z.string().trim().min(1, "Every cost needs a name").max(80),
+  amount: z.number().min(0, "Costs can't be negative").max(100_000),
+})
 
 const ItemSchema = z.object({
   id: Id.optional(),
@@ -34,6 +40,8 @@ const ItemSchema = z.object({
   est_hours: z.number().min(0).max(200),
   /** Only used for fixed-price lines (custom, or status `priced`); others are priced from crew × hours × wage. */
   price: z.number().min(0).max(1_000_000).nullable(),
+  /** Rentals, materials, dump fees. Hours-priced lines add them to the price at cost; all lines take them out of take-home. */
+  costs: z.array(CostSchema).max(20).default([]),
 })
 
 const SaveSchema = z.object({
@@ -102,6 +110,7 @@ export async function saveQuote(quoteId: string, input: SaveQuoteInput): Promise
         price: r.price,
         is_custom: r.is_custom || r.status === "priced",
         status: r.status,
+        costs: sumCosts(r.costs),
       })),
       settings,
       { wage: data.wage, margin: data.margin },
@@ -130,6 +139,7 @@ export async function saveQuote(quoteId: string, input: SaveQuoteInput): Promise
               : totals.items[i].price,
         status: r.status,
         sort_order: r.sort_order,
+        costs: r.costs.map((c) => ({ label: c.label, amount: moneyRound(c.amount) })),
       }
       if (r.id) {
         check(await db.from("quote_items").update(fields).eq("id", r.id), "saveQuote(update item)")
@@ -147,7 +157,8 @@ export async function saveQuote(quoteId: string, input: SaveQuoteInput): Promise
           labor_total: totals.labor_total,
           price_total,
           fee_total,
-          profit_total: moneyRound(price_total - totals.labor_total - fee_total),
+          cost_total: totals.cost_total,
+          profit_total: moneyRound(price_total - totals.labor_total - totals.cost_total - fee_total),
         })
         .eq("id", id),
       "saveQuote(quote)",
@@ -364,7 +375,7 @@ export async function setPaymentMethod(quoteId: string, method: string): Promise
         .update({
           payment_method: m.data,
           fee_total: feeTotal,
-          profit_total: moneyRound(quote.price_total - quote.labor_total - feeTotal),
+          profit_total: moneyRound(quote.price_total - quote.labor_total - (Number(quote.cost_total) || 0) - feeTotal),
           rationale: `${quote.rationale ? `${quote.rationale}\n` : ""}[${new Date().toISOString().slice(0, 10)}] Will pay by ${PAYMENT_METHOD_LABEL[m.data].toLowerCase()} after the job (noted by ${actorOf(session)}).`,
         })
         .eq("id", id),

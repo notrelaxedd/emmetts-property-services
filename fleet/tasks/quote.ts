@@ -208,6 +208,7 @@ export async function runQuote(ctx: TaskContext, payload: QuotePayload): Promise
         labor_total: totals.labor_total,
         fee_total: totals.fee_total,
         profit_total: totals.profit_total,
+        cost_total: totals.cost_total,
         rationale: rationale(lines, customer, settings, totals.min_applied, ownerItems.some((i) => i.is_custom)),
       })
       .eq("id", quote.id)

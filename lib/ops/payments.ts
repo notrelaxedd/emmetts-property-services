@@ -87,7 +87,7 @@ export async function recordOfflinePayment(db: Db, quoteId: string, p: OfflinePa
       price_total: priceTotal,
       // No card fee on cash / check.
       fee_total: 0,
-      profit_total: moneyRound(priceTotal - quote.labor_total),
+      profit_total: moneyRound(priceTotal - quote.labor_total - (Number(quote.cost_total) || 0)),
       stripe_checkout_url: null,
       stripe_invoice_url: null,
       rationale,

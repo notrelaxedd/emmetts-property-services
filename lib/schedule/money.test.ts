@@ -33,7 +33,7 @@ describe("cardFee", () => {
 describe("jobMoney", () => {
   it("booked job: each crew member's rate × the job's hours", () => {
     const m = jobMoney({ ...base, crew: [{ status: "accepted", rate: 15 }, { status: "accepted", rate: 20 }, { status: "declined", rate: 99 }] })
-    expect(m).toEqual({ price: 200, fee: 0, labor: 70, profit: 130, basis: "crew" })
+    expect(m).toEqual({ price: 200, fee: 0, costs: 0, labor: 70, profit: 130, basis: "crew" })
   })
 
   it("booked with nobody on it is just the owner: no crew pay", () => {
@@ -76,9 +76,22 @@ describe("jobMoney", () => {
   })
 })
 
+describe("job costs", () => {
+  it("rentals and materials come out of take-home, with crew, owners or a set take-home", () => {
+    const quote = { ...base.quote!, costTotal: 95 }
+    expect(jobMoney({ ...base, quote, crew: [{ status: "accepted", rate: 15 }, { status: "accepted", rate: 20 }] })).toMatchObject({
+      costs: 95,
+      labor: 70,
+      profit: 35,
+    })
+    expect(jobMoney({ ...base, quote, ownersWorking: true })).toMatchObject({ costs: 95, labor: 0, profit: 105 })
+    expect(jobMoney({ ...base, quote, profitOverride: 80 })).toMatchObject({ costs: 95, labor: 25, profit: 80, basis: "set" })
+  })
+})
+
 describe("totals", () => {
   it("adds up a day and each crew member's hours, skipping cancelled jobs", () => {
-    const m = (price: number, labor: number) => ({ price, fee: 0, labor, profit: price - labor, basis: "crew" as const })
+    const m = (price: number, labor: number) => ({ price, fee: 0, costs: 0, labor, profit: price - labor, basis: "crew" as const })
     const t = totals([
       { status: "booked", hours: 2, money: m(200, 60), crew: [{ id: "a", name: "Emma", status: "accepted" }, { id: "b", name: "Michael", status: "accepted" }] },
       { status: "booked", hours: 1.5, money: m(100, 22.5), crew: [{ id: "a", name: "Emma", status: "accepted" }] },

@@ -262,7 +262,7 @@ const REPRICEABLE = ["sent", "accepted"] as const;
 export async function repriceDoorQuote(db: Db, quoteId: string, amountLow: number, amountHigh: number): Promise<boolean> {
   const { low, high, price } = doorPrice(amountLow, amountHigh);
   const quote = check(
-    await db.from("quotes").select("id,status,labor_total,paid_at,rationale").eq("id", quoteId).maybeSingle(),
+    await db.from("quotes").select("id,status,labor_total,cost_total,paid_at,rationale").eq("id", quoteId).maybeSingle(),
     "repriceDoorQuote(quote)",
   );
   if (!quote || quote.paid_at || !(REPRICEABLE as readonly string[]).includes(quote.status)) return false;
@@ -270,7 +270,7 @@ export async function repriceDoorQuote(db: Db, quoteId: string, amountLow: numbe
   check(
     await db
       .from("quotes")
-      .update({ price_total: price, profit_total: moneyRound(price - (Number(quote.labor_total) || 0)), rationale })
+      .update({ price_total: price, profit_total: moneyRound(price - (Number(quote.labor_total) || 0) - (Number(quote.cost_total) || 0)), rationale })
       .eq("id", quote.id),
     "repriceDoorQuote(update)",
   );

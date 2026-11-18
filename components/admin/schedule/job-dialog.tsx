@@ -479,7 +479,7 @@ function MoneyBlock({ job }: { job: ScheduleJob }) {
   const perPerson = m.basis === "crew" && !job.ownersWorking
   return (
     <div className="rounded-lg border border-ink/10 bg-paper p-3">
-      <dl className={cn("grid gap-2 text-center", m.fee > 0 ? "grid-cols-4" : "grid-cols-3")}>
+      <dl className={cn("grid gap-2 text-center", ["grid-cols-3", "grid-cols-4", "grid-cols-5"][(m.fee > 0 ? 1 : 0) + (m.costs > 0 ? 1 : 0)])}>
         <div>
           <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Price</dt>
           <dd className="text-lg font-bold tabular-nums text-ink">{usd(m.price)}</dd>
@@ -488,6 +488,12 @@ function MoneyBlock({ job }: { job: ScheduleJob }) {
           <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Crew pay</dt>
           <dd className="text-lg font-bold tabular-nums text-ink">{usd(m.labor)}</dd>
         </div>
+        {m.costs > 0 ? (
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Costs</dt>
+            <dd className="text-lg font-bold tabular-nums text-ink">{usd(m.costs)}</dd>
+          </div>
+        ) : null}
         {m.fee > 0 ? (
           <div>
             <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Card fee</dt>

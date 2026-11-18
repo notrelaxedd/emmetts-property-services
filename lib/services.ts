@@ -3,7 +3,7 @@
  * and the search-engine data all read from here — add or edit a service once and it shows up everywhere.
  */
 
-export type ServiceIcon = "leaf" | "sprout" | "wind" | "house" | "snowflake" | "scissors" | "shovel" | "flower" | "droplets";
+export type ServiceIcon = "leaf" | "sprout" | "wind" | "house" | "snowflake" | "scissors" | "shovel" | "flower" | "droplets" | "grip" | "truck";
 export type Season = "spring-summer" | "fall" | "winter";
 
 export type Service = {
@@ -66,6 +66,27 @@ export const services = [
     title: "Pressure Washing",
     blurb: "Driveways, walkways, patios, and siding washed clean.",
     icon: "droplets",
+    season: "spring-summer",
+  },
+  {
+    slug: "aeration",
+    title: "Core Aeration",
+    blurb: "Plugs of soil pulled from the lawn so air, water, and food reach the roots. Best done in fall or spring.",
+    icon: "grip",
+    season: "fall",
+  },
+  {
+    slug: "overseeding",
+    title: "Overseeding",
+    blurb: "Fresh grass seed spread over the lawn to fill in thin and bare spots. Pairs best with aeration.",
+    icon: "sprout",
+    season: "fall",
+  },
+  {
+    slug: "junk-removal",
+    title: "Junk Removal",
+    blurb: "Old furniture, yard debris, and garage clutter loaded up and hauled away.",
+    icon: "truck",
     season: "spring-summer",
   },
   {

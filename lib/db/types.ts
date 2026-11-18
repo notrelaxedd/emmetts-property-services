@@ -242,6 +242,8 @@ export type Quote = Base & {
   labor_total: number;
   fee_total: number;
   profit_total: number;
+  /** Out-of-pocket costs on billed lines (rentals, seed, dump fees); comes out of take-home. */
+  cost_total: number;
   margin: number;
   wage: number;
   stripe_checkout_id: string | null;
@@ -276,6 +278,8 @@ export type QuoteItem = Base & {
   price: number | null;
   status: QuoteItemStatus;
   partner_note: string | null;
+  /** Out-of-pocket costs for this line (owner-only, never sent), e.g. `[{ label: "Aerator rental", amount: 95 }]`. */
+  costs: { label: string; amount: number }[];
   /** Claude's summary + suggested range for custom items (owner-only, never sent). */
   ai_summary: {
     summary: string;

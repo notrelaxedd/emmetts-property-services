@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Banknote, CalendarDays, Calculator, ChevronDown, CreditCard, Crown, FileText, MapPin, Plus, RotateCcw, Save, Trash2 } from "lucide-react"
+import { Banknote, CalendarDays, Calculator, ChevronDown, CreditCard, Crown, FileText, MapPin, Plus, Receipt, RotateCcw, Save, Sprout, Trash2, X } from "lucide-react"
 import {
   recordCashOrCheckPayment,
   reviseQuote,
@@ -28,13 +28,14 @@ import { NumberStepper } from "@/components/ui/number-stepper"
 import { Switch } from "@/components/ui/switch"
 import type { JobStatus, MinutesRule, PaymentMethod, Quote, QuoteItem, QuoteItemStatus, TreeCover } from "@/lib/db/types"
 import { PAYMENT_METHOD_LABEL, PAYMENT_METHODS } from "@/lib/ops/payment-methods"
-import { estimateHours, fee, moneyRound, priceQuote, type PricingSettings, type QuoteTotals } from "@/lib/pricing"
+import { estimateHours, fee, moneyRound, priceQuote, sumCosts, type PricingSettings, type QuoteTotals } from "@/lib/pricing"
+import { costPresetsFor, isAerationLine } from "@/lib/quote-costs"
 import { cn } from "@/lib/utils"
 
 export type EditorJob = { id: string; status: JobStatus; start_at: string | null; completed_at: string | null; owners_working?: boolean | null }
 const dateFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric" })
 
-export type EditorService = { id: string; name: string; minutes_rule: MinutesRule }
+export type EditorService = { id: string; name: string; minutes_rule: MinutesRule; slug?: string; default_crew_size?: number; active?: boolean }
 export type EditorProperty = {
   address: string | null
   lat: number | null
@@ -55,7 +56,11 @@ type EditItem = {
   price: number | null
   status: QuoteItemStatus
   partner_note: string | null
+  /** Out-of-pocket costs: rentals, seed, dump fees. */
+  costs: EditCost[]
 }
+
+type EditCost = { key: string; label: string; amount: number }
 
 /** Mirrors the server's `nextStatus` so the live totals match what Save will store. */
 function liveStatus(item: EditItem): QuoteItemStatus {
@@ -82,7 +87,15 @@ function toEdit(i: QuoteItem): EditItem {
     price: i.price,
     status: i.status,
     partner_note: i.partner_note,
+    costs: (Array.isArray(i.costs) ? i.costs : []).map((c) => ({ key: newKey(), label: String(c?.label ?? ""), amount: Number(c?.amount) || 0 })),
   }
+}
+
+/** Costs as saved: blank rows dropped, a nameless amount called "Cost". */
+function cleanCosts(costs: EditCost[]): { label: string; amount: number }[] {
+  return costs
+    .filter((c) => c.label.trim() || c.amount > 0)
+    .map((c) => ({ label: c.label.trim().slice(0, 80) || "Cost", amount: Math.max(0, c.amount) }))
 }
 
 const COVERS: TreeCover[] = ["none", "light", "medium", "heavy"]
@@ -146,6 +159,7 @@ export function QuoteEditor({
       crew_size: i.crew_size,
       est_hours: i.est_hours,
       price: isFixed(i) ? i.price : null,
+      costs: cleanCosts(i.costs),
     })),
     property: { lot_acres: property.lot_acres, tree_cover: property.tree_cover, lat: property.lat, lng: property.lng },
   }
@@ -164,6 +178,37 @@ export function QuoteEditor({
 
   const update = (key: string, patch: Partial<EditItem>) =>
     setItems((prev) => prev.map((i) => (i.key === key ? { ...i, ...patch } : i)))
+  const updateCosts = (key: string, fn: (costs: EditCost[]) => EditCost[]) =>
+    setItems((prev) => prev.map((i) => (i.key === key ? { ...i, costs: fn(i.costs) } : i)))
+  const addCost = (key: string, label: string) => updateCosts(key, (c) => [...c, { key: newKey(), label, amount: 0 }])
+
+  /** A line for one of the catalogue's services, hours estimated from the lot like the quote worker does. */
+  const lineFor = (svc: EditorService): EditItem => {
+    let est_hours = 1
+    try {
+      est_hours = estimateHours(svc.minutes_rule, property.lot_acres, property.tree_cover)
+    } catch {
+      /* keep 1 h */
+    }
+    return {
+      key: newKey(),
+      service_id: svc.id,
+      description: svc.name,
+      is_custom: false,
+      crew_size: Math.max(1, svc.default_crew_size ?? 1),
+      est_hours,
+      price: null,
+      status: "auto",
+      partner_note: null,
+      costs: costPresetsFor(svc.slug, svc.name).length ? [{ key: newKey(), label: costPresetsFor(svc.slug, svc.name)[0], amount: 0 }] : [],
+    }
+  }
+  const addService = (id: string) => {
+    const svc = serviceById.get(id)
+    if (svc) setItems((prev) => [...prev, lineFor(svc)])
+  }
+  const overseeding = services.find((s) => s.slug === "overseeding")
+  const hasOverseeding = items.some((i) => (overseeding && i.service_id === overseeding.id) || /seed/i.test(i.description))
 
   const reestimate = () =>
     setItems((prev) =>
@@ -217,7 +262,8 @@ export function QuoteEditor({
   // The card fee only exists when the customer pays by card.
   const byCard = paid ? quote.payment_method === "stripe" : method === "stripe"
   const feeTotal = byCard && priceTotal > 0 ? fee(priceTotal, settings) : 0
-  const profit = moneyRound(priceTotal - crewPay - feeTotal)
+  const costTotal = totals?.cost_total ?? 0
+  const profit = moneyRound(priceTotal - crewPay - costTotal - feeTotal)
   const perHour = lineHours > 0 ? profit / lineHours : null
   const setOwners = (on: boolean) =>
     job &&
@@ -242,6 +288,13 @@ export function QuoteEditor({
             <p className="text-lg font-bold leading-tight tabular-nums text-ink">{ownersWorking ? "$0" : money(labor)}</p>
             <p className="text-[11px] text-ink-muted">{ownersWorking ? "owners doing it" : `${money(wage)}/h`}</p>
           </div>
+          {costTotal > 0 ? (
+            <div className={cn(tile, "bg-paper")}>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Costs</p>
+              <p className="text-lg font-bold leading-tight tabular-nums text-ink">{money(costTotal)}</p>
+              <p className="text-[11px] text-ink-muted">rentals, materials, fees</p>
+            </div>
+          ) : null}
           {feeTotal > 0 ? (
             <div className={cn(tile, "bg-paper")}>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Card fee</p>
@@ -380,6 +433,26 @@ export function QuoteEditor({
                       ) : null}
                     </p>
                   ) : null}
+                  {!resolved ? (
+                    <LineCosts
+                      item={item}
+                      slug={item.service_id ? serviceById.get(item.service_id)?.slug : undefined}
+                      fixedPrice={isFixed(item)}
+                      locked={locked}
+                      onChange={(fn) => updateCosts(item.key, fn)}
+                      onAdd={(label) => addCost(item.key, label)}
+                      onAddOverseeding={
+                        overseeding && !hasOverseeding && isAerationLine(item.service_id ? serviceById.get(item.service_id)?.slug : undefined, item.description)
+                          ? () => setItems((prev) => {
+                              const at = prev.findIndex((p) => p.key === item.key)
+                              const next = [...prev]
+                              next.splice(at + 1, 0, lineFor(overseeding))
+                              return next
+                            })
+                          : undefined
+                      }
+                    />
+                  ) : null}
                 </li>
               )
             })}
@@ -387,19 +460,23 @@ export function QuoteEditor({
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink/10 bg-paper/60 px-3 py-2">
             {!locked ? (
               <div className="flex flex-wrap gap-1.5">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    setItems((prev) => [
-                      ...prev,
-                      { key: newKey(), service_id: null, description: "", is_custom: false, crew_size: 1, est_hours: 1, price: null, status: "auto", partner_note: null },
-                    ])
-                  }
+                <NativeSelect
+                  aria-label="Add a service line (priced by hours)"
+                  className="h-8 w-56 text-sm"
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) addService(e.target.value)
+                  }}
                 >
-                  <Plus aria-hidden="true" /> Line (priced by hours)
-                </Button>
+                  <option value="">+ Service (priced by hours)…</option>
+                  {services
+                    .filter((svc) => svc.active !== false)
+                    .map((svc) => (
+                      <option key={svc.id} value={svc.id}>
+                        {svc.name}
+                      </option>
+                    ))}
+                </NativeSelect>
                 <Button
                   type="button"
                   size="sm"
@@ -407,7 +484,7 @@ export function QuoteEditor({
                   onClick={() =>
                     setItems((prev) => [
                       ...prev,
-                      { key: newKey(), service_id: null, description: "", is_custom: true, crew_size: 1, est_hours: 1, price: null, status: "needs_owner", partner_note: null },
+                      { key: newKey(), service_id: null, description: "", is_custom: true, crew_size: 1, est_hours: 1, price: null, status: "needs_owner", partner_note: null, costs: [] },
                     ])
                   }
                 >
@@ -500,7 +577,7 @@ export function QuoteEditor({
                 />
               </div>
             ) : (
-              <span className="h-9 text-xs leading-9 text-ink-muted">crew pay ÷ (1 − margin)</span>
+              <span className="h-9 text-xs leading-9 text-ink-muted">crew pay ÷ (1 − margin){costTotal > 0 ? " + costs" : ""}</span>
             )}
           </div>
           {job ? (
@@ -771,6 +848,111 @@ export function QuoteEditor({
   )
 }
 
+/**
+ * The costs under one line: rentals, seed, dump fees. Hours-priced lines charge them at cost on top of
+ * the labor price; a line with your own price already covers them. Either way they come out of take-home.
+ */
+function LineCosts({
+  item,
+  slug,
+  fixedPrice,
+  locked,
+  onChange,
+  onAdd,
+  onAddOverseeding,
+}: {
+  item: EditItem
+  slug: string | undefined
+  fixedPrice: boolean
+  locked: boolean
+  onChange: (fn: (costs: EditCost[]) => EditCost[]) => void
+  onAdd: (label: string) => void
+  onAddOverseeding?: () => void
+}) {
+  const presets = costPresetsFor(slug, item.description).filter((p) => !item.costs.some((c) => c.label.toLowerCase() === p.toLowerCase()))
+  const total = sumCosts(item.costs)
+  // Lines with nothing to rent or buy stay quiet: just a small "+ Cost".
+  if (!item.costs.length && !presets.length && !onAddOverseeding) {
+    return locked ? null : (
+      <button type="button" className="mt-1 inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink" onClick={() => onAdd("")}>
+        <Plus className="size-3" aria-hidden="true" /> Cost
+      </button>
+    )
+  }
+  return (
+    <div className="mt-1.5 rounded-md bg-paper/70 px-2 py-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+          <Receipt className="size-3.5" aria-hidden="true" /> Costs
+        </span>
+        {item.costs.map((c) => (
+          <span key={c.key} className="inline-flex items-center gap-1 rounded-md border border-ink/10 bg-white py-0.5 pl-1.5 pr-0.5">
+            <Input
+              aria-label="Cost name"
+              className="h-7 w-36 border-0 px-1 text-xs shadow-none"
+              value={c.label}
+              maxLength={80}
+              placeholder="What for?"
+              disabled={locked}
+              onChange={(e) => onChange((all) => all.map((x) => (x.key === c.key ? { ...x, label: e.target.value } : x)))}
+            />
+            <span className="text-xs text-ink-muted">$</span>
+            <Input
+              aria-label={`${c.label || "Cost"} amount`}
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step={1}
+              className="h-7 w-20 px-1 text-right text-xs tabular-nums"
+              value={c.amount || ""}
+              placeholder="0"
+              disabled={locked}
+              onChange={(e) => {
+                const v = Number(e.target.value)
+                onChange((all) => all.map((x) => (x.key === c.key ? { ...x, amount: Number.isFinite(v) && v > 0 ? v : 0 } : x)))
+              }}
+            />
+            {!locked ? (
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-6"
+                aria-label={`Remove ${c.label || "cost"}`}
+                onClick={() => onChange((all) => all.filter((x) => x.key !== c.key))}
+              >
+                <X className="size-3.5" aria-hidden="true" />
+              </Button>
+            ) : null}
+          </span>
+        ))}
+        {!locked
+          ? presets.map((p) => (
+              <Button key={p} type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => onAdd(p)}>
+                <Plus className="size-3" aria-hidden="true" /> {p}
+              </Button>
+            ))
+          : null}
+        {!locked ? (
+          <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onAdd("")}>
+            <Plus className="size-3" aria-hidden="true" /> Other
+          </Button>
+        ) : null}
+        {!locked && onAddOverseeding ? (
+          <Button type="button" size="sm" variant="outline" className="h-7 border-brand-green/40 px-2 text-xs text-brand-green-dark" onClick={onAddOverseeding}>
+            <Sprout className="size-3" aria-hidden="true" /> Add overseeding
+          </Button>
+        ) : null}
+        {total > 0 ? (
+          <span className="ml-auto text-xs tabular-nums text-ink-muted">
+            {money(total)} {fixedPrice ? "out of your price" : "added to the price"}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function safeTotals(
   items: EditItem[],
   settings: PricingSettings,
@@ -786,6 +968,7 @@ function safeTotals(
           price: isFixed(i) ? i.price : null,
           is_custom: i.is_custom || liveStatus(i) === "priced",
           status: liveStatus(i),
+          costs: sumCosts(i.costs),
         })),
         settings,
         { wage, margin },

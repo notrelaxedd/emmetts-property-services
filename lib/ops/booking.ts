@@ -383,7 +383,7 @@ export async function bookJob(db: Db, jobId: string, input: BookJobInput): Promi
           accepted_at: quote.accepted_at ?? now,
           payment_method: quote.paid_at ? quote.payment_method : input.paymentMethod,
           fee_total: quote.paid_at ? quote.fee_total : feeTotal,
-          profit_total: quote.paid_at ? quote.profit_total : moneyRound(quote.price_total - quote.labor_total - feeTotal),
+          profit_total: quote.paid_at ? quote.profit_total : moneyRound(quote.price_total - quote.labor_total - (Number(quote.cost_total) || 0) - feeTotal),
           rationale: appendNote(quote.rationale, note),
         })
         .eq("id", quote.id)

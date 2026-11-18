@@ -3,9 +3,13 @@
  * the admin console and the fleet workers can all import it.
  *
  *   labor  = crew_size × hours × wage
- *   price  = max(min_job_price, round(labor / (1 − margin)))
+ *   costs  = what the line costs us out of pocket (rentals, seed, dump fees)
+ *   price  = max(min_job_price, round(labor / (1 − margin)) + costs)
  *   fee    = price × card_fee_pct + card_fee_fixed
- *   profit = price − labor − fee
+ *   profit = price − labor − costs − fee
+ *
+ * Costs are charged at cost on hours-priced lines (no margin on top). A line with the owner's own
+ * price already covers its costs, so they only come out of profit there.
  *
  * The minimum job price applies to the QUOTE total (`priceQuote`), never to a single item
  * (`priceItem`). Prices are whole dollars; fee / profit / labor are rounded to cents.
@@ -44,7 +48,10 @@ export type PriceItemInput = {
   margin?: number;
 };
 
-export type PricedItem = { labor: number; price: number };
+export type PricedItem = { labor: number; price: number; cost: number };
+
+/** One out-of-pocket cost on a quote line, e.g. `{ label: "Aerator rental", amount: 95 }`. */
+export type LineCost = { label: string; amount: number };
 
 export type QuoteItemInput = {
   crew_size: number;
@@ -52,10 +59,14 @@ export type QuoteItemInput = {
   price?: number | null;
   is_custom?: boolean;
   status?: QuoteItemStatus;
+  /** Sum of the line's out-of-pocket costs (see `sumCosts`). */
+  costs?: number;
 };
 
 export type QuoteTotals = {
   labor_total: number;
+  /** Out-of-pocket costs on billed lines. */
+  cost_total: number;
   price_total: number;
   fee_total: number;
   profit_total: number;
@@ -161,7 +172,7 @@ function laborCost(crewSize: number, hours: number, wage: number): number {
  * Price one line item. The minimum job price is NOT applied here (it applies to the quote total).
  * `price = Math.round(labor / (1 − margin))` in whole dollars.
  */
-export function priceItem(input: PriceItemInput, settings: PricingSettings): PricedItem {
+export function priceItem(input: PriceItemInput, settings: PricingSettings): { labor: number; price: number } {
   const wage = input.wage ?? settings.default_wage;
   const margin = input.margin ?? settings.margin;
   assertMargin(margin);
@@ -182,6 +193,20 @@ export function profit(price: number, labor: number, settings: PricingSettings):
   assertNonNegative("price", price);
   assertNonNegative("labor", labor);
   return moneyRound(price - labor - fee(price, settings));
+}
+
+/**
+ * Total of a line's costs, in cents. Tolerates whatever is stored in `quote_items.costs` (jsonb):
+ * anything that isn't an array of `{ amount: number >= 0 }` counts as nothing.
+ */
+export function sumCosts(costs: unknown): number {
+  if (!Array.isArray(costs)) return 0;
+  let total = 0;
+  for (const c of costs) {
+    const amount = c && typeof c === "object" ? Number((c as { amount?: unknown }).amount) : NaN;
+    if (Number.isFinite(amount) && amount > 0) total += amount;
+  }
+  return moneyRound(total);
 }
 
 /** Items the owner has already resolved without us billing for them. */
@@ -212,28 +237,35 @@ export function priceQuote(
 
   let needsOwner = false;
   let laborTotal = 0;
+  let costTotal = 0;
   let priceSum = 0;
 
   const priced: PricedItem[] = items.map((item) => {
-    if (isExcluded(item.status)) return { labor: 0, price: 0 };
+    if (isExcluded(item.status)) return { labor: 0, price: 0, cost: 0 };
+    const cost = moneyRound(item.costs ?? 0);
+    assertNonNegative("costs", cost);
 
     const custom = item.is_custom === true || item.status === "needs_owner";
     if (!custom) {
       const p = priceItem({ crew_size: item.crew_size, est_hours: item.est_hours, wage, margin }, settings);
+      // Costs are passed through at cost; cents kept so the customer pays exactly what we paid.
+      const price = moneyRound(p.price + cost);
       laborTotal += p.labor;
-      priceSum += p.price;
-      return p;
+      costTotal += cost;
+      priceSum += price;
+      return { labor: p.labor, price, cost };
     }
 
     if (item.price === null || item.price === undefined) {
       needsOwner = true;
-      return { labor: 0, price: 0 };
+      return { labor: 0, price: 0, cost: 0 };
     }
     assertNonNegative("price", item.price);
     const labor = laborCost(item.crew_size, item.est_hours, wage);
     laborTotal += labor;
+    costTotal += cost;
     priceSum += item.price;
-    return { labor, price: item.price };
+    return { labor, price: item.price, cost };
   });
 
   const floor = settings.min_job_price ?? 0;
@@ -242,12 +274,14 @@ export function priceQuote(
   const priceTotal = minApplied ? floor : priceSum;
 
   const labor_total = moneyRound(laborTotal);
+  const cost_total = moneyRound(costTotal);
   const price_total = moneyRound(priceTotal);
   const fee_total = fee(price_total, settings);
-  const profit_total = moneyRound(price_total - labor_total - fee_total);
+  const profit_total = moneyRound(price_total - labor_total - cost_total - fee_total);
 
   return {
     labor_total,
+    cost_total,
     price_total,
     fee_total,
     profit_total,

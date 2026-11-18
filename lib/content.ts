@@ -41,6 +41,8 @@ export const content = {
       { label: "Bed cleanouts", slug: "bed-cleanout" },
       { label: "Bush trimming", slug: "bush-trimming" },
       { label: "Pressure washing", slug: "pressure-washing" },
+      { label: "Aeration", slug: "aeration" },
+      { label: "Junk removal", slug: "junk-removal" },
       { label: "Snow removal", slug: "snow-removal" },
     ],
     trust: ["Locally owned and operated", "Clear, upfront pricing", "Great reviews from local customers"],
@@ -73,14 +75,14 @@ export const content = {
     moreLabel: "Also on the list",
     linkLabel: "Get a price",
     // Under the list: everything else we take on.
-    moreNote: { title: "And more", body: "Junk removal, gutters, odd jobs around the yard. If it's outside, ask us and we'll give you a price." },
+    moreNote: { title: "And more", body: "Gutters, odd jobs around the yard, and anything else outside. Ask us and we'll give you a price." },
   },
 
   // On the home page this shares a section with `seasons`: the body is its intro, the pills a line under it.
   benefits: {
     headline: ["One crew", "covers it"],
     body: "From the first mow in spring to the last snowfall, one crew handles the whole yard. Tell us what you need and we'll send you one price for all of it.",
-    pills: ["Weekly Mowing", "Edging", "Mulching", "Bed Cleanouts", "Bush Trimming", "Pressure Washing", "Snow Removal", "And More"],
+    pills: ["Weekly Mowing", "Edging", "Mulching", "Bed Cleanouts", "Bush Trimming", "Pressure Washing", "Aeration & Overseeding", "Junk Removal", "Snow Removal", "And More"],
   },
 
   // Bigger accounts. Keeps id="commercial" so the nav link lands here.

@@ -49,6 +49,8 @@ export type ScheduleJob = {
     priceTotal: number
     feeTotal: number
     laborTotal: number
+    /** Out-of-pocket job costs (rentals, seed, dump fees). */
+    costTotal: number
     paymentMethod: PaymentMethod | null
     paidAt: string | null
     /** The quote still has a line waiting for your price (the job can't be confirmed yet). */

@@ -23,6 +23,8 @@ type QuoteRow = {
   price_total: number
   fee_total: number
   labor_total: number
+  /** Missing until the job-costs migration (20261118000200) runs. */
+  cost_total?: number | null
   payment_method: PaymentMethod | null
   paid_at: string | null
 }
@@ -43,7 +45,7 @@ export async function loadScheduleJobs(db: Db, jobs: Job[]): Promise<(j: Job) =>
     customerIds.length ? db.from("customers").select("id,name,address,phone,email").in("id", customerIds) : none,
     jobIds.length ? db.from("job_assignments").select("job_id,crew_id,status,responded_at,notified_at").in("job_id", jobIds).neq("status", "dropped") : none,
     quoteIds.length ? db.from("quote_items").select("quote_id,description,sort_order,status").in("quote_id", quoteIds) : none,
-    quoteIds.length ? db.from("quotes").select("id,price_total,fee_total,labor_total,payment_method,paid_at").in("id", quoteIds) : none,
+    quoteIds.length ? db.from("quotes").select("*").in("id", quoteIds) : none,
     jobIds.length ? db.from("payouts").select("job_id,amount").in("job_id", jobIds) : none,
     getSettings(db),
   ])
@@ -106,6 +108,7 @@ export async function loadScheduleJobs(db: Db, jobs: Job[]): Promise<(j: Job) =>
           priceTotal: Number(q.price_total),
           feeTotal: Number(q.fee_total),
           laborTotal: Number(q.labor_total),
+          costTotal: Number(q.cost_total ?? 0) || 0,
           paymentMethod: q.payment_method,
           paidAt: q.paid_at,
           needsOwner: needsOwnerByQuote.has(q.id),

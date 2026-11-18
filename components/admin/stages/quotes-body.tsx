@@ -262,7 +262,7 @@ export async function QuoteDetailBody({ id, variant = "page" }: { id: string; va
     db.from("quote_items").select("*").eq("quote_id", quote.id).order("sort_order", { ascending: true }),
     db.from("customers").select("*").eq("id", quote.customer_id).maybeSingle(),
     db.from("leads").select("id,custom_request,photo_paths,status,door_rep,sales_rep_id").eq("id", quote.lead_id).maybeSingle(),
-    db.from("services").select("id,name,minutes_rule").order("sort_order", { ascending: true }),
+    db.from("services").select("id,name,minutes_rule,slug,default_crew_size,active").order("sort_order", { ascending: true }),
     db
       .from("approvals")
       .select("*")
