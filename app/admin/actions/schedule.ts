@@ -221,7 +221,11 @@ export async function setOwnersWorking(jobId: string, on: boolean): Promise<Acti
   if (!parsed.success) return { ok: false, reason: "Invalid request." }
   try {
     const db = requireSupabaseAdmin()
-    check(await db.from("jobs").update({ owners_working: on }).eq("id", jobId), "setOwnersWorking")
+    const res = await db.from("jobs").update({ owners_working: on }).eq("id", jobId)
+    if (res.error && /owners_working/.test(res.error.message)) {
+      return { ok: false, reason: "Run the owners_working migration in Supabase first (supabase/migrations/20261118000100_owners_working.sql)." }
+    }
+    check(res, "setOwnersWorking")
     revalidate()
     revalidatePath("/admin/money")
     return { ok: true, message: on ? "Owners on it: no crew pay, all take-home." : "Crew pay counts again." }

@@ -47,7 +47,8 @@ async function load(month: string) {
 
   // Revenue counts when the money arrives (`paid_at`): customers confirm by phone and pay after the job.
   const quoteCols = "id,customer_id,price_total,fee_total,labor_total,paid_at"
-  const jobCols = "id,quote_id,customer_id,status,start_at,completed_at,profit_override,owners_working"
+  // "*" so the page keeps loading on a database without the newest job columns (owners_working).
+  const jobCols = "*"
   const [accepted, completed, expenses, ai, flyerBatches, customerList] = await Promise.all([
     db.from("quotes").select(quoteCols).gte("paid_at", fromIso).lt("paid_at", toIso),
     db.from("jobs").select(jobCols).eq("status", "done").gte("completed_at", fromIso).lt("completed_at", toIso),
