@@ -1,4 +1,5 @@
 import type { AssignmentStatus, JobStatus, PaymentMethod } from "@/lib/db/types"
+import type { JobMoney } from "@/lib/schedule/money"
 
 export type ScheduleCrew = {
   id: string
@@ -9,6 +10,8 @@ export type ScheduleCrew = {
   respondedAt: string | null
   /** Whether the availability email went out. */
   notified: boolean
+  /** Their hourly pay. */
+  rate: number
 }
 
 /** A job as the week grid needs it. Times are pre-converted to business-timezone wall clock. */
@@ -18,6 +21,8 @@ export type ScheduleJob = {
   weatherHold: boolean
   /** Owner decision stands (taken off the calendar / card marked handled): the scheduler leaves it alone. */
   ownerHold: boolean
+  /** The owners do this one themselves: no crew pay. */
+  ownersWorking: boolean
   paid: boolean
   customerName: string
   phone: string | null
@@ -27,6 +32,10 @@ export type ScheduleJob = {
   crew: ScheduleCrew[]
   crewSize: number
   estMinutes: number
+  /** On-site hours (the slot's length, or the estimate when it has no slot). */
+  hours: number
+  /** Price, card fee (card payers only), crew pay and what you take home. */
+  money: JobMoney
   /** Local "YYYY-MM-DD", or null when unscheduled. */
   date: string | null
   /** Minutes after local midnight. */
@@ -38,6 +47,8 @@ export type ScheduleJob = {
   quote: {
     id: string
     priceTotal: number
+    feeTotal: number
+    laborTotal: number
     paymentMethod: PaymentMethod | null
     paidAt: string | null
     /** The quote still has a line waiting for your price (the job can't be confirmed yet). */

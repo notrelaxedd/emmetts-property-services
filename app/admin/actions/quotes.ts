@@ -107,7 +107,8 @@ export async function saveQuote(quoteId: string, input: SaveQuoteInput): Promise
       { wage: data.wage, margin: data.margin },
     )
     const price_total = data.total_override !== null ? moneyRound(data.total_override) : totals.price_total
-    const fee_total = fee(price_total, settings)
+    // Cash and check carry no card fee (same rule as setPaymentMethod / booking).
+    const fee_total = quote.payment_method === "cash" || quote.payment_method === "check" ? 0 : fee(price_total, settings)
 
     // Items: delete removed, update kept, insert new.
     const keep = new Set(rows.flatMap((r) => (r.id ? [r.id] : [])))

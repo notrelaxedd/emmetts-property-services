@@ -64,6 +64,8 @@ export type MoneyJob = {
   completed_at: string | null
   /** Owner-set profit for a done job; null / missing = price − fee − labor. */
   profit_override?: number | null
+  /** The owners did the job: no estimated labor (recorded payouts still count). */
+  owners_working?: boolean | null
 }
 export type MoneyPayout = { job_id: string; amount: number }
 export type MoneyExpense = { date: string; amount: number }
@@ -79,7 +81,7 @@ type LaborQuote = Pick<MoneyQuote, "labor_total"> & Partial<Pick<MoneyQuote, "pr
  * to that: price − fee − profit. Otherwise real payouts when any exist, else the quote's estimated labor.
  */
 export function laborForJob(
-  job: Pick<MoneyJob, "id" | "quote_id"> & Partial<Pick<MoneyJob, "profit_override">>,
+  job: Pick<MoneyJob, "id" | "quote_id"> & Partial<Pick<MoneyJob, "profit_override" | "owners_working">>,
   payouts: readonly MoneyPayout[],
   quotesById: ReadonlyMap<string, LaborQuote>,
 ): JobLabor {
@@ -91,6 +93,7 @@ export function laborForJob(
   }
   const mine = payouts.filter((p) => p.job_id === job.id)
   if (mine.length) return { amount: sum(mine, (p) => p.amount), estimated: false }
+  if (job.owners_working) return { amount: 0, estimated: false }
   const q = job.quote_id ? quotesById.get(job.quote_id) : undefined
   return { amount: round2(Number(q?.labor_total ?? 0)), estimated: true }
 }

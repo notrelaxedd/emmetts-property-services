@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Banknote, CalendarDays, Calculator, CreditCard, FileText, MapPin, Plus, RotateCcw, Save, Trash2 } from "lucide-react"
+import { Banknote, CalendarDays, Calculator, ChevronDown, CreditCard, Crown, FileText, MapPin, Plus, RotateCcw, Save, Trash2 } from "lucide-react"
 import {
   recordCashOrCheckPayment,
   reviseQuote,
@@ -12,6 +12,7 @@ import {
   setPaymentMethod,
   type SaveQuoteInput,
 } from "@/app/admin/actions/quotes"
+import { setOwnersWorking } from "@/app/admin/actions/schedule"
 import { ConfirmDialog } from "@/components/admin/inbox/confirm-dialog"
 import { money } from "@/components/admin/inbox/format"
 import { ItemStatusBadge } from "@/components/admin/inbox/items-table"
@@ -30,7 +31,7 @@ import { PAYMENT_METHOD_LABEL, PAYMENT_METHODS } from "@/lib/ops/payment-methods
 import { estimateHours, fee, moneyRound, priceQuote, type PricingSettings, type QuoteTotals } from "@/lib/pricing"
 import { cn } from "@/lib/utils"
 
-export type EditorJob = { id: string; status: JobStatus; start_at: string | null; completed_at: string | null }
+export type EditorJob = { id: string; status: JobStatus; start_at: string | null; completed_at: string | null; owners_working?: boolean | null }
 const dateFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric" })
 
 export type EditorService = { id: string; name: string; minutes_rule: MinutesRule }
@@ -154,9 +155,10 @@ export function QuoteEditor({
 
   const { totals, error: calcError } = safeTotals(items, settings, wage, marginPct / 100)
   const priceTotal = override ?? totals?.price_total ?? 0
-  const feeTotal = priceTotal > 0 ? fee(priceTotal, settings) : 0
+  const ownersWorking = !!job?.owners_working
   const labor = totals?.labor_total ?? 0
-  const profit = moneyRound(priceTotal - labor - feeTotal)
+  const crewPay = ownersWorking ? 0 : labor
+  const lineHours = items.reduce((h, i) => (liveStatus(i) === "referred" || liveStatus(i) === "declined" ? h : h + (Number(i.est_hours) || 0)), 0)
   const needsOwner = items.some((i) => liveStatus(i) === "needs_owner")
   const serviceById = new Map(services.map((s) => [s.id, s]))
 
@@ -212,163 +214,179 @@ export function QuoteEditor({
   const [payAmount, setPayAmount] = React.useState(quote.price_total)
   const [checkNumber, setCheckNumber] = React.useState("")
   const payIds = { method: React.useId(), check: React.useId() }
+  // The card fee only exists when the customer pays by card.
+  const byCard = paid ? quote.payment_method === "stripe" : method === "stripe"
+  const feeTotal = byCard && priceTotal > 0 ? fee(priceTotal, settings) : 0
+  const profit = moneyRound(priceTotal - crewPay - feeTotal)
+  const perHour = lineHours > 0 ? profit / lineHours : null
+  const setOwners = (on: boolean) =>
+    job &&
+    void run(async () => {
+      const r = await setOwnersWorking(job.id, on)
+      return r.ok ? { ok: true as const, message: r.message } : { ok: false as const, error: r.reason }
+    })
 
+
+  const tile = "rounded-md px-3 py-2"
   return (
-    <div className="grid gap-4 2xl:grid-cols-[20rem_1fr]">
-      {/* Property */}
-      <Card className="h-fit">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <MapPin className="size-4" aria-hidden="true" /> Property
-          </CardTitle>
-          <CardDescription>{property.address ?? "No address on file"}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <PropertyMap lat={property.lat} lng={property.lng} parcelId={property.parcel_id} />
-          <div className="grid grid-cols-2 gap-2">
-            <div className="grid gap-1.5">
-              <Label htmlFor={ids.lat}>Lat</Label>
-              <Input
-                id={ids.lat}
-                type="number"
-                step="any"
-                disabled={locked}
-                value={property.lat ?? ""}
-                onChange={(e) => setProperty({ ...property, lat: e.target.value === "" ? null : Number(e.target.value) })}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor={ids.lng}>Lng</Label>
-              <Input
-                id={ids.lng}
-                type="number"
-                step="any"
-                disabled={locked}
-                value={property.lng ?? ""}
-                onChange={(e) => setProperty({ ...property, lng: e.target.value === "" ? null : Number(e.target.value) })}
-              />
-            </div>
+    <div className="space-y-3">
+      {/* The deal at a glance: stays on screen while you edit */}
+      <div className="sticky top-0 z-20 -mx-1 rounded-lg border border-ink/10 bg-white/95 p-2 shadow-sm backdrop-blur">
+        <div className="flex flex-wrap items-stretch gap-1.5">
+          <div className={cn(tile, "bg-ink text-white")}>
+            <p className="text-[11px] font-semibold uppercase tracking-wide opacity-70">Price</p>
+            <p className="text-2xl font-bold leading-tight tabular-nums">{money(priceTotal)}</p>
           </div>
-          <NumberStepper
-            label="Lot size"
-            suffix="acres"
-            step={0.05}
-            min={0}
-            disabled={locked}
-            value={property.lot_acres ?? 0}
-            onChange={(v) => setProperty({ ...property, lot_acres: v })}
-          />
-          {property.lot_acres === null ? <p className="text-xs text-ink-muted">Unknown: pricing assumed 0.25 acres.</p> : null}
-          <div className="grid gap-1.5">
-            <Label htmlFor={ids.cover}>Tree cover</Label>
-            <NativeSelect
-              id={ids.cover}
-              disabled={locked}
-              value={property.tree_cover ?? ""}
-              onChange={(e) => setProperty({ ...property, tree_cover: (e.target.value || null) as TreeCover | null })}
-            >
-              <option value="">Unknown</option>
-              {COVERS.map((c) => (
-                <option key={c} value={c}>
-                  {c.charAt(0).toUpperCase() + c.slice(1)}
-                </option>
-              ))}
-            </NativeSelect>
+          <div className={cn(tile, "bg-paper")}>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Crew pay</p>
+            <p className="text-lg font-bold leading-tight tabular-nums text-ink">{ownersWorking ? "$0" : money(labor)}</p>
+            <p className="text-[11px] text-ink-muted">{ownersWorking ? "owners doing it" : `${money(wage)}/h`}</p>
           </div>
-          <Button type="button" variant="outline" size="sm" disabled={locked} onClick={reestimate}>
-            <Calculator aria-hidden="true" /> Re-estimate hours from lot
-          </Button>
-        </CardContent>
-      </Card>
-
-      <div className="space-y-4">
-        {/* Line items */}
-        <Card>
-          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-base">Line items</CardTitle>
+          {feeTotal > 0 ? (
+            <div className={cn(tile, "bg-paper")}>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Card fee</p>
+              <p className="text-lg font-bold leading-tight tabular-nums text-ink">{money(feeTotal)}</p>
+              <p className="text-[11px] text-ink-muted">pays by card</p>
+            </div>
+          ) : null}
+          <div className={cn(tile, profit < 0 ? "bg-red-50" : "bg-brand-green/15")}>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Take-home</p>
+            <p className={cn("text-2xl font-bold leading-tight tabular-nums", profit < 0 ? "text-destructive" : "text-brand-green-dark")}>{money(profit)}</p>
+            <p className="text-[11px] text-ink-muted">{priceTotal > 0 ? `${Math.round((profit / priceTotal) * 100)}% of price` : "—"}</p>
+          </div>
+          <div className={cn(tile, "bg-paper")}>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Time on site</p>
+            <p className="text-lg font-bold leading-tight tabular-nums text-ink">{lineHours ? `${Math.round(lineHours * 100) / 100}h` : "—"}</p>
+            <p className="text-[11px] text-ink-muted">{perHour !== null ? `${money(Math.round(perHour))}/h take-home` : ""}</p>
+          </div>
+          <div className="ml-auto flex flex-wrap items-center gap-2 px-1">
             {locked ? <Badge variant="secondary">Locked ({quote.status})</Badge> : null}
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {items.length === 0 ? <p className="text-sm text-ink-muted">No line items.</p> : null}
-            <ul className="space-y-3">
-              {items.map((item, idx) => {
-                const status = liveStatus(item)
-                const resolved = status === "referred" || status === "declined"
-                const computed = totals?.items[idx]?.price ?? 0
-                return (
-                  <li
-                    key={item.key}
-                    className={cn("rounded-md border border-ink/10 p-3", item.is_custom && "border-violet-200 bg-violet-50/40")}
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" disabled={locked || pending || !dirty || !!calcError} onClick={() => void run(() => saveQuote(quote.id, payload))}>
+              <Save aria-hidden="true" />
+              {pending ? "Saving…" : dirty ? "Save" : "Saved"}
+            </Button>
+            <Button asChild variant={job && (job.status === "unscheduled" || job.status === "proposed" || job.status === "crew_confirmed") ? "cta-green" : "outline"}>
+              <Link href={scheduleHref}>
+                <CalendarDays aria-hidden="true" />
+                {!job
+                  ? "Schedule"
+                  : job.status === "unscheduled"
+                    ? "Put on calendar"
+                    : job.status === "proposed" || job.status === "crew_confirmed"
+                      ? "Call & confirm"
+                      : "Open on calendar"}
+              </Link>
+            </Button>
+          </div>
+        </div>
+        {calcError ? <p className="px-1 pt-1 text-sm text-destructive">{calcError}</p> : null}
+        {needsOwner ? <p className="px-1 pt-1 text-sm text-amber-900">A custom line still needs your price.</p> : null}
+      </div>
+
+      {/* Lines: one row each, everything editable in place */}
+      <Card>
+        <CardContent className="p-0">
+          <div className="hidden grid-cols-[minmax(0,1fr)_4.5rem_5rem_5.5rem_6.5rem_2.25rem] gap-2 border-b border-ink/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-muted md:grid">
+            <span>Service</span>
+            <span>Crew</span>
+            <span>Hours</span>
+            <span className="text-right">Crew pay</span>
+            <span className="text-right">Price</span>
+            <span />
+          </div>
+          {items.length === 0 ? <p className="px-3 py-4 text-sm text-ink-muted">No line items yet.</p> : null}
+          <ul className="divide-y divide-ink/10">
+            {items.map((item, idx) => {
+              const status = liveStatus(item)
+              const resolved = status === "referred" || status === "declined"
+              const computed = totals?.items[idx]?.price ?? 0
+              const lineLabor = totals?.items[idx]?.labor ?? 0
+              return (
+                <li key={item.key} className={cn("px-3 py-2", item.is_custom && "bg-violet-50/50")}>
+                  <div className="grid grid-cols-[4.5rem_5rem_minmax(0,1fr)_6.5rem_2.25rem] items-center gap-2 md:grid-cols-[minmax(0,1fr)_4.5rem_5rem_5.5rem_6.5rem_2.25rem]">
+                    <div className="col-span-5 flex min-w-0 items-center gap-1.5 md:col-span-1">
                       <Input
                         aria-label={`Line ${idx + 1} description`}
-                        className="min-w-[12rem] flex-1"
+                        className="h-9 min-w-0 flex-1"
                         value={item.description}
                         maxLength={250}
                         disabled={locked}
+                        placeholder="What's the job?"
                         onChange={(e) => update(item.key, { description: e.target.value })}
                       />
                       {item.is_custom ? <ItemStatusBadge status={status} /> : null}
+                    </div>
+                    <Input
+                      aria-label={`Line ${idx + 1} crew`}
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={20}
+                      className="h-9 tabular-nums"
+                      disabled={locked}
+                      value={item.crew_size}
+                      onChange={(e) => update(item.key, { crew_size: Math.max(1, Math.min(20, Math.round(Number(e.target.value) || 1))) })}
+                    />
+                    <Input
+                      aria-label={`Line ${idx + 1} hours`}
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step={0.25}
+                      className="h-9 tabular-nums"
+                      disabled={locked}
+                      value={item.est_hours}
+                      onChange={(e) => update(item.key, { est_hours: Math.max(0, Number(e.target.value) || 0) })}
+                    />
+                    <span className={cn("text-right text-sm tabular-nums text-ink-muted", ownersWorking && "line-through")}>{money(lineLabor)}</span>
+                    {isFixed(item) ? (
+                      <Input
+                        aria-label={`Line ${idx + 1} price`}
+                        type="number"
+                        inputMode="decimal"
+                        min={0}
+                        step={5}
+                        className="h-9 text-right font-semibold tabular-nums"
+                        disabled={locked || resolved}
+                        placeholder="$"
+                        value={item.price ?? ""}
+                        onChange={(e) => {
+                          const v = Number(e.target.value)
+                          update(item.key, { price: e.target.value === "" || !(v > 0) ? null : v })
+                        }}
+                      />
+                    ) : (
+                      <span className="text-right text-sm font-semibold tabular-nums text-ink">{money(computed)}</span>
+                    )}
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="size-9"
+                      disabled={locked}
+                      aria-label={`Remove ${item.description || `line ${idx + 1}`}`}
+                      onClick={() => setItems((prev) => prev.filter((i) => i.key !== item.key))}
+                    >
+                      <Trash2 aria-hidden="true" />
+                    </Button>
+                  </div>
+                  {item.partner_note || (item.id && pendingCustomItemIds.includes(item.id)) ? (
+                    <p className="mt-1 text-xs text-ink-muted">
+                      {item.partner_note ? `Partner note: ${item.partner_note} ` : ""}
                       {item.id && pendingCustomItemIds.includes(item.id) ? (
-                        <Link href="/admin/inbox?filter=custom" className="text-xs underline">
+                        <Link href="/admin/inbox?filter=custom" className="underline">
                           Card in inbox
                         </Link>
                       ) : null}
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        disabled={locked}
-                        aria-label={`Remove ${item.description || `line ${idx + 1}`}`}
-                        onClick={() => setItems((prev) => prev.filter((i) => i.key !== item.key))}
-                      >
-                        <Trash2 aria-hidden="true" />
-                      </Button>
-                    </div>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                      <NumberStepper
-                        label="Crew"
-                        min={1}
-                        max={20}
-                        step={1}
-                        disabled={locked}
-                        value={item.crew_size}
-                        onChange={(v) => update(item.key, { crew_size: v })}
-                      />
-                      <NumberStepper
-                        label="Hours"
-                        suffix="h"
-                        min={0}
-                        step={0.25}
-                        disabled={locked}
-                        value={item.est_hours}
-                        onChange={(v) => update(item.key, { est_hours: v })}
-                      />
-                      {isFixed(item) ? (
-                        <NumberStepper
-                          label={resolved ? `Price (${status})` : "Your price"}
-                          prefix="$"
-                          min={0}
-                          step={5}
-                          disabled={locked || resolved}
-                          value={item.price ?? 0}
-                          onChange={(v) => update(item.key, { price: v > 0 ? v : null })}
-                        />
-                      ) : (
-                        <div className="flex flex-col gap-1.5">
-                          <span className="text-sm font-medium leading-none text-ink">Price</span>
-                          <span className="flex h-11 items-center text-lg font-semibold tabular-nums text-ink">{money(computed)}</span>
-                        </div>
-                      )}
-                    </div>
-                    {item.partner_note ? <p className="mt-2 text-xs text-ink-muted">Partner note: {item.partner_note}</p> : null}
-                  </li>
-                )
-              })}
-            </ul>
+                    </p>
+                  ) : null}
+                </li>
+              )
+            })}
+          </ul>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink/10 bg-paper/60 px-3 py-2">
             {!locked ? (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5">
                 <Button
                   type="button"
                   size="sm"
@@ -380,7 +398,7 @@ export function QuoteEditor({
                     ])
                   }
                 >
-                  <Plus aria-hidden="true" /> Add line (crew × hours)
+                  <Plus aria-hidden="true" /> Line (priced by hours)
                 </Button>
                 <Button
                   type="button"
@@ -393,87 +411,111 @@ export function QuoteEditor({
                     ])
                   }
                 >
-                  <Plus aria-hidden="true" /> Add fixed-price line
+                  <Plus aria-hidden="true" /> Line (your price)
                 </Button>
               </div>
-            ) : null}
-          </CardContent>
-        </Card>
-
-        {/* Pricing */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Pricing</CardTitle>
-            <CardDescription>
-              price = max(minimum, labor ÷ (1 − margin)); fee = price × {(settings.card_fee_pct * 100).toFixed(1)}% +{" "}
-              {money(settings.card_fee_fixed)}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <NumberStepper label="Wage" prefix="$" suffix="/h" min={0} step={0.5} disabled={locked} value={wage} onChange={setWage} />
-              <NumberStepper label="Margin" suffix="%" min={0} max={95} step={5} disabled={locked} value={marginPct} onChange={setMarginPct} />
-            </div>
-            <dl className="grid grid-cols-2 gap-3 rounded-md bg-paper p-3 sm:grid-cols-4">
-              {(
-                [
-                  ["Labor", labor],
-                  ["Card fee", feeTotal],
-                  ["Profit", profit],
-                  ["Price", priceTotal],
-                ] as const
-              ).map(([k, v]) => (
-                <div key={k}>
-                  <dt className="text-xs uppercase tracking-wide text-ink-muted">{k}</dt>
-                  <dd
-                    className={cn(
-                      "tabular-nums",
-                      k === "Price" ? "text-2xl font-bold text-ink" : "text-lg font-semibold text-ink",
-                      k === "Profit" && v < 0 && "text-destructive",
-                    )}
-                  >
-                    {money(v)}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            {calcError ? <p className="text-sm text-destructive">{calcError}</p> : null}
-            <p className="text-sm text-ink-muted">
-              {settings.min_job_price !== null ? (
-                <>
-                  Minimum job price {money(settings.min_job_price)}.
-                  {totals?.min_applied && override === null ? <span className="font-medium text-ink"> Applied to this quote.</span> : null}
-                </>
-              ) : (
-                "No minimum job price set (TODO [MIN PRICE] in settings)."
-              )}
-              {needsOwner ? <span className="text-amber-900"> A custom item still needs your price.</span> : null}
+            ) : (
+              <span />
+            )}
+            <p className="text-sm tabular-nums text-ink-muted">
+              {totals?.min_applied && override === null && settings.min_job_price !== null ? <span className="mr-2 text-ink">Minimum {money(settings.min_job_price)} applied ·</span> : null}
+              Lines total <span className="font-semibold text-ink">{money(totals?.price_total ?? 0)}</span>
             </p>
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="flex items-center gap-2">
-                <Switch
-                  id={`override-${quote.id}`}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* How the price is worked out: wage, margin, or just type the total */}
+      <Card>
+        <CardContent className="flex flex-wrap items-end gap-x-5 gap-y-3 p-3">
+          <div className="grid gap-1">
+            <Label htmlFor={`wage-${quote.id}`} className="text-xs">Crew wage</Label>
+            <div className="flex items-center gap-1">
+              <span className="text-sm text-ink-muted">$</span>
+              <Input
+                id={`wage-${quote.id}`}
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step={0.5}
+                className="h-9 w-20 tabular-nums"
+                disabled={locked}
+                value={wage}
+                onChange={(e) => setWage(Math.max(0, Number(e.target.value) || 0))}
+              />
+              <span className="text-sm text-ink-muted">/h</span>
+            </div>
+          </div>
+          <div className="grid gap-1">
+            <span className="text-xs font-medium text-ink">Margin</span>
+            <div className="flex flex-wrap items-center gap-1">
+              {[30, 40, 50, 60].map((m) => (
+                <Button
+                  key={m}
+                  type="button"
+                  size="sm"
+                  variant={marginPct === m ? "default" : "outline"}
+                  className="h-9 px-2.5 tabular-nums"
                   disabled={locked}
-                  checked={override !== null}
-                  onCheckedChange={(on) => setOverride(on ? Math.max(1, Math.round(totals?.price_total ?? quote.price_total)) : null)}
-                />
-                <Label htmlFor={`override-${quote.id}`}>Override total</Label>
-              </div>
-              {override !== null ? (
-                <NumberStepper
-                  className="w-56"
-                  prefix="$"
+                  onClick={() => setMarginPct(m)}
+                >
+                  {m}%
+                </Button>
+              ))}
+              <Input
+                aria-label="Margin percent"
+                type="number"
+                min={0}
+                max={95}
+                step={5}
+                className="h-9 w-16 tabular-nums"
+                disabled={locked}
+                value={marginPct}
+                onChange={(e) => setMarginPct(Math.max(0, Math.min(95, Number(e.target.value) || 0)))}
+              />
+            </div>
+          </div>
+          <div className="grid gap-1">
+            <div className="flex items-center gap-2">
+              <Switch
+                id={`override-${quote.id}`}
+                disabled={locked}
+                checked={override !== null}
+                onCheckedChange={(on) => setOverride(on ? Math.max(1, Math.round(totals?.price_total ?? quote.price_total)) : null)}
+              />
+              <Label htmlFor={`override-${quote.id}`} className="text-xs">Set the total myself</Label>
+            </div>
+            {override !== null ? (
+              <div className="flex items-center gap-1">
+                <span className="text-sm text-ink-muted">$</span>
+                <Input
+                  aria-label="Total charged"
+                  type="number"
                   min={1}
                   step={5}
+                  className="h-9 w-28 font-semibold tabular-nums"
                   disabled={locked}
                   value={override}
-                  onChange={setOverride}
-                  label="Total charged"
+                  onChange={(e) => setOverride(Math.max(1, Number(e.target.value) || 1))}
                 />
-              ) : null}
+              </div>
+            ) : (
+              <span className="h-9 text-xs leading-9 text-ink-muted">crew pay ÷ (1 − margin)</span>
+            )}
+          </div>
+          {job ? (
+            <div className="grid gap-1">
+              <div className="flex items-center gap-2">
+                <Switch id={`owners-${quote.id}`} checked={ownersWorking} disabled={pending} onCheckedChange={(on) => setOwners(on)} />
+                <Label htmlFor={`owners-${quote.id}`} className="flex items-center gap-1 text-xs">
+                  <Crown className="size-3.5" aria-hidden="true" /> Owners doing it
+                </Label>
+              </div>
+              <span className="h-9 text-xs leading-9 text-ink-muted">{ownersWorking ? "no crew pay: all take-home" : "crew pay comes out"}</span>
             </div>
-          </CardContent>
-        </Card>
+          ) : null}
+        </CardContent>
+      </Card>
 
         {/* Payment: collected after the job */}
         <Card>
@@ -655,33 +697,76 @@ export function QuoteEditor({
           </CardContent>
         </Card>
 
-        {/* Actions */}
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            disabled={locked || pending || !dirty || !!calcError}
-            onClick={() => void run(() => saveQuote(quote.id, payload))}
-          >
-            <Save aria-hidden="true" />
-            {pending ? "Saving…" : dirty ? "Save" : "Saved"}
+      {/* Property: tucked away, open it to change the lot or re-estimate hours */}
+      <details className="group rounded-lg border border-ink/10 bg-white shadow-sm">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm">
+          <MapPin className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
+          <span className="font-semibold text-ink">Property</span>
+          <span className="min-w-0 flex-1 truncate text-ink-muted">
+            {property.address ?? "No address on file"} · {property.lot_acres !== null ? `${property.lot_acres} acres` : "lot size unknown"}
+            {property.tree_cover ? ` · ${property.tree_cover} trees` : ""}
+          </span>
+          <ChevronDown className="size-4 shrink-0 text-ink-muted transition group-open:rotate-180" aria-hidden="true" />
+        </summary>
+        <div className="grid gap-3 border-t border-ink/10 p-4 md:grid-cols-[1fr_16rem]">
+          <PropertyMap lat={property.lat} lng={property.lng} parcelId={property.parcel_id} />
+          <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor={ids.lat}>Lat</Label>
+              <Input
+                id={ids.lat}
+                type="number"
+                step="any"
+                disabled={locked}
+                value={property.lat ?? ""}
+                onChange={(e) => setProperty({ ...property, lat: e.target.value === "" ? null : Number(e.target.value) })}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={ids.lng}>Lng</Label>
+              <Input
+                id={ids.lng}
+                type="number"
+                step="any"
+                disabled={locked}
+                value={property.lng ?? ""}
+                onChange={(e) => setProperty({ ...property, lng: e.target.value === "" ? null : Number(e.target.value) })}
+              />
+            </div>
+          </div>
+          <NumberStepper
+            label="Lot size"
+            suffix="acres"
+            step={0.05}
+            min={0}
+            disabled={locked}
+            value={property.lot_acres ?? 0}
+            onChange={(v) => setProperty({ ...property, lot_acres: v })}
+          />
+          {property.lot_acres === null ? <p className="text-xs text-ink-muted">Unknown: pricing assumed 0.25 acres.</p> : null}
+          <div className="grid gap-1.5">
+            <Label htmlFor={ids.cover}>Tree cover</Label>
+            <NativeSelect
+              id={ids.cover}
+              disabled={locked}
+              value={property.tree_cover ?? ""}
+              onChange={(e) => setProperty({ ...property, tree_cover: (e.target.value || null) as TreeCover | null })}
+            >
+              <option value="">Unknown</option>
+              {COVERS.map((c) => (
+                <option key={c} value={c}>
+                  {c.charAt(0).toUpperCase() + c.slice(1)}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+          <Button type="button" variant="outline" size="sm" disabled={locked} onClick={reestimate}>
+            <Calculator aria-hidden="true" /> Re-estimate hours from lot
           </Button>
-          <Button asChild variant={job && (job.status === "unscheduled" || job.status === "proposed" || job.status === "crew_confirmed") ? "cta-green" : "outline"}>
-            <Link href={scheduleHref}>
-              <CalendarDays aria-hidden="true" />
-              {!job
-                ? "Schedule"
-                : job.status === "unscheduled"
-                  ? "Put it on the calendar"
-                  : job.status === "proposed" || job.status === "crew_confirmed"
-                    ? "Call & confirm on the schedule"
-                    : "Open on the schedule"}
-            </Link>
-          </Button>
-          {!job && !needsOwner && !dirty && quote.status !== "declined" ? (
-            <span className="text-sm text-ink-muted">The job appears on the schedule&apos;s rail once something here has a price.</span>
-          ) : null}
+          </div>
         </div>
-      </div>
+      </details>
     </div>
   )
 }

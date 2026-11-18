@@ -1,8 +1,10 @@
 import "server-only"
 
 import type { Incoming, ScheduleCrew, ScheduleJob } from "@/components/admin/schedule/types"
+import { jobMoney } from "@/lib/schedule/money"
 import { initials } from "@/components/admin/stages/stages"
 import type { AssignmentStatus, Job, PaymentMethod } from "@/lib/db/types"
+import { getSettings } from "@/lib/ops/settings"
 import type { Db } from "@/lib/ops/types"
 import { formatDayLabel, formatTimeRange, localDate, localTime, parseHHMM } from "@/lib/scheduler/time"
 
@@ -16,10 +18,18 @@ export function minutesOfDay(ms: number, date: string): number {
 }
 
 type AssignmentRow = { job_id: string; crew_id: string; status: AssignmentStatus; responded_at: string | null; notified_at: string | null }
-type QuoteRow = { id: string; price_total: number; payment_method: PaymentMethod | null; paid_at: string | null }
+type QuoteRow = {
+  id: string
+  price_total: number
+  fee_total: number
+  labor_total: number
+  payment_method: PaymentMethod | null
+  paid_at: string | null
+}
 
 /**
- * Turns job rows into what the schedule shows (customer, services, crew answers, quote / payment),
+ * Turns job rows into what the schedule shows (customer, services, crew answers, quote / payment, and
+ * the money: price, card fee, crew pay at each person's rate, take-home),
  * used by the schedule board (`/admin/schedule`) and the front page's Schedule stage. THROWS on a
  * query error.
  */
@@ -29,19 +39,32 @@ export async function loadScheduleJobs(db: Db, jobs: Job[]): Promise<(j: Job) =>
   const quoteIds = Array.from(new Set(jobs.map((j) => j.quote_id).filter((q): q is string => !!q)))
   const none = Promise.resolve({ data: [], error: null })
 
-  const [customers, assignments, items, quotes] = await Promise.all([
+  const [customers, assignments, items, quotes, payouts, settings] = await Promise.all([
     customerIds.length ? db.from("customers").select("id,name,address,phone,email").in("id", customerIds) : none,
     jobIds.length ? db.from("job_assignments").select("job_id,crew_id,status,responded_at,notified_at").in("job_id", jobIds).neq("status", "dropped") : none,
     quoteIds.length ? db.from("quote_items").select("quote_id,description,sort_order,status").in("quote_id", quoteIds) : none,
-    quoteIds.length ? db.from("quotes").select("id,price_total,payment_method,paid_at").in("id", quoteIds) : none,
+    quoteIds.length ? db.from("quotes").select("id,price_total,fee_total,labor_total,payment_method,paid_at").in("id", quoteIds) : none,
+    jobIds.length ? db.from("payouts").select("job_id,amount").in("job_id", jobIds) : none,
+    getSettings(db),
   ])
-  for (const r of [customers, assignments, items, quotes]) if (r.error) throw new Error(r.error.message)
+  for (const r of [customers, assignments, items, quotes, payouts]) if (r.error) throw new Error(r.error.message)
+  const payoutByJob = new Map<string, number>()
+  for (const p of (payouts.data ?? []) as { job_id: string; amount: number }[]) {
+    payoutByJob.set(p.job_id, (payoutByJob.get(p.job_id) ?? 0) + Number(p.amount))
+  }
 
   const assignmentRows = (assignments.data ?? []) as AssignmentRow[]
   const crewIds = Array.from(new Set(assignmentRows.map((a) => a.crew_id)))
-  const crewRes = crewIds.length ? await db.from("profiles").select("id,name").in("id", crewIds) : { data: [], error: null }
+  const crewRes = crewIds.length ? await db.from("profiles").select("id,name,hourly_rate,role").in("id", crewIds) : { data: [], error: null }
   if (crewRes.error) throw new Error(crewRes.error.message)
   const crewName = new Map((crewRes.data ?? []).map((p: { id: string; name: string }) => [p.id, p.name]))
+  const crewRate = new Map(
+    // An owner on a job costs nothing: their time is take-home.
+    (crewRes.data ?? []).map((p: { id: string; hourly_rate: number | null; role?: string }) => [
+      p.id,
+      p.role === "owner" ? 0 : Number(p.hourly_rate ?? settings.default_wage),
+    ]),
+  )
   const customer = new Map(
     (customers.data ?? []).map((c: { id: string; name: string; address: string | null; phone: string | null; email: string | null }) => [c.id, c]),
   )
@@ -61,34 +84,66 @@ export async function loadScheduleJobs(db: Db, jobs: Job[]): Promise<(j: Job) =>
     const date = start ? localDate(start) : null
     const c = customer.get(j.customer_id)
     const q = j.quote_id ? quoteById.get(j.quote_id) : undefined
+    const hours = start && end ? Math.max(0, (end.getTime() - start.getTime()) / 3_600_000) : j.est_minutes / 60
+    const crew = assignmentRows
+      .filter((a) => a.job_id === j.id)
+      .map((a): ScheduleCrew => {
+        const name = crewName.get(a.crew_id) ?? "Crew"
+        return {
+          id: a.crew_id,
+          name,
+          initials: initials(name),
+          status: a.status,
+          respondedAt: a.responded_at,
+          notified: !!a.notified_at,
+          rate: crewRate.get(a.crew_id) ?? settings.default_wage,
+        }
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+    const quote = q
+      ? {
+          id: q.id,
+          priceTotal: Number(q.price_total),
+          feeTotal: Number(q.fee_total),
+          laborTotal: Number(q.labor_total),
+          paymentMethod: q.payment_method,
+          paidAt: q.paid_at,
+          needsOwner: needsOwnerByQuote.has(q.id),
+        }
+      : null
     return {
       id: j.id,
       status: j.status,
       weatherHold: j.weather_hold,
       ownerHold: j.owner_hold,
+      ownersWorking: j.owners_working === true,
       paid: j.paid,
       customerName: c?.name ?? "Customer",
       phone: c?.phone ?? null,
       email: c?.email ?? null,
       address: c?.address ?? null,
       services: j.quote_id ? (servicesByQuote.get(j.quote_id) ?? []) : [],
-      crew: assignmentRows
-        .filter((a) => a.job_id === j.id)
-        .map((a): ScheduleCrew => {
-          const name = crewName.get(a.crew_id) ?? "Crew"
-          return { id: a.crew_id, name, initials: initials(name), status: a.status, respondedAt: a.responded_at, notified: !!a.notified_at }
-        })
-        .sort((a, b) => a.name.localeCompare(b.name)),
+      crew,
       crewSize: j.crew_size,
       estMinutes: j.est_minutes,
+      hours,
+      money: jobMoney({
+        status: j.status,
+        hours,
+        crewSize: j.crew_size,
+        crew,
+        ownersWorking: j.owners_working === true,
+        quote,
+        payouts: payoutByJob.has(j.id) ? payoutByJob.get(j.id)! : null,
+        profitOverride: j.profit_override === null || j.profit_override === undefined ? null : Number(j.profit_override),
+        defaultWage: settings.default_wage,
+      }),
       date,
       startMin: start && date ? minutesOfDay(start.getTime(), date) : null,
       endMin: end && date ? minutesOfDay(end.getTime(), date) : null,
       whenLabel: start && end ? `${formatDayLabel(start)}, ${formatTimeRange(start, end)}` : null,
       scheduleReason: j.schedule_reason,
-      quote: q
-        ? { id: q.id, priceTotal: Number(q.price_total), paymentMethod: q.payment_method, paidAt: q.paid_at, needsOwner: needsOwnerByQuote.has(q.id) }
-        : null,
+      quote,
     }
   }
 

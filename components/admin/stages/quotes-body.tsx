@@ -269,7 +269,7 @@ export async function QuoteDetailBody({ id, variant = "page" }: { id: string; va
       .in("kind", ["quote", "custom_item"])
       .or(`ref_id.eq.${quote.id},payload->>quote_id.eq.${quote.id}`)
       .order("created_at", { ascending: true }),
-    db.from("jobs").select("id,status,start_at,completed_at").eq("quote_id", quote.id).order("created_at", { ascending: true }).limit(1).maybeSingle(),
+    db.from("jobs").select("*").eq("quote_id", quote.id).order("created_at", { ascending: true }).limit(1).maybeSingle(),
     getSettings(db),
   ])
   const items = check(itemsRes, "quote items") ?? []

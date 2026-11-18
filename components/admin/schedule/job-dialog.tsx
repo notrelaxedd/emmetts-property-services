@@ -2,8 +2,18 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Banknote, Mail, Pencil, Phone, RotateCcw, Send, UserPlus } from "lucide-react"
-import { askMoreCrew, cancelJob, confirmBooking, editJobCrew, releaseJob, remindCrew, setWeatherHold, unplaceJob } from "@/app/admin/actions/schedule"
+import { Banknote, Crown, Mail, Pencil, Phone, RotateCcw, Send, UserPlus } from "lucide-react"
+import {
+  askMoreCrew,
+  cancelJob,
+  confirmBooking,
+  editJobCrew,
+  releaseJob,
+  remindCrew,
+  setOwnersWorking,
+  setWeatherHold,
+  unplaceJob,
+} from "@/app/admin/actions/schedule"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -18,9 +28,12 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/components/ui/toast"
 import type { PaymentMethod } from "@/lib/db/types"
+import { BASIS_LABEL, hrs, isGoing, usd } from "@/lib/schedule/money"
+import { cn } from "@/lib/utils"
 import { zonedToUtc } from "@/lib/scheduler/time"
 import { PAYMENT_METHOD_LABEL, PAYMENT_METHODS } from "@/lib/ops/payment-methods"
 import { CrewPicker } from "./crew-picker"
@@ -92,12 +105,15 @@ export function JobDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>{job.customerName}</DialogTitle>
-            <DialogDescription>{job.whenLabel ?? "Not on the calendar yet"}</DialogDescription>
-          </DialogHeader>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent side="right" className="flex w-full flex-col gap-3 overflow-y-auto p-4 sm:max-w-lg sm:p-5">
+          <SheetHeader className="pr-14 text-left">
+            <SheetTitle className="text-xl font-bold text-ink">{job.customerName}</SheetTitle>
+            <SheetDescription>
+              {job.whenLabel ?? "Not on the calendar yet"} · {hrs(job.hours)}
+              {job.address ? ` · ${job.address}` : ""}
+            </SheetDescription>
+          </SheetHeader>
 
           <div className="flex flex-wrap gap-1.5">
             <Badge variant={job.status === "booked" ? "success" : onCalendar ? "warning" : "outline"}>{STATUS_LABEL[job.status]}</Badge>
@@ -113,6 +129,25 @@ export function JobDialog({
               </Badge>
             ) : null}
           </div>
+
+          <MoneyBlock job={job} />
+
+          {!terminal || job.status === "done" ? (
+            <div className="flex items-center justify-between gap-3 rounded-md border border-ink/10 p-3">
+              <div>
+                <Label htmlFor={`owners-${job.id}`} className="flex items-center gap-1.5">
+                  <Crown className="size-4" aria-hidden="true" /> Owners doing this job
+                </Label>
+                <p className="text-xs text-ink-muted">You and Emmett do the work: no crew pay comes out, it&apos;s all take-home.</p>
+              </div>
+              <Switch
+                id={`owners-${job.id}`}
+                checked={job.ownersWorking}
+                disabled={pending}
+                onCheckedChange={(on) => run(() => setOwnersWorking(job.id, on), "Couldn't update the job")}
+              />
+            </div>
+          ) : null}
 
           {/* Who to call */}
           <div className="grid gap-2 rounded-md border border-ink/10 bg-paper p-3 sm:grid-cols-[1fr_auto] sm:items-center">
@@ -352,7 +387,7 @@ export function JobDialog({
             </div>
           ) : null}
 
-          <DialogFooter className="gap-2 sm:justify-between">
+          <div className="mt-auto flex flex-wrap justify-between gap-2 border-t border-ink/10 pt-3">
             <div className="flex flex-wrap gap-2">
               {!terminal ? (
                 <Button variant="outline" className="text-destructive" disabled={pending} onClick={() => setConfirmCancel(true)}>
@@ -366,9 +401,9 @@ export function JobDialog({
               ) : null}
             </div>
             <Button onClick={() => onOpenChange(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <Dialog open={confirmCancel} onOpenChange={setConfirmCancel}>
         <DialogContent className="max-w-sm">
@@ -434,5 +469,53 @@ export function JobDialog({
         />
       ) : null}
     </>
+  )
+}
+
+/** Where the money goes on this job: price, crew pay (per person), card fee if they pay by card, take-home. */
+function MoneyBlock({ job }: { job: ScheduleJob }) {
+  const m = job.money
+  const going = job.crew.filter((c) => isGoing(c.status))
+  const perPerson = m.basis === "crew" && !job.ownersWorking
+  return (
+    <div className="rounded-lg border border-ink/10 bg-paper p-3">
+      <dl className={cn("grid gap-2 text-center", m.fee > 0 ? "grid-cols-4" : "grid-cols-3")}>
+        <div>
+          <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Price</dt>
+          <dd className="text-lg font-bold tabular-nums text-ink">{usd(m.price)}</dd>
+        </div>
+        <div>
+          <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Crew pay</dt>
+          <dd className="text-lg font-bold tabular-nums text-ink">{usd(m.labor)}</dd>
+        </div>
+        {m.fee > 0 ? (
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Card fee</dt>
+            <dd className="text-lg font-bold tabular-nums text-ink">{usd(m.fee)}</dd>
+          </div>
+        ) : null}
+        <div className="rounded-md bg-brand-green/15">
+          <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Take-home</dt>
+          <dd className={cn("text-lg font-bold tabular-nums", m.profit < 0 ? "text-destructive" : "text-brand-green-dark")}>{usd(m.profit)}</dd>
+        </div>
+      </dl>
+      <p className="mt-2 text-xs text-ink-muted">
+        Crew pay: {BASIS_LABEL[m.basis]}
+        {m.basis === "estimate" ? ` (${job.crewSize} crew × ${hrs(job.hours)})` : ""}.
+        {job.hours > 0 && m.price > 0 ? ` ${usd(Math.round(m.profit / job.hours))}/h take-home.` : ""}
+      </p>
+      {perPerson && going.length ? (
+        <ul className="mt-1 space-y-0.5 text-xs text-ink">
+          {going.map((c) => (
+            <li key={c.id} className="flex justify-between tabular-nums">
+              <span>
+                {c.name} · {usd(c.rate)}/h × {hrs(job.hours)}
+              </span>
+              <span>{usd(c.rate * job.hours)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   )
 }

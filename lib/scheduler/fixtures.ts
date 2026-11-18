@@ -89,6 +89,7 @@ export function job(id: string, over: Partial<Job> = {}): Job {
     completion_photo_paths: [],
     notes: null,
     profit_override: null,
+    owners_working: false,
     ...over,
   };
 }

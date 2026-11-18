@@ -319,6 +319,8 @@ export type Job = Base & {
   notes: string | null;
   /** Owner-set profit for a done job (Money page); null = price − card fee − labor. */
   profit_override: number | null;
+  /** The owners do the work themselves: no crew pay is estimated, so the job is pure take-home. */
+  owners_working: boolean;
 };
 
 export type JobAssignment = Base & {
